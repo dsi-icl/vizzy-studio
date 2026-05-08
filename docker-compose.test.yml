@@ -2,7 +2,7 @@ name: vizzy-studio-test
 
 services:
     mongo:
-        image: mongo:8.0.4
+        image: mongo:8-noble
         command: ['mongod', '--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
         networks:
             - vizzy_network
@@ -21,7 +21,7 @@ services:
             retries: 20
 
     mongo-init:
-        image: mongo:8.0.4
+        image: mongo:8-noble
         depends_on:
             mongo:
                 condition: service_healthy

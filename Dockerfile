@@ -27,7 +27,7 @@ COPY . .
 RUN NITRO_PRESET=bun bun run faviconize --filter=@repo/web
 RUN NITRO_PRESET=bun bun run build --filter=@repo/web
 
-FROM oven/bun:1.3.13 AS runtime
+FROM oven/bun:1 AS runtime
 ARG KEEP_SOURCE_MAPS=false
 
 ARG OCI_CREATED=unknown
@@ -45,7 +45,7 @@ LABEL org.opencontainers.image.title="vizzy-studio" \
       org.opencontainers.image.revision="${OCI_REVISION}" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.vendor="florian-guitton" \
-      org.opencontainers.image.base.name="docker.io/oven/bun:1.3.11"
+      org.opencontainers.image.base.name="docker.io/oven/bun:1"
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
