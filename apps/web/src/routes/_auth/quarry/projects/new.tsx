@@ -73,7 +73,7 @@ function NewProject() {
 
             <div className="relative mx-auto min-h-0 w-full max-w-6xl flex-1">
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-background to-transparent" />
-                <div className="scrollbar-none h-full overflow-y-auto px-6 pt-2 pb-6">
+                <div className="h-full scrollbar-none overflow-y-auto px-6 pt-2 pb-6">
                     <ProjectForm
                         onSubmit={(data) => mutation.mutate(data)}
                         isSubmitting={mutation.isPending}

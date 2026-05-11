@@ -613,7 +613,7 @@ function HomePage() {
                 </aside>
                 <main className="relative min-h-0 w-full flex-1 md:w-4/5">
                     <div className="gallery-gradient pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-background to-transparent" />
-                    <div className="scrollbar-none h-full overflow-y-auto py-6">
+                    <div className="h-full scrollbar-none overflow-y-auto py-6">
                         {filteredProjects.length === 0 ? (
                             <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-12 text-muted-foreground">
                                 <p>No published projects yet</p>

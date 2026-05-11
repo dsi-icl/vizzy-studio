@@ -33,7 +33,7 @@ function PrivacyNoticePage() {
 
             <div className="relative mx-auto min-h-0 w-full max-w-5xl flex-1">
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-background to-transparent" />
-                <div className="scrollbar-none h-full overflow-y-auto px-6 pt-8 pb-6">
+                <div className="h-full scrollbar-none overflow-y-auto px-6 pt-8 pb-6">
                     <div className="space-y-6 text-sm leading-relaxed">
                         <section className="rounded-lg border p-4">
                             <h2 className="text-lg font-medium">What this app collects</h2>
