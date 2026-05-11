@@ -10,11 +10,16 @@ import {
     SelectTrigger,
     SelectValue
 } from '@repo/ui/components/select';
-import { useQueryClient, useSuspenseInfiniteQuery } from '@tanstack/react-query';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
+import { useQueryClient, useSuspenseInfiniteQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { adminAuditsInfiniteQueryOptions, type AdminAuditFilters } from '~/server/admin.queries';
+import {
+    adminAuditsInfiniteQueryOptions,
+    adminProjectsQueryOptions,
+    type AdminAuditFilters
+} from '~/server/admin.queries';
 
 export const Route = createFileRoute('/admin/audits')({
     component: AdminAudits,
@@ -169,6 +174,14 @@ function AdminAudits() {
         useSuspenseInfiniteQuery(queryOptions);
 
     const items = useMemo(() => data.pages.flatMap((page) => page.items), [data.pages]);
+    const { data: adminProjects } = useSuspenseQuery(adminProjectsQueryOptions());
+    const projectNamesById = useMemo(() => {
+        const map = new Map<string, string>();
+        adminProjects.forEach((project) => {
+            map.set(project.id, project.name);
+        });
+        return map;
+    }, [adminProjects]);
     const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const groupedItems = useMemo(() => {
@@ -428,7 +441,29 @@ function AdminAudits() {
 
                             <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground md:grid-cols-2">
                                 {event.actorId && <span>Actor: {event.actorId}</span>}
-                                {event.projectId && <span>Project: {event.projectId}</span>}
+                                {event.projectId && (
+                                    <Tooltip>
+                                        <TooltipTrigger
+                                            render={<span className="min-w-0 truncate" />}
+                                        >
+                                            Project:{' '}
+                                            {projectNamesById.get(event.projectId)
+                                                ? `${projectNamesById.get(event.projectId)} (${event.projectId})`
+                                                : event.projectId}
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" align="start">
+                                            <div className="max-w-[28rem] space-y-1">
+                                                <div className="font-medium">
+                                                    {projectNamesById.get(event.projectId) ??
+                                                        'Unknown project'}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {event.projectId}
+                                                </div>
+                                            </div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
                                 {event.executionContext?.operation && (
                                     <span>Operation: {event.executionContext.operation}</span>
                                 )}
