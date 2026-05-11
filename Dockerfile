@@ -118,5 +118,5 @@ RUN sed -i 's/\r$//' /usr/local/bin/container-start.sh && chmod +x /usr/local/bi
 
 EXPOSE 3000
 
-ENTRYPOINT ["tini", "--", "/usr/local/bin/container-start.sh"]
-
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["tini", "-g", "--", "/usr/local/bin/container-start.sh"]
