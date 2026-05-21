@@ -604,6 +604,7 @@ export function EditorSlate() {
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
+            name: file.name,
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
@@ -655,6 +656,7 @@ export function EditorSlate() {
                 type: file.type,
                 data: file,
                 meta: {
+                    filename: file.name,
                     numericId: numericId.toString(),
                     duration: duration.toString(),
                     projectId: currentProjectId,
@@ -696,6 +698,7 @@ export function EditorSlate() {
                 layer: {
                     numericId,
                     type: finalizedLayer.type,
+                    name: finalizedLayer.name,
                     playback: defaultPlayback,
                     url: assetUrl,
                     config: freshestLayer.config
