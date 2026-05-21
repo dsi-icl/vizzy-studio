@@ -102,6 +102,7 @@ export function AssetLibraryPanel({
 
         const layerBase = {
             numericId,
+            name: asset.name,
             url: `/api/assets/${asset.url}`,
             config,
             isUploading: false,

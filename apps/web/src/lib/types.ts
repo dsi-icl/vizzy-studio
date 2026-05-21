@@ -58,6 +58,7 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('video'),
             url: z.string(),
+            name: z.string().optional(),
             stillImage: z.string().optional(),
             loop: z.boolean(),
             duration: z.number(),
@@ -70,6 +71,7 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('image'),
             url: z.string(),
+            name: z.string().optional(),
             blurhash: z.string().optional()
         })
         .extend(LayerBaseSchema.shape),
