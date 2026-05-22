@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport } from '~/lib/fitSizeToViewport';
+import { stripFileExtension } from '~/lib/mediaUtils';
 import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $deleteAsset } from '~/server/projects.fns';
 
@@ -102,7 +103,7 @@ export function AssetLibraryPanel({
 
         const layerBase = {
             numericId,
-            name: asset.name,
+            name: stripFileExtension(asset.name),
             url: `/api/assets/${asset.url}`,
             config,
             isUploading: false,

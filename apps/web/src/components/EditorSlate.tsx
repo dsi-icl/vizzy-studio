@@ -33,7 +33,7 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset } from '~/lib/mediaUtils';
+import { isFontAsset, stripFileExtension } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -604,7 +604,7 @@ export function EditorSlate() {
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
-            name: file.name,
+            name: stripFileExtension(file.name),
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
