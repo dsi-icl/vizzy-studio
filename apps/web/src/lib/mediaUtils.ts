@@ -27,3 +27,21 @@ export function stripFileExtension(name: string): string {
     if (dot <= 0) return trimmed;
     return trimmed.slice(0, dot);
 }
+
+export function makeUniqueLayerName(baseName: string, existingNames: Iterable<string | undefined>) {
+    const trimmedBase = baseName.trim() || 'Untitled';
+    const usedNames = new Set(
+        Array.from(existingNames)
+            .map((name) => name?.trim())
+            .filter((name): name is string => Boolean(name))
+    );
+
+    if (!usedNames.has(trimmedBase)) return trimmedBase;
+
+    let suffix = 1;
+    while (usedNames.has(`${trimmedBase} ${suffix}`)) {
+        suffix += 1;
+    }
+
+    return `${trimmedBase} ${suffix}`;
+}
