@@ -33,7 +33,7 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset, stripFileExtension } from '~/lib/mediaUtils';
+import { isFontAsset, stripFileExtension, makeUniqueLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -601,10 +601,16 @@ export function EditorSlate() {
         };
 
         // 2. OPTIMISTIC UPDATE — mount immediately
+
+        const layerName = makeUniqueLayerName(
+            stripFileExtension(file.name),
+            Array.from(layersRef.current.values()).map((layer) => layer.name)
+        );
+
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
-            name: stripFileExtension(file.name),
+            name: layerName,
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
