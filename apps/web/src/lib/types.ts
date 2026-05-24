@@ -41,7 +41,11 @@ const LayerPlaybackStateSchema = z.object({
     anchorServerTime: z.number()
 });
 
-const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
+const LayerBaseSchema = z.object({
+    numericId: z.number(),
+    name: z.string().optional(),
+    config: LayerConfigStateSchema
+});
 
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
@@ -58,7 +62,6 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('video'),
             url: z.string(),
-            name: z.string().optional(),
             stillImage: z.string().optional(),
             loop: z.boolean(),
             duration: z.number(),
@@ -71,7 +74,6 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('image'),
             url: z.string(),
-            name: z.string().optional(),
             blurhash: z.string().optional()
         })
         .extend(LayerBaseSchema.shape),
