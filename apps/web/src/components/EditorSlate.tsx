@@ -72,10 +72,14 @@ export function EditorSlate() {
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
+    const isErasing = useEditorStore((s) => s.isErasing);
+    const eraserWidth = useEditorStore((s) => s.eraserWidth);
+    const eraseSelectedLineLayer = useEditorStore((s) => s.eraseSelectedLineLayer);
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
+    const [currentEraserPath, setCurrentEraserPath] = useState<Array<number>>([]);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -1030,6 +1034,10 @@ export function EditorSlate() {
         if (isDrawing && isTwoFingerTouch) {
             setCurrentLine([]);
         }
+        if (isErasing) {
+            if (isTwoFingerTouch) setCurrentEraserPath([]);
+            return;
+        }
         if (
             (e.evt instanceof TouchEvent && e.evt.touches?.length === 1) ||
             (e.evt instanceof MouseEvent && e.type === 'mousedown' && e.evt.button === 0)
@@ -1072,6 +1080,20 @@ export function EditorSlate() {
         e.evt.preventDefault();
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
+        if (isErasing) {
+            if (!isTwoFingerTouch) {
+                if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
+                const stage = e.target.getStage();
+                const point = stage?.getPointerPosition();
+                if (!point) return;
+                setCurrentEraserPath((path) =>
+                    path.concat([point.x / stageScaleFactor, point.y / stageScaleFactor])
+                );
+                return;
+            } else {
+                setCurrentEraserPath([]);
+            }
+        }
         if (isDrawing) {
             if (!isTwoFingerTouch) {
                 if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
@@ -1175,6 +1197,11 @@ export function EditorSlate() {
                     parseInt(currentSelectedIds[0])
                 );
         }
+        if (currentEraserPath.length >= 4) {
+            eraseSelectedLineLayer(currentEraserPath);
+        }
+        setCurrentEraserPath([]);
+
         // Without enough point this is probably a missfire
         if (currentLine.length > 4) {
             addLineLayer(currentLine);
@@ -1292,8 +1319,9 @@ export function EditorSlate() {
                                 const hiddenOpacity = isHidden ? 0.3 : 1;
 
                                 const props = {
-                                    listening: !isDrawing,
+                                    listening: !isDrawing && !isErasing,
                                     isDrawing,
+                                    isErasing,
                                     isPinching,
                                     opacity: hiddenOpacity,
                                     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -1361,7 +1389,11 @@ export function EditorSlate() {
                                             rotation={layer.config.rotation}
                                             opacity={hiddenOpacity}
                                             listening={props.listening}
-                                            draggable={!props.isDrawing && !props.isPinching}
+                                            draggable={
+                                                !props.isDrawing &&
+                                                !props.isErasing &&
+                                                !props.isPinching
+                                            }
                                             onClick={props.onSelect}
                                             onTap={props.onSelect}
                                             onDragMove={props.onTransform}
@@ -1390,7 +1422,10 @@ export function EditorSlate() {
                                         scaleY: layer.config.scaleY,
                                         opacity: hiddenOpacity,
                                         listening: props.listening,
-                                        draggable: !props.isDrawing && !props.isPinching,
+                                        draggable:
+                                            !props.isDrawing &&
+                                            !props.isErasing &&
+                                            !props.isPinching,
                                         onClick: props.onSelect,
                                         onTap: props.onSelect,
                                         onDragMove: props.onTransform,
@@ -1434,29 +1469,33 @@ export function EditorSlate() {
                                     }
                                 }
                                 if (layer.type === 'line') {
-                                    return (
-                                        <Line
-                                            key={`lin_${layer.numericId}`}
-                                            listening={props.listening}
-                                            opacity={hiddenOpacity}
-                                            points={layer.line}
-                                            stroke={layer.strokeColor}
-                                            strokeWidth={layer.strokeWidth}
-                                            dash={layer.strokeDash}
-                                            dashEnabled={true}
-                                            tension={0.4}
-                                            shadowForStrokeEnabled={
-                                                selectedLayerIds[0] === layer.numericId.toString()
-                                            }
-                                            shadowColor="#00a1ff"
-                                            shadowBlur={10}
-                                            shadowOffsetY={20}
-                                            shadowOffsetX={20}
-                                            shadowOpacity={1}
-                                            lineCap="round"
-                                            lineJoin="round"
-                                        />
-                                    );
+                                    const segments = layer.segments ?? [layer.line];
+                                    return segments
+                                        .filter((segment) => segment.length >= 4)
+                                        .map((segment, segmentIndex) => (
+                                            <Line
+                                                key={`lin_${layer.numericId}_${segmentIndex}`}
+                                                listening={props.listening}
+                                                opacity={hiddenOpacity}
+                                                points={segment}
+                                                stroke={layer.strokeColor}
+                                                strokeWidth={layer.strokeWidth}
+                                                dash={layer.strokeDash}
+                                                dashEnabled={true}
+                                                tension={0.4}
+                                                shadowForStrokeEnabled={
+                                                    selectedLayerIds[0] ===
+                                                    layer.numericId.toString()
+                                                }
+                                                shadowColor="#00a1ff"
+                                                shadowBlur={10}
+                                                shadowOffsetY={20}
+                                                shadowOffsetX={20}
+                                                shadowOpacity={1}
+                                                lineCap="round"
+                                                lineJoin="round"
+                                            />
+                                        ));
                                 }
                                 return null;
                             })}
@@ -1471,6 +1510,19 @@ export function EditorSlate() {
                                     tension={0.5}
                                     lineCap="round"
                                     lineJoin="round"
+                                />
+                            )}
+                            {currentEraserPath.length > 3 && (
+                                <Line
+                                    key="eraser-preview"
+                                    points={currentEraserPath}
+                                    stroke="rgba(255, 255, 255, 0.45)"
+                                    strokeWidth={eraserWidth}
+                                    dashEnabled={false}
+                                    tension={0.5}
+                                    lineCap="round"
+                                    lineJoin="round"
+                                    listening={false}
                                 />
                             )}
                             {selectedOutlineLayers.length > 1

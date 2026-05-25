@@ -1,6 +1,7 @@
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
+import { eraseLineSegments } from './lineEraser';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
 import type { Layer, LayerWithEditorState } from './types';
 
@@ -610,6 +611,38 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 origin: 'editor:add_line_layer',
                 layer: newLayer
             });
+            get().markDirty();
+        },
+
+        eraseSelectedLineLayer: (eraserPath: number[]) => {
+            const state = get();
+            if (state.selectedLayerIds.length !== 1) return;
+
+            const numericId = Number.parseInt(state.selectedLayerIds[0], 10);
+            const layer = state.layers.get(numericId);
+
+            if (!layer || layer.type !== 'line') return;
+
+            const originalSegments = layer.segments ?? [layer.line];
+            const nextSegments = eraseLineSegments(
+                originalSegments,
+                eraserPath,
+                state.eraserWidth / 2
+            );
+
+            const updatedLayer = {
+                ...layer,
+                line: nextSegments[0] ?? [],
+                segments: nextSegments
+            };
+
+            set((s) => {
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, updatedLayer);
+                return { layers: newLayers };
+            });
+
+            helpers.sendLayerUpdate(updatedLayer, 'editor:erase_line_layer');
             get().markDirty();
         },
 

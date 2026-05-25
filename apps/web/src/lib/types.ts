@@ -102,6 +102,7 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('line'),
             line: z.array(z.number()),
+            segments: z.array(z.array(z.number())).optional(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number()
