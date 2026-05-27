@@ -76,7 +76,7 @@ export const useEditorStore =
                   showGrid: true,
                   isDrawing: false,
                   isErasing: false,
-                  eraserWidth: 40,
+                  eraserWidth: 70,
                   isSnapping: true,
                   strokeColor: '#ff0000',
                   strokeWidth: 10,
