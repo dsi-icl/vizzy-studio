@@ -53,6 +53,29 @@ import { SlatePreview } from './SlatePreview';
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
+const DRAW_PATH_MAX_POINT_GAP = 0.5;
+
+function lerp(start: number, end: number, t: number): number {
+    return start + (end - start) * t;
+}
+
+function appendInterpolatedPathPoint(path: number[], x: number, y: number): number[] {
+    if (path.length < 2) return path.concat([x, y]);
+
+    const lastX = path[path.length - 2];
+    const lastY = path[path.length - 1];
+    const distance = Math.hypot(x - lastX, y - lastY);
+    if (distance === 0) return path;
+
+    const steps = Math.ceil(distance / DRAW_PATH_MAX_POINT_GAP);
+    const nextPath = [...path];
+    for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        nextPath.push(lerp(lastX, x, t), lerp(lastY, y, t));
+    }
+
+    return nextPath;
+}
 
 export function EditorSlate() {
     const engine = useMemo(
@@ -1087,7 +1110,11 @@ export function EditorSlate() {
                 const point = stage?.getPointerPosition();
                 if (!point) return;
                 setCurrentEraserPath((path) =>
-                    path.concat([point.x / stageScaleFactor, point.y / stageScaleFactor])
+                    appendInterpolatedPathPoint(
+                        path,
+                        point.x / stageScaleFactor,
+                        point.y / stageScaleFactor
+                    )
                 );
                 return;
             } else {
@@ -1100,8 +1127,12 @@ export function EditorSlate() {
                 const stage = e.target.getStage();
                 const point = stage?.getPointerPosition();
                 if (!point) return;
-                setCurrentLine((l) =>
-                    l.concat([point.x / stageScaleFactor, point.y / stageScaleFactor])
+                setCurrentLine((line) =>
+                    appendInterpolatedPathPoint(
+                        line,
+                        point.x / stageScaleFactor,
+                        point.y / stageScaleFactor
+                    )
                 );
                 return;
             } else {
