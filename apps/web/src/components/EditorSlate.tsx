@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -1500,33 +1501,17 @@ export function EditorSlate() {
                                     }
                                 }
                                 if (layer.type === 'line') {
-                                    const segments = layer.segments ?? [layer.line];
-                                    return segments
-                                        .filter((segment) => segment.length >= 4)
-                                        .map((segment, segmentIndex) => (
-                                            <Line
-                                                key={`lin_${layer.numericId}_${segmentIndex}`}
-                                                listening={props.listening}
-                                                opacity={hiddenOpacity}
-                                                points={segment}
-                                                stroke={layer.strokeColor}
-                                                strokeWidth={layer.strokeWidth}
-                                                dash={layer.strokeDash}
-                                                dashEnabled={true}
-                                                tension={0.4}
-                                                shadowForStrokeEnabled={
-                                                    selectedLayerIds[0] ===
-                                                    layer.numericId.toString()
-                                                }
-                                                shadowColor="#00a1ff"
-                                                shadowBlur={10}
-                                                shadowOffsetY={20}
-                                                shadowOffsetX={20}
-                                                shadowOpacity={1}
-                                                lineCap="round"
-                                                lineJoin="round"
-                                            />
-                                        ));
+                                    return (
+                                        <KonvaLineSegments
+                                            key={`lin_${layer.numericId}`}
+                                            layer={layer}
+                                            listening={props.listening}
+                                            opacity={hiddenOpacity}
+                                            shadowForStrokeEnabled={
+                                                selectedLayerIds[0] === layer.numericId.toString()
+                                            }
+                                        />
+                                    );
                                 }
                                 return null;
                             })}
