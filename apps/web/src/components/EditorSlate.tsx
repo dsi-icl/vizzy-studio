@@ -54,7 +54,7 @@ import { SlatePreview } from './SlatePreview';
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
-const DRAW_PATH_MAX_POINT_GAP = 0.5;
+const DRAW_PATH_MAX_POINT_GAP = 3;
 
 function lerp(start: number, end: number, t: number): number {
     return start + (end - start) * t;
