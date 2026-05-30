@@ -630,6 +630,14 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 state.eraserWidth / 2
             );
 
+            const didErase =
+                nextSegments.length !== originalSegments.length ||
+                nextSegments.some(
+                    (segment, index) => segment.length !== originalSegments[index]?.length
+                );
+
+            if (!didErase) return;
+
             const updatedLayer = {
                 ...layer,
                 line: nextSegments[0] ?? [],
