@@ -75,7 +75,8 @@ const OP = {
     VIDEO_PLAY: 0x12,
     VIDEO_PAUSE: 0x13,
     VIDEO_SEEK: 0x14,
-    VIDEO_SYNC: 0x15
+    VIDEO_SYNC: 0x15,
+    LINE_SEGMENTS_UPDATE: 0x16
 } as const;
 
 const pongBuf = new ArrayBuffer(25);
@@ -206,6 +207,48 @@ function handleBinary(peer: import('crossws').Peer, rawData: ArrayBuffer) {
 
         // Relay to all walls in scope.
         // AABB spatial filtering disabled — see original bus.ts comment for context.
+        broadcastToWallsBinary(senderScopeId, rawData);
+    }
+
+    if (opcode === OP.LINE_SEGMENTS_UPDATE) {
+        const senderScopeId = resolveScopeId(senderEntry.meta);
+        if (senderScopeId === null) return;
+        const projectId = getScopeProjectId(senderScopeId);
+        if (!projectId) return;
+
+        let allowed = false;
+        if (senderEntry.meta.specimen === 'editor') {
+            const perms = getCachedEditorPermissionForBinary(senderEntry, projectId);
+            allowed = Boolean(perms?.canEdit);
+        }
+        if (!allowed) {
+            console.warn(
+                `[WS] Unauthorized binary LINE_SEGMENTS_UPDATE from peer ${peer.id} (${senderEntry.meta.specimen})`
+            );
+            void logAuditDenied({
+                action: 'WS_MESSAGE_DENIED',
+                reasonCode: 'WS_BINARY_UNAUTHORIZED',
+                projectId,
+                resourceType: 'ws_message',
+                resourceId: 'LINE_SEGMENTS_UPDATE',
+                authContext: senderEntry.meta.authContext,
+                executionContext: {
+                    surface: 'ws',
+                    operation: 'binary:LINE_SEGMENTS_UPDATE',
+                    peerId: peer.id,
+                    details: { specimen: senderEntry.meta.specimen }
+                }
+            });
+            return;
+        }
+
+        const editorEntries = editorsByScope.get(senderScopeId);
+        if (editorEntries) {
+            for (const entry of editorEntries) {
+                if (entry !== senderEntry) entry.peer.send(rawData);
+            }
+        }
+
         broadcastToWallsBinary(senderScopeId, rawData);
     }
 }

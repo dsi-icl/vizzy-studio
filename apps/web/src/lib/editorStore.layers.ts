@@ -650,7 +650,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers };
             });
 
-            helpers.sendLayerUpdate(updatedLayer, 'editor:erase_line_layer');
+            const engine = EditorEngine.getInstance();
+            engine.broadcastBinaryLineSegmentsUpdate(
+                updatedLayer.numericId,
+                updatedLayer.line,
+                updatedLayer.segments ?? []
+            );
+
             get().markDirty();
         },
 
