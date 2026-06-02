@@ -3,10 +3,14 @@ import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '~/lib/editorStore';
 
 import { ColorPickerPopover } from './ColourPicker';
+import { EraserTool } from './EraserTool';
 import { StrokeTool } from './StrokeTool';
 
 export function AppearanceToolbar() {
     const {
+        isErasing,
+        eraserWidth,
+        setEraserWidth,
         shapeFill,
         setShapeFill,
         strokeColor,
@@ -17,6 +21,9 @@ export function AppearanceToolbar() {
         setStrokeDash
     } = useEditorStore(
         useShallow((s) => ({
+            isErasing: s.isErasing,
+            eraserWidth: s.eraserWidth,
+            setEraserWidth: s.setEraserWidth,
             shapeFill: s.shapeFill,
             setShapeFill: s.setShapeFill,
             strokeColor: s.strokeColor,
@@ -27,6 +34,14 @@ export function AppearanceToolbar() {
             setStrokeDash: s.setStrokeDash
         }))
     );
+
+    if (isErasing) {
+        return (
+            <div className="flex items-center gap-2">
+                <EraserTool eraserWidth={eraserWidth} setEraserWidth={setEraserWidth} />
+            </div>
+        );
+    }
 
     return (
         <div className="flex items-center gap-2">

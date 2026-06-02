@@ -32,7 +32,7 @@ import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
-import { useEditorStore } from '~/lib/editorStore';
+import { ERASER_WHEEL_STEP, clampEraserWidth, useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
@@ -98,12 +98,16 @@ export function EditorSlate() {
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
     const isErasing = useEditorStore((s) => s.isErasing);
     const eraserWidth = useEditorStore((s) => s.eraserWidth);
+    const setEraserWidth = useEditorStore((s) => s.setEraserWidth);
     const eraseSelectedLineLayer = useEditorStore((s) => s.eraseSelectedLineLayer);
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
     const [currentEraserPath, setCurrentEraserPath] = useState<Array<number>>([]);
+    const [currentEraserPoint, setCurrentEraserPoint] = useState<{ x: number; y: number } | null>(
+        null
+    );
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -1059,7 +1063,21 @@ export function EditorSlate() {
             setCurrentLine([]);
         }
         if (isErasing) {
-            if (isTwoFingerTouch) setCurrentEraserPath([]);
+            if (e.evt instanceof TouchEvent && e.evt.touches.length === 2) {
+                setCurrentEraserPath([]);
+                const stage = e.target.getStage();
+                if (!stage) return;
+                const t1 = e.evt.touches[0];
+                const t2 = e.evt.touches[1];
+                const p1 = touchToStagePoint(stage, t1);
+                const p2 = touchToStagePoint(stage, t2);
+                lastDist.current = getDistance(p1, p2);
+                lastCenter.current = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                setCurrentEraserPoint({
+                    x: lastCenter.current.x,
+                    y: lastCenter.current.y
+                });
+            }
             return;
         }
         if (
@@ -1106,10 +1124,14 @@ export function EditorSlate() {
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
         if (isErasing) {
             if (!isTwoFingerTouch) {
-                if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
                 const stage = e.target.getStage();
                 const point = stage?.getPointerPosition();
                 if (!point) return;
+                setCurrentEraserPoint({
+                    x: point.x / stageScaleFactor,
+                    y: point.y / stageScaleFactor
+                });
+                if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
                 setCurrentEraserPath((path) =>
                     appendInterpolatedPathPoint(
                         path,
@@ -1120,6 +1142,29 @@ export function EditorSlate() {
                 return;
             } else {
                 setCurrentEraserPath([]);
+                if (!(e.evt instanceof TouchEvent)) return;
+                const stage = e.target.getStage();
+                if (!stage) return;
+                const t1 = e.evt.touches[0];
+                const t2 = e.evt.touches[1];
+                const p1 = touchToStagePoint(stage, t1);
+                const p2 = touchToStagePoint(stage, t2);
+                const dist = getDistance(p1, p2);
+                const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+
+                setCurrentEraserPoint({
+                    x: center.x,
+                    y: center.y
+                });
+
+                if (lastDist.current) {
+                    const currentWidth = useEditorStore.getState().eraserWidth;
+                    const nextWidth = clampEraserWidth(currentWidth * (dist / lastDist.current));
+                    setEraserWidth(nextWidth);
+                }
+                lastDist.current = dist;
+                lastCenter.current = center;
+                return;
             }
         }
         if (isDrawing) {
@@ -1233,6 +1278,9 @@ export function EditorSlate() {
             eraseSelectedLineLayer(currentEraserPath);
         }
         setCurrentEraserPath([]);
+        if (e.evt instanceof TouchEvent || e.type === 'mouseleave') {
+            setCurrentEraserPoint(null);
+        }
 
         // Without enough point this is probably a missfire
         if (currentLine.length > 4) {
@@ -1244,14 +1292,33 @@ export function EditorSlate() {
         lastCenter.current = null;
     };
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
-        const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const delta = e.evt.deltaX + e.evt.deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+
+            if (isErasing) {
+                const stage = e.target.getStage();
+                const point = stage?.getPointerPosition();
+                if (point) {
+                    setCurrentEraserPoint({
+                        x: point.x / stageScaleFactor,
+                        y: point.y / stageScaleFactor
+                    });
+                }
+                const direction = delta > 0 ? -1 : 1;
+                const currentWidth = useEditorStore.getState().eraserWidth;
+                setEraserWidth(clampEraserWidth(currentWidth + direction * ERASER_WHEEL_STEP));
+                return;
+            }
+
+            const slot = stageSlot.current;
+            if (!slot) return;
+            slot.scrollLeft += delta;
+        },
+        [isErasing, setEraserWidth, stageScaleFactor]
+    );
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
@@ -1541,6 +1608,18 @@ export function EditorSlate() {
                                     listening={false}
                                 />
                             )}
+                            {isErasing && currentEraserPoint ? (
+                                <Circle
+                                    key="eraser-size-preview"
+                                    x={currentEraserPoint.x}
+                                    y={currentEraserPoint.y}
+                                    radius={eraserWidth / 2}
+                                    fill="rgba(255, 255, 255, 0.08)"
+                                    stroke="rgba(255, 255, 255, 0.7)"
+                                    strokeWidth={2 / stageScaleFactor}
+                                    listening={false}
+                                />
+                            ) : null}
                             {selectedOutlineLayers.length > 1
                                 ? selectedOutlineLayers.map((layer) => (
                                       <Rect
