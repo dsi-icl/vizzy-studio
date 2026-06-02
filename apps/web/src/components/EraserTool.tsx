@@ -1,7 +1,7 @@
 import { EraserIcon } from '@phosphor-icons/react';
 import { Slider } from '@repo/ui/components/slider';
 
-import { ERASER_MAX_WIDTH, ERASER_MIN_WIDTH, clampEraserWidth } from '~/lib/editorStore';
+import { ERASER_MAX_WIDTH, ERASER_MIN_WIDTH, clampEraserWidth } from '~/lib/eraser';
 
 interface EraserToolProps {
     eraserWidth: number;

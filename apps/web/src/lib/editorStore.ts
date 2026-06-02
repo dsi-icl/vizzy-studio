@@ -13,14 +13,6 @@ import type { ConnectionStatus } from './reconnectingWs';
 export type { EditorState };
 export type EditorStateCreator = ReturnType<ReturnType<typeof create<EditorState>>>;
 
-export const ERASER_MIN_WIDTH = 10;
-export const ERASER_MAX_WIDTH = 1000;
-export const ERASER_WHEEL_STEP = 10;
-
-export function clampEraserWidth(width: number): number {
-    return Math.max(ERASER_MIN_WIDTH, Math.min(ERASER_MAX_WIDTH, Math.round(width)));
-}
-
 // ── Module-level allocator state ─────────────────────────────────────────────
 
 let _nextId = 1;
