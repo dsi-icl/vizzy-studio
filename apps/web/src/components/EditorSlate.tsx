@@ -33,7 +33,7 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset } from '~/lib/mediaUtils';
+import { isFontAsset, stripFileExtension, makeUniqueLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -601,9 +601,16 @@ export function EditorSlate() {
         };
 
         // 2. OPTIMISTIC UPDATE — mount immediately
+
+        const layerName = makeUniqueLayerName(
+            stripFileExtension(file.name),
+            Array.from(layersRef.current.values()).map((layer) => layer.name)
+        );
+
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
+            name: layerName,
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
@@ -655,6 +662,7 @@ export function EditorSlate() {
                 type: file.type,
                 data: file,
                 meta: {
+                    filename: file.name,
                     numericId: numericId.toString(),
                     duration: duration.toString(),
                     projectId: currentProjectId,
@@ -696,6 +704,7 @@ export function EditorSlate() {
                 layer: {
                     numericId,
                     type: finalizedLayer.type,
+                    name: finalizedLayer.name,
                     playback: defaultPlayback,
                     url: assetUrl,
                     config: freshestLayer.config

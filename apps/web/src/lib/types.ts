@@ -41,7 +41,11 @@ const LayerPlaybackStateSchema = z.object({
     anchorServerTime: z.number()
 });
 
-const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
+const LayerBaseSchema = z.object({
+    numericId: z.number(),
+    name: z.string().optional(),
+    config: LayerConfigStateSchema
+});
 
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.

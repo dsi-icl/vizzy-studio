@@ -65,13 +65,15 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
     };
 
     const getLayerName = (layer: LayerWithEditorState): string => {
+        if (layer.name) return layer.name;
+
         switch (layer.type) {
             case 'text':
                 return layer.textHtml.replace(/<[^>]*>/g, '').slice(0, 40) || 'Text';
             case 'image':
-                return 'Image';
+                return layer.name || 'Image';
             case 'video':
-                return 'Video';
+                return layer.name || 'Video';
             case 'graph':
                 return 'Graph';
             case 'map':
