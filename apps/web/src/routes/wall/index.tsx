@@ -312,6 +312,18 @@ function WallApp() {
                             : data.layer;
                     return [...prev.filter((l) => l.numericId !== data.layer.numericId), nextLayer];
                 });
+            } else if (data.type === 'line_segments_update') {
+                setLayers((prev) =>
+                    prev.map((layer) =>
+                        layer.numericId === data.numericId && layer.type === 'line'
+                            ? {
+                                  ...layer,
+                                  line: data.line,
+                                  segments: data.segments
+                              }
+                            : layer
+                    )
+                );
             } else if (data.type === 'delete_layer') {
                 setLayers((prev) => prev.filter((l) => l.numericId !== data.numericId));
             } else if (data.type === 'device_enrollment') {
@@ -336,7 +348,8 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const bounds = getLineBounds(layer.line);
+                              const segments = layer.segments ?? [layer.line];
+                              const bounds = getLineBounds(segments.flat());
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -681,13 +694,9 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const bounds = getLineBounds(layer.line);
+                const segments = layer.segments ?? [layer.line];
+                const bounds = getLineBounds(segments.flat());
                 if (!bounds) return null;
-                let svgPoints = [];
-                for (let i = 0; i < layer.line.length; i += 2)
-                    svgPoints.push(
-                        `${Math.round(layer.line[i] - bounds.cx + bounds.width / 2)},${Math.round(layer.line[i + 1] - bounds.cy + bounds.height / 2)}`
-                    );
                 return (
                     <div
                         key={layer.numericId}
@@ -705,16 +714,29 @@ function WallApp() {
                             className="overflow-visible"
                             xmlns="http://www.w3.org/2000/svg"
                         >
-                            <polyline
-                                points={svgPoints.join(' ')}
-                                fill="none"
-                                stroke={layer.strokeColor}
-                                strokeWidth={layer.strokeWidth}
-                                strokeDasharray={layer.strokeDash.join(' ')}
-                                strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
+                            {segments
+                                .filter((segment) => segment.length >= 4)
+                                .map((segment, segmentIndex) => {
+                                    const svgPoints = [];
+                                    for (let i = 0; i < segment.length; i += 2) {
+                                        svgPoints.push(
+                                            `${Math.round(segment[i] - bounds.cx + bounds.width / 2)},${Math.round(segment[i + 1] - bounds.cy + bounds.height / 2)}`
+                                        );
+                                    }
+                                    return (
+                                        <polyline
+                                            key={`line-segment-${segmentIndex}`}
+                                            points={svgPoints.join(' ')}
+                                            fill="none"
+                                            stroke={layer.strokeColor}
+                                            strokeWidth={layer.strokeWidth}
+                                            strokeDasharray={layer.strokeDash.join(' ')}
+                                            strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    );
+                                })}
                         </svg>
                     </div>
                 );

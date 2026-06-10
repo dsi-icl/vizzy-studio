@@ -1,6 +1,7 @@
 'use client';
 
 import { BusClient } from './busClient';
+import { LINE_SEGMENTS_UPDATE_OPCODE, decodeLineSegmentsUpdate } from './lineSegmentsBinary';
 import {
     GSMessageSchema,
     type GSMessage,
@@ -17,7 +18,14 @@ export interface Viewport {
     h: number;
 }
 
-type LayoutUpdateCallback = (data: GSMessage) => void;
+type LineSegmentsLayoutUpdate = {
+    type: 'line_segments_update';
+    numericId: number;
+    line: number[];
+    segments: number[][];
+};
+
+type LayoutUpdateCallback = (data: GSMessage | LineSegmentsLayoutUpdate) => void;
 
 export class WallEngine {
     private bus: BusClient;
@@ -255,6 +263,21 @@ export class WallEngine {
                     }
                     offset += 30;
                 }
+            }
+
+            if (opcode === LINE_SEGMENTS_UPDATE_OPCODE) {
+                const update = decodeLineSegmentsUpdate(event.data);
+                if (!update) return;
+
+                this.layoutCallbacks.forEach((cb) =>
+                    cb({
+                        type: 'line_segments_update',
+                        numericId: update.numericId,
+                        line: update.line,
+                        segments: update.segments
+                    })
+                );
+                return;
             }
             return;
         }

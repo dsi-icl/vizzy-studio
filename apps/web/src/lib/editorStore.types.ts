@@ -25,6 +25,8 @@ export interface EditorState {
     shapeFill: string;
     shapeStroke: string;
     editingTextLayerId: number | null;
+    isErasing: boolean;
+    eraserWidth: number;
 
     // ── Wall binding ──
     boundWallId: string | null;
@@ -94,6 +96,9 @@ export interface EditorState {
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;
     stopTextEditing: () => void;
+    toggleErasing: () => void;
+    setEraserWidth: (width: number) => void;
+    eraseSelectedLineLayer: (eraserPath: number[]) => void;
 }
 
 /** Helpers threaded from editorStore.ts into each slice factory. */

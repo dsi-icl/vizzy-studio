@@ -80,10 +80,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
 
     // Tool toggle state
-    const { showGrid, isDrawing, isSnapping } = useEditorStore(
+    const { showGrid, isDrawing, isErasing, isSnapping } = useEditorStore(
         useShallow((s) => ({
             showGrid: s.showGrid,
             isDrawing: s.isDrawing,
+            isErasing: s.isErasing,
             isSnapping: s.isSnapping
         }))
     );
@@ -104,14 +105,16 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     });
 
     // Actions — stable references, never trigger re-renders
-    const { toggleSnapping, toggleDrawing, toggleGrid, startTextEditing } = useEditorStore(
-        useShallow((s) => ({
-            toggleSnapping: s.toggleSnapping,
-            toggleDrawing: s.toggleDrawing,
-            toggleGrid: s.toggleGrid,
-            startTextEditing: s.startTextEditing
-        }))
-    );
+    const { toggleSnapping, toggleDrawing, toggleErasing, toggleGrid, startTextEditing } =
+        useEditorStore(
+            useShallow((s) => ({
+                toggleSnapping: s.toggleSnapping,
+                toggleDrawing: s.toggleDrawing,
+                toggleErasing: s.toggleErasing,
+                toggleGrid: s.toggleGrid,
+                startTextEditing: s.startTextEditing
+            }))
+        );
     const {
         addTextLayer,
         addMapLayer,
@@ -247,6 +250,13 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         variant={isDrawing ? 'outline' : 'ghost'}
                     >
                         <PencilSimpleIcon />
+                    </TipButton>
+                    <TipButton
+                        tip="Eraser"
+                        onClick={toggleErasing}
+                        variant={isErasing ? 'outline' : 'ghost'}
+                    >
+                        <EraserIcon />
                     </TipButton>
                 </div>
 
@@ -437,7 +447,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                 )}
 
                 {/* ── Line / Shape / Drawing ── */}
-                {(isDrawing || isLine || isShape) && (
+                {(isDrawing || isErasing || isLine || isShape) && (
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <AppearanceToolbar />
