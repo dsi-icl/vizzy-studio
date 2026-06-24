@@ -1,7 +1,11 @@
 import '@tanstack/react-start/server-only';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+
 import type { AuthContext, AuditResourceType, CommitDocument } from '@repo/db/documents';
 import type { Collaborator, CollaboratorRole, ProjectVisibility } from '@repo/db/schema';
 
+import { CONTROLLER_DIR } from '~/lib/serverVariables';
 import type { AuditExecutionContextInput } from '~/server/audit';
 
 interface CreateProjectInput {
@@ -101,14 +105,37 @@ export async function listProjects(userEmail: string, includeArchived = false) {
     return projects;
 }
 
+async function resolveCustomControlUrl(
+    projectId: string,
+    explicit: string | null | undefined
+): Promise<string | undefined> {
+    if (explicit) return explicit;
+    try {
+        await access(join(CONTROLLER_DIR, projectId, 'controller.html'));
+        return `/api/portal/v1/controllers/${projectId}`;
+    } catch {
+        return undefined;
+    }
+}
+
 export async function listPublishedProjects() {
     const projectDocs = await dbCol.projects.find(
         { deletedAt: { $exists: false } },
         { sort: { updatedAt: -1 } }
     );
 
-    const visibleProjects = projectDocs.filter(
-        (project) => project.visibility === 'public' && Boolean(project.publishedCommitId)
+    const visibleProjects = await Promise.all(
+        projectDocs
+            .filter(
+                (project) => project.visibility === 'public' && Boolean(project.publishedCommitId)
+            )
+            .map(async (project) => ({
+                ...project,
+                customControlUrl: await resolveCustomControlUrl(
+                    project.id,
+                    project.customControlUrl
+                )
+            }))
     );
 
     const heroFilenames = Array.from(
