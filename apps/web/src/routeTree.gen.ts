@@ -69,6 +69,7 @@ import { Route as AuthQuarryProjectsProjectIdController_editorRouteImport } from
 import { Route as AuthQuarryProjectsProjectIdCommitsRouteImport } from './routes/_auth/quarry/projects/$projectId/commits'
 import { Route as AuthQuarryProjectsProjectIdAssetsRouteImport } from './routes/_auth/quarry/projects/$projectId/assets'
 import { Route as AuthQuarryEditorProjectIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$slideId'
+import { Route as ApiTilesLayerZXYRouteImport } from './routes/api/tiles/$layer/$z/$x/$y'
 import { Route as AuthQuarryEditorProjectIdCommitIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$commitId/$slideId'
 
 const WebPlaceholderRoute = WebPlaceholderRouteImport.update({
@@ -380,6 +381,11 @@ const AuthQuarryEditorProjectIdSlideIdRoute =
     path: '/$projectId/$slideId',
     getParentRoute: () => AuthQuarryEditorRouteRoute,
   } as any)
+const ApiTilesLayerZXYRoute = ApiTilesLayerZXYRouteImport.update({
+  id: '/api/tiles/$layer/$z/$x/$y',
+  path: '/api/tiles/$layer/$z/$x/$y',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthQuarryEditorProjectIdCommitIdSlideIdRoute =
   AuthQuarryEditorProjectIdCommitIdSlideIdRouteImport.update({
     id: '/$projectId/$commitId/$slideId',
@@ -447,6 +453,7 @@ export interface FileRoutesByFullPath {
   '/quarry/editor/$projectId/': typeof AuthQuarryEditorProjectIdIndexRoute
   '/quarry/projects/$projectId/': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
+  '/api/tiles/$layer/$z/$x/$y': typeof ApiTilesLayerZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -505,6 +512,7 @@ export interface FileRoutesByTo {
   '/quarry/editor/$projectId': typeof AuthQuarryEditorProjectIdIndexRoute
   '/quarry/projects/$projectId': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
+  '/api/tiles/$layer/$z/$x/$y': typeof ApiTilesLayerZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -569,6 +577,7 @@ export interface FileRoutesById {
   '/_auth/quarry/editor/$projectId/': typeof AuthQuarryEditorProjectIdIndexRoute
   '/_auth/quarry/projects/$projectId/': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/_auth/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
+  '/api/tiles/$layer/$z/$x/$y': typeof ApiTilesLayerZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -632,6 +641,7 @@ export interface FileRouteTypes {
     | '/quarry/editor/$projectId/'
     | '/quarry/projects/$projectId/'
     | '/quarry/editor/$projectId/$commitId/$slideId'
+    | '/api/tiles/$layer/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -690,6 +700,7 @@ export interface FileRouteTypes {
     | '/quarry/editor/$projectId'
     | '/quarry/projects/$projectId'
     | '/quarry/editor/$projectId/$commitId/$slideId'
+    | '/api/tiles/$layer/$z/$x/$y'
   id:
     | '__root__'
     | '/'
@@ -753,6 +764,7 @@ export interface FileRouteTypes {
     | '/_auth/quarry/editor/$projectId/'
     | '/_auth/quarry/projects/$projectId/'
     | '/_auth/quarry/editor/$projectId/$commitId/$slideId'
+    | '/api/tiles/$layer/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -788,6 +800,7 @@ export interface RootRouteChildren {
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
   ApiPortalV1SlidesRoute: typeof ApiPortalV1SlidesRoute
   ApiPortalV1ControllersProjectIdRoute: typeof ApiPortalV1ControllersProjectIdRoute
+  ApiTilesLayerZXYRoute: typeof ApiTilesLayerZXYRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1212,6 +1225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthQuarryEditorProjectIdSlideIdRouteImport
       parentRoute: typeof AuthQuarryEditorRouteRoute
     }
+    '/api/tiles/$layer/$z/$x/$y': {
+      id: '/api/tiles/$layer/$z/$x/$y'
+      path: '/api/tiles/$layer/$z/$x/$y'
+      fullPath: '/api/tiles/$layer/$z/$x/$y'
+      preLoaderRoute: typeof ApiTilesLayerZXYRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_auth/quarry/editor/$projectId/$commitId/$slideId': {
       id: '/_auth/quarry/editor/$projectId/$commitId/$slideId'
       path: '/$projectId/$commitId/$slideId'
@@ -1397,6 +1417,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
   ApiPortalV1SlidesRoute: ApiPortalV1SlidesRoute,
   ApiPortalV1ControllersProjectIdRoute: ApiPortalV1ControllersProjectIdRoute,
+  ApiTilesLayerZXYRoute: ApiTilesLayerZXYRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -14,6 +14,8 @@ const RawEnvSchema = z.object({
     SERVER_DATABASE_URL: z.string().min(1).optional(),
     SERVER_AUTH_SECRET: z.string().min(1).optional(),
     SERVER_CONFIG_ENCRYPTION_KEY: z.string().min(1).optional(),
+    MARTIN_BASE_URL: z.string().optional(),
+    MARTIN_TILE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
     ALLOWED_HOSTS: z.string().optional(),
     TRUSTED_ORIGINS: z.string().optional(),
@@ -70,6 +72,8 @@ export const env = {
     SERVER_DATABASE_URL: raw.SERVER_DATABASE_URL ?? '',
     SERVER_AUTH_SECRET: raw.SERVER_AUTH_SECRET ?? '',
     SERVER_CONFIG_ENCRYPTION_KEY: raw.SERVER_CONFIG_ENCRYPTION_KEY ?? '',
+    MARTIN_BASE_URL: raw.MARTIN_BASE_URL ?? '',
+    MARTIN_TILE_TIMEOUT_MS: raw.MARTIN_TILE_TIMEOUT_MS ?? 8000,
 
     ALLOWED_HOSTS: raw.ALLOWED_HOSTS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',
     TRUSTED_ORIGINS: raw.TRUSTED_ORIGINS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',

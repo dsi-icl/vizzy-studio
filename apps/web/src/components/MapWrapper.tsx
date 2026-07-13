@@ -1,93 +1,170 @@
 'use client';
 
-import { useRef, type FC, type HTMLAttributes, type RefAttributes } from 'react';
-import Map, { type MapRef } from 'react-map-gl/maplibre';
+import { MVTLayer, TileLayer } from '@deck.gl/geo-layers';
+import { BitmapLayer } from '@deck.gl/layers';
+import DeckGL from '@deck.gl/react';
+import type { Feature, Geometry } from 'geojson';
+import { useMemo, type FC, type HTMLAttributes, type RefAttributes } from 'react';
 
+import { getMapTileSource } from '~/lib/mapTileSources';
 import { setRefs } from '~/lib/setRefs';
 import type { Layer } from '~/lib/types';
 
+type MapLayer = Extract<Layer, { type: 'map' }>;
+type TileFeature = Feature<Geometry, Record<string, unknown>>;
+
+function getFeatureProperty(feature: TileFeature, keys: string[]): string {
+    for (const key of keys) {
+        const value = feature.properties?.[key];
+        if (typeof value === 'string' && value.trim().length > 0) return value;
+    }
+    return '';
+}
+
+function getFeatureClass(feature: TileFeature): string {
+    return getFeatureProperty(feature, [
+        'class',
+        'kind',
+        'type',
+        'layer',
+        'layerName',
+        'sourceLayer'
+    ]).toLowerCase();
+}
+
+function getFillColor(feature: TileFeature): [number, number, number, number] {
+    const geometryType = feature.geometry?.type ?? '';
+    if (geometryType.includes('Point')) return [245, 210, 110, 220];
+
+    const featureClass = getFeatureClass(feature);
+    if (featureClass.includes('water')) return [64, 120, 160, 190];
+    if (featureClass.includes('park') || featureClass.includes('wood')) return [78, 125, 88, 150];
+    if (featureClass.includes('building')) return [180, 176, 164, 160];
+    if (featureClass.includes('landuse')) return [118, 128, 104, 90];
+    return [46, 52, 58, 80];
+}
+
+function getLineColor(feature: TileFeature): [number, number, number, number] {
+    const featureClass = getFeatureClass(feature);
+    if (featureClass.includes('motorway') || featureClass.includes('trunk')) {
+        return [235, 176, 96, 230];
+    }
+    if (featureClass.includes('primary') || featureClass.includes('secondary')) {
+        return [226, 214, 182, 220];
+    }
+    if (featureClass.includes('rail')) return [160, 160, 168, 170];
+    if (featureClass.includes('water')) return [75, 145, 190, 200];
+    return [190, 190, 184, 170];
+}
+
+function getLineWidth(feature: TileFeature): number {
+    const featureClass = getFeatureClass(feature);
+    if (featureClass.includes('motorway') || featureClass.includes('trunk')) return 2.4;
+    if (featureClass.includes('primary')) return 1.8;
+    if (featureClass.includes('secondary')) return 1.4;
+    if (featureClass.includes('rail')) return 1.1;
+    return 0.8;
+}
+
+function getLabel(feature: TileFeature): string {
+    const geometryType = feature.geometry?.type ?? '';
+    if (!geometryType.includes('Point')) return '';
+    return getFeatureProperty(feature, ['name', 'name_en', 'name:en']);
+}
+
+function isTileImage(data: unknown): boolean {
+    return (
+        data instanceof HTMLImageElement ||
+        data instanceof ImageBitmap ||
+        data instanceof ImageData ||
+        data instanceof HTMLCanvasElement
+    );
+}
+
 export const MapWrapper: FC<
-    { layer: Extract<Layer, { type: 'map' }> } & RefAttributes<HTMLDivElement> &
-        Partial<HTMLAttributes<HTMLDivElement>>
-> = ({ ref, layer, ...props }) => {
-    const mapRef = useRef<MapRef>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
+    { layer: MapLayer } & RefAttributes<HTMLDivElement> & Partial<HTMLAttributes<HTMLDivElement>>
+> = ({ ref, layer, style, ...props }) => {
+    const tileSource = getMapTileSource(layer);
+    const layers = useMemo(() => {
+        if (tileSource.kind === 'raster') {
+            return [
+                new TileLayer({
+                    id: `map-raster-${layer.numericId}`,
+                    data: tileSource.tileUrl,
+                    minZoom: 0,
+                    maxZoom: tileSource.dataMaxZoom,
+                    refinementStrategy: 'best-available',
+                    renderSubLayers: (subLayerProps) => {
+                        if (!isTileImage(subLayerProps.data)) return null;
+                        const [[west, south], [east, north]] = subLayerProps.tile.boundingBox;
+                        return new BitmapLayer(subLayerProps, {
+                            id: `${subLayerProps.id}-bitmap`,
+                            image: subLayerProps.data,
+                            bounds: [west, south, east, north]
+                        });
+                    }
+                })
+            ];
+        }
 
-    // useEffect(() => {
-    //     if (!containerRef.current) return;
-
-    //     const observer = new MutationObserver((mutations) => {
-    //         mutations.forEach(
-    //             throttle(
-    //                 (mutation) => {
-    //                     if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
-    //                         const { style } = mutation.target as HTMLDivElement;
-    //                         const { current } = mapRef;
-    //                         if (!current) return;
-    //                         // current.getContainer().style.transform = style.transform;
-    //                         const canvas = current.getCanvas();
-    //                         const scale = parseFloat(
-    //                             style.transform?.match(/scale\((-?\d*\.?\d+)\)/)?.[1] ?? '0'
-    //                         );
-    //                         canvas.width = parseInt(style.width?.toString() ?? '0') * scale;
-    //                         canvas.height = parseInt(style.height?.toString() ?? '0') * scale;
-    //                         // current.resize();
-    //                         // current.redraw();
-    //                     }
-    //                 },
-    //                 { wait: 200 }
-    //             )
-    //         );
-    //     });
-
-    //     observer.observe(containerRef.current, { attributes: true });
-    //     return () => {
-    //         observer.disconnect();
-    //     };
-    //     // const handleResize = () => {
-    //     //     const { current } = mapRef;
-    //     //     if (!current) return;
-    //     //     current.resize();
-    //     // };
-    //     // current.addEventListener('resize', handleResize);
-    //     // return () => {
-    //     //     current.removeEventListener('resize', handleResize);
-    //     // };
-    // }, []);
-
-    // useEffect(() => {
-    //     const { current } = mapRef;
-    //     if (!current) return;
-    //     const canvas = current.getCanvas();
-    //     if (props.style) {
-    //         canvas.width =
-    //             parseInt(props.style.width?.toString() ?? '0') *
-    //             parseInt(props.style.scale?.toString() ?? '0');
-    //         canvas.height =
-    //             parseInt(props.style.height?.toString() ?? '0') *
-    //             parseInt(props.style.scale?.toString() ?? '0');
-    //         current.redraw();
-    //     }
-    // }, [props.style?.width, props.style?.height, props.style?.scale]);
+        return [
+            new MVTLayer<Record<string, unknown>>({
+                id: `map-vector-${layer.numericId}`,
+                data: tileSource.tileUrl,
+                minZoom: 0,
+                maxZoom: tileSource.dataMaxZoom,
+                binary: false,
+                pickable: false,
+                stroked: true,
+                filled: true,
+                pointType: 'circle+text',
+                getFillColor,
+                getLineColor,
+                getLineWidth,
+                lineWidthUnits: 'pixels',
+                getPointRadius: 4,
+                pointRadiusUnits: 'pixels',
+                getText: getLabel,
+                getTextColor: [245, 245, 238, 210],
+                getTextSize: 12,
+                textSizeUnits: 'pixels',
+                textFontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                textCharacterSet: 'auto',
+                refinementStrategy: 'best-available',
+                loadOptions: {
+                    mvt: {
+                        coordinates: 'wgs84',
+                        ...(tileSource.sourceLayers ? { layers: tileSource.sourceLayers } : {})
+                    }
+                }
+            })
+        ];
+    }, [layer.numericId, tileSource]);
 
     return (
         <div
-            ref={(node) => {
-                containerRef.current = node;
-                setRefs(node, ref);
-            }}
+            ref={(node) => setRefs(node, ref)}
             {...props}
+            style={{
+                ...style,
+                background: '#111317',
+                overflow: 'hidden'
+            }}
         >
-            <Map
-                ref={mapRef}
-                id={`map_in_${layer.numericId}`}
-                initialViewState={layer.view}
-                interactive={false}
-                workerCount={5}
-                reuseMaps={true}
-                attributionControl={false}
-                trackResize={true}
-                mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+            <DeckGL
+                layers={layers}
+                viewState={{
+                    longitude: layer.view.longitude,
+                    latitude: layer.view.latitude,
+                    zoom: layer.view.zoom,
+                    pitch: layer.view.pitch,
+                    bearing: layer.view.bearing
+                }}
+                controller={false}
+                width="100%"
+                height="100%"
+                style={{ position: 'absolute', inset: '0px' }}
             />
         </div>
     );
