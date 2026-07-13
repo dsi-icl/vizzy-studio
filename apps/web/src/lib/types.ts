@@ -144,7 +144,16 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
                 zoom: z.number(),
                 bearing: z.number(),
                 pitch: z.number()
-            })
+            }),
+            tile: z
+                .object({
+                    kind: z.enum(['vector', 'raster']).default('vector'),
+                    tileUrl: z.string().min(1),
+                    dataMaxZoom: z.number().int().nonnegative(),
+                    viewMaxZoom: z.number().int().nonnegative().optional(),
+                    sourceLayers: z.array(z.string()).optional()
+                })
+                .optional()
         })
         .extend(LayerBaseSchema.shape),
     z

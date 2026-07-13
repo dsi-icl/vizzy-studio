@@ -7,8 +7,7 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { preserveImageDeepZoom } from './mediaUtils';
-import { getLineBounds } from './stageGeometry';
+import { DEFAULT_MAP_TILE_SOURCE } from './mapTileSources';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import { migrateLegacyLayers, type Layer, type LayerWithEditorState } from './types';
 
@@ -531,12 +530,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     visible: true
                 },
                 view: {
-                    latitude: 37.7751,
-                    longitude: -122.4193,
-                    zoom: 11,
+                    latitude: 38.788894,
+                    longitude: -75.9375,
+                    zoom: 4,
                     bearing: 0,
                     pitch: 0
-                }
+                },
+                tile: { ...DEFAULT_MAP_TILE_SOURCE }
             };
 
             set((s) => {
