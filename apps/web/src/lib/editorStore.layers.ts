@@ -383,9 +383,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     visible: true
                 },
                 view: {
-                    latitude: 38.788894,
-                    longitude: -75.9375,
-                    zoom: 4,
+                    latitude: 51.4904999,
+                    longitude: -0.017,
+                    zoom: 14,
                     bearing: 0,
                     pitch: 0
                 },

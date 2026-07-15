@@ -890,6 +890,27 @@ export function EditorSlate() {
             }
         }
 
+        if (layer.type === 'map') {
+            const mirroredConfig: Layer['config'] = {
+                ...layer.config,
+                cx: Math.round(node.x()),
+                cy: Math.round(node.y()),
+                width: Math.max(MIN_LAYER_DIMENSION, Math.round(node.width())),
+                height: Math.max(MIN_LAYER_DIMENSION, Math.round(node.height())),
+                scaleX: Math.round(node.scaleX() * 1000) / 1000,
+                scaleY: Math.round(node.scaleY() * 1000) / 1000,
+                rotation: Math.round(node.rotation())
+            };
+            layer.config = mirroredConfig;
+            useEditorStore.setState((s) => {
+                const current = s.layers.get(numericId);
+                if (!current || current.type !== 'map') return s;
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, { ...current, config: mirroredConfig });
+                return { layers: newLayers };
+            });
+        }
+
         engine?.broadcastBinaryMove(
             numericId,
             Math.round(node.x()),
@@ -1253,11 +1274,13 @@ export function EditorSlate() {
 
     const stagePixelWidth = COLS * SCREEN_W * stageScaleFactor;
     const stagePixelHeight = ROWS * SCREEN_H * stageScaleFactor;
-    const visibleMapLayers = foregroundLayers.filter(
-        (layer): layer is EditorMapLayer =>
-            layer.type === 'map' &&
-            (layer.config.visible || selectedLayerIdSet.has(layer.numericId.toString()))
-    );
+    const visibleMapLayers = foregroundLayers
+        .filter(
+            (layer): layer is EditorMapLayer =>
+                layer.type === 'map' &&
+                (layer.config.visible || selectedLayerIdSet.has(layer.numericId.toString()))
+        )
+        .sort((a, b) => a.numericId - b.numericId);
 
     return (
         <>
