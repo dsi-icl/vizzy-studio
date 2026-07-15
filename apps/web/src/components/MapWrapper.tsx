@@ -84,7 +84,7 @@ function isTileImage(data: unknown): boolean {
 export const MapWrapper: FC<
     { layer: MapLayer } & RefAttributes<HTMLDivElement> & Partial<HTMLAttributes<HTMLDivElement>>
 > = ({ ref, layer, style, ...props }) => {
-    const tileSource = getMapTileSource(layer);
+    const tileSource = useMemo(() => getMapTileSource(layer), [layer]);
     const layers = useMemo(() => {
         if (tileSource.kind === 'raster') {
             return [
