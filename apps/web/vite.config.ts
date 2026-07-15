@@ -33,11 +33,6 @@ export default defineConfig(({ mode }) => {
                 external: ['playwright', 'playwright-core', 'chromium-bidi']
             }
         },
-        optimizeDeps: {
-            // Keep server/native-only deps out of the client dependency optimizer.
-            // Vite 8/Rolldown can otherwise try to parse conditional exports or .node binaries.
-            exclude: ['@lexical/headless', 'fsevents']
-        },
         resolve: {
             tsconfigPaths: true
         },

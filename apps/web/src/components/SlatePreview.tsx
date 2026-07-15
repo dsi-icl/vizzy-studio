@@ -4,7 +4,6 @@ import { useState, RefObject, useEffect } from 'react';
 import { Circle, KonvaNodeEvents, Layer, Line, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
-import { MapLayerOverlay } from '~/components/MapLayerOverlay';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
@@ -48,16 +47,6 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
     const logicalStageHeight = stageHeight / safeStageScaleFactor;
     const logicalCanvasWidth = canvasWidth / safeStageScaleFactor;
     const logicalCanvasHeight = canvasHeight / safeStageScaleFactor;
-    const previewWidth = logicalStageWidth * previewScale;
-    const previewHeight = logicalStageHeight * previewScale;
-    const visibleLayers = Array.from(layers.values())
-        .sort((a, b) => a.config.zIndex - b.config.zIndex)
-        .filter((shape) => shape.config.visible);
-    const backgroundLayers = visibleLayers.filter((shape) => shape.type === 'background');
-    const mapLayers = visibleLayers.filter((shape) => shape.type === 'map');
-    const foregroundPreviewLayers = visibleLayers.filter(
-        (shape) => shape.type !== 'background' && shape.type !== 'map'
-    );
 
     const handleHorizontalDragMove: KonvaNodeEvents['onDragMove'] = (e) => {
         const x = e.target.x();
@@ -81,73 +70,33 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
 
     return (
         <div className="lineheig m-0 line-clamp-1 block overscroll-none p-0 text-center">
-            <div
-                className="relative m-auto block w-fit cursor-pointer bg-[#222]"
-                style={{ width: previewWidth, height: previewHeight }}
+            <Stage
+                width={logicalStageWidth * previewScale}
+                height={logicalStageHeight * previewScale}
+                scaleX={previewScale}
+                scaleY={previewScale}
+                onWheel={handlePreviewWheel}
+                onClick={(e) => {
+                    let x =
+                        (e.target.getStage()?.getPointerPosition()?.x ?? 0) / previewScale -
+                        logicalCanvasWidth / 2;
+                    if (x < 0) x = 0;
+                    if (x > logicalStageWidth - logicalCanvasWidth)
+                        x = logicalStageWidth - logicalCanvasWidth;
+                    setScrollLeft(x * safeStageScaleFactor);
+                    const slot = stageSlot.current;
+                    if (slot) {
+                        // oxlint-disable-next-line react-hooks-js/immutability
+                        slot.scrollLeft = x * safeStageScaleFactor;
+                    }
+                }}
+                className="m-auto block w-fit cursor-pointer bg-[#222]"
             >
-                <Stage
-                    width={previewWidth}
-                    height={previewHeight}
-                    scaleX={previewScale}
-                    scaleY={previewScale}
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        pointerEvents: 'none',
-                        zIndex: 0
-                    }}
-                >
-                    <Layer>
-                        {backgroundLayers.map((shape) => (
-                            <KonvaBackgroundLayer
-                                key={`bg_${shape.numericId}`}
-                                layer={shape}
-                                previewScale={1}
-                            />
-                        ))}
-                    </Layer>
-                </Stage>
-                <div
-                    aria-hidden="true"
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        pointerEvents: 'none',
-                        zIndex: 1
-                    }}
-                >
-                    {mapLayers.map((shape) => (
-                        <MapLayerOverlay
-                            key={`map_preview_${shape.numericId}`}
-                            layer={shape}
-                            stageScaleFactor={previewScale}
-                        />
-                    ))}
-                </div>
-                <Stage
-                    width={previewWidth}
-                    height={previewHeight}
-                    scaleX={previewScale}
-                    scaleY={previewScale}
-                    onWheel={handlePreviewWheel}
-                    onClick={(e) => {
-                        let x =
-                            (e.target.getStage()?.getPointerPosition()?.x ?? 0) / previewScale -
-                            logicalCanvasWidth / 2;
-                        if (x < 0) x = 0;
-                        if (x > logicalStageWidth - logicalCanvasWidth)
-                            x = logicalStageWidth - logicalCanvasWidth;
-                        setScrollLeft(x * safeStageScaleFactor);
-                        const slot = stageSlot.current;
-                        if (slot) {
-                            // oxlint-disable-next-line react-hooks-js/immutability
-                            slot.scrollLeft = x * safeStageScaleFactor;
-                        }
-                    }}
-                    style={{ position: 'absolute', inset: 0, zIndex: 2 }}
-                >
-                    <Layer>
-                        {foregroundPreviewLayers.map((shape) => {
+                <Layer>
+                    {Array.from(layers.values())
+                        .sort((a, b) => a.config.zIndex - b.config.zIndex)
+                        .filter((shape) => shape.config.visible)
+                        .map((shape) => {
                             if (shape.type === 'line')
                                 return (
                                     <Line
@@ -203,6 +152,15 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                                         />
                                     );
                             }
+                            if (shape.type === 'background') {
+                                return (
+                                    <KonvaBackgroundLayer
+                                        key={`bg_${shape.numericId}`}
+                                        layer={shape}
+                                        previewScale={1}
+                                    />
+                                );
+                            }
                             if (
                                 shape.type === 'image' ||
                                 shape.type === 'video' ||
@@ -240,19 +198,18 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                                 />
                             );
                         })}
-                        <Rect
-                            x={scrollLeft / safeStageScaleFactor}
-                            y={0}
-                            width={logicalCanvasWidth}
-                            height={logicalCanvasHeight}
-                            fill="rgba(255, 255, 255, 0.2)"
-                            draggable
-                            onDragMove={handleHorizontalDragMove}
-                        />
-                        {showGrid && getDOGridLines(logicalStageWidth, logicalStageHeight)}
-                    </Layer>
-                </Stage>
-            </div>
+                    <Rect
+                        x={scrollLeft / safeStageScaleFactor}
+                        y={0}
+                        width={logicalCanvasWidth}
+                        height={logicalCanvasHeight}
+                        fill="rgba(255, 255, 255, 0.2)"
+                        draggable
+                        onDragMove={handleHorizontalDragMove}
+                    />
+                    {showGrid && getDOGridLines(logicalStageWidth, logicalStageHeight)}
+                </Layer>
+            </Stage>
         </div>
     );
 }

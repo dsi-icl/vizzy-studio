@@ -87,10 +87,9 @@ const LayerSchema = z.discriminatedUnion('type', [
             }),
             tile: z
                 .object({
-                    kind: z.enum(['vector', 'raster']).default('vector'),
+                    kind: z.literal('vector').default('vector'),
                     tileUrl: z.string().min(1),
                     dataMaxZoom: z.number().int().nonnegative(),
-                    viewMaxZoom: z.number().int().nonnegative().optional(),
                     sourceLayers: z.array(z.string()).optional()
                 })
                 .optional()

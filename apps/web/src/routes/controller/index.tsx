@@ -15,7 +15,6 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { ControllerToolbar } from '~/components/ControllerToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
-import { MapLayerOverlay } from '~/components/MapLayerOverlay';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
@@ -511,22 +510,12 @@ function Controller() {
         () => sortedLayers.filter((layer) => layer.type !== 'background'),
         [sortedLayers]
     );
-    const visibleMapLayers = useMemo(
-        () =>
-            foregroundLayers.filter(
-                (layer): layer is Extract<LayerWithEditorState, { type: 'map' }> =>
-                    layer.type === 'map' && layer.config.visible
-            ),
-        [foregroundLayers]
-    );
     const sortedSlides = useMemo(() => [...slides].sort((a, b) => a.order - b.order), [slides]);
     const videoLayers = useMemo(
         () => activeLayers.filter((l) => l.type === 'video'),
         [activeLayers]
     );
     const canDraw = Boolean(engine && binding.bound && activeSlideId);
-    const stagePixelWidth = COLS * SCREEN_W * stageScaleFactor;
-    const stagePixelHeight = ROWS * SCREEN_H * stageScaleFactor;
 
     const handleSlideSelect = useCallback(
         (slideId: string) => {
@@ -929,211 +918,176 @@ function Controller() {
                                     ref={stageSlot}
                                     className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-black"
                                 >
-                                    <div
-                                        style={{
-                                            position: 'relative',
-                                            width: stagePixelWidth,
-                                            height: stagePixelHeight
-                                        }}
+                                    <Stage
+                                        ref={stageInstance}
+                                        width={COLS * SCREEN_W * stageScaleFactor}
+                                        height={ROWS * SCREEN_H * stageScaleFactor}
+                                        onMouseDown={handleDrawStart}
+                                        onMouseMove={handleDrawMove}
+                                        onMouseUp={handleDrawEnd}
+                                        onMouseLeave={handleDrawEnd}
+                                        onWheel={handleStageWheel}
+                                        onTouchStart={handleTouchStart}
+                                        onTouchMove={handleTouchMove}
+                                        onTouchEnd={handleTouchEnd}
+                                        scaleX={stageScaleFactor}
+                                        scaleY={stageScaleFactor}
                                     >
-                                        <Stage
-                                            width={stagePixelWidth}
-                                            height={stagePixelHeight}
-                                            scaleX={stageScaleFactor}
-                                            scaleY={stageScaleFactor}
-                                            style={{
-                                                position: 'absolute',
-                                                inset: 0,
-                                                pointerEvents: 'none',
-                                                zIndex: 0
-                                            }}
-                                        >
-                                            <KonvaLayer>
-                                                {backgroundLayer ? (
-                                                    <KonvaBackgroundLayer
-                                                        key={`bg_${backgroundLayer.numericId}`}
-                                                        layer={backgroundLayer}
-                                                        previewScale={1}
-                                                    />
-                                                ) : null}
-                                            </KonvaLayer>
-                                        </Stage>
-                                        <div
-                                            aria-hidden="true"
-                                            style={{
-                                                position: 'absolute',
-                                                inset: 0,
-                                                pointerEvents: 'none',
-                                                zIndex: 1
-                                            }}
-                                        >
-                                            {visibleMapLayers.map((layer) => (
-                                                <MapLayerOverlay
-                                                    key={`map_overlay_${layer.numericId}`}
-                                                    layer={layer}
-                                                    stageScaleFactor={stageScaleFactor}
+                                        <KonvaLayer>
+                                            {backgroundLayer ? (
+                                                <KonvaBackgroundLayer
+                                                    key={`bg_${backgroundLayer.numericId}`}
+                                                    layer={backgroundLayer}
+                                                    previewScale={1}
                                                 />
-                                            ))}
-                                        </div>
-                                        <Stage
-                                            ref={stageInstance}
-                                            width={stagePixelWidth}
-                                            height={stagePixelHeight}
-                                            onMouseDown={handleDrawStart}
-                                            onMouseMove={handleDrawMove}
-                                            onMouseUp={handleDrawEnd}
-                                            onMouseLeave={handleDrawEnd}
-                                            onWheel={handleStageWheel}
-                                            onTouchStart={handleTouchStart}
-                                            onTouchMove={handleTouchMove}
-                                            onTouchEnd={handleTouchEnd}
-                                            scaleX={stageScaleFactor}
-                                            scaleY={stageScaleFactor}
-                                            style={{
-                                                position: 'absolute',
-                                                inset: 0,
-                                                zIndex: 2
-                                            }}
-                                        >
-                                            <KonvaLayer>
-                                                {foregroundLayers
-                                                    .filter(
-                                                        (layer) =>
-                                                            layer.config.visible &&
-                                                            layer.type !== 'map'
-                                                    )
-                                                    .map((layer) => {
-                                                        if (layer.type === 'image') {
+                                            ) : null}
+                                            {foregroundLayers
+                                                .filter((layer) => layer.config.visible)
+                                                .map((layer) => {
+                                                    if (layer.type === 'image') {
+                                                        return (
+                                                            <ReadOnlyMediaLayer
+                                                                key={`img_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'video') {
+                                                        return (
+                                                            <ReadOnlyMediaLayer
+                                                                key={`vid_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'web') {
+                                                        return (
+                                                            <ReadOnlyMediaLayer
+                                                                key={`web_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'text') {
+                                                        return (
+                                                            <ReadOnlyTextLayer
+                                                                key={`txt_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'shape') {
+                                                        const common = {
+                                                            x: layer.config.cx,
+                                                            y: layer.config.cy,
+                                                            rotation: layer.config.rotation,
+                                                            scaleX: layer.config.scaleX,
+                                                            scaleY: layer.config.scaleY,
+                                                            fill: layer.fill,
+                                                            stroke: layer.strokeColor,
+                                                            strokeWidth: layer.strokeWidth,
+                                                            lineCap: 'round' as const,
+                                                            lineJoin: 'round' as const,
+                                                            listening: false as const
+                                                        };
+                                                        if (layer.shape === 'rectangle') {
                                                             return (
-                                                                <ReadOnlyMediaLayer
-                                                                    key={`img_${layer.numericId}`}
-                                                                    layer={layer}
-                                                                />
-                                                            );
-                                                        }
-                                                        if (layer.type === 'video') {
-                                                            return (
-                                                                <ReadOnlyMediaLayer
-                                                                    key={`vid_${layer.numericId}`}
-                                                                    layer={layer}
-                                                                />
-                                                            );
-                                                        }
-                                                        if (layer.type === 'web') {
-                                                            return (
-                                                                <ReadOnlyMediaLayer
-                                                                    key={`web_${layer.numericId}`}
-                                                                    layer={layer}
-                                                                />
-                                                            );
-                                                        }
-                                                        if (layer.type === 'text') {
-                                                            return (
-                                                                <ReadOnlyTextLayer
-                                                                    key={`txt_${layer.numericId}`}
-                                                                    layer={layer}
-                                                                />
-                                                            );
-                                                        }
-                                                        if (layer.type === 'shape') {
-                                                            const common = {
-                                                                x: layer.config.cx,
-                                                                y: layer.config.cy,
-                                                                rotation: layer.config.rotation,
-                                                                scaleX: layer.config.scaleX,
-                                                                scaleY: layer.config.scaleY,
-                                                                fill: layer.fill,
-                                                                stroke: layer.strokeColor,
-                                                                strokeWidth: layer.strokeWidth,
-                                                                lineCap: 'round' as const,
-                                                                lineJoin: 'round' as const,
-                                                                listening: false as const
-                                                            };
-                                                            if (layer.shape === 'rectangle') {
-                                                                return (
-                                                                    <Rect
-                                                                        key={`shape_${layer.numericId}`}
-                                                                        {...common}
-                                                                        width={layer.config.width}
-                                                                        height={layer.config.height}
-                                                                        offsetX={
-                                                                            layer.config.width / 2
-                                                                        }
-                                                                        offsetY={
-                                                                            layer.config.height / 2
-                                                                        }
-                                                                        dash={layer.strokeDash}
-                                                                    />
-                                                                );
-                                                            }
-                                                            if (layer.shape === 'circle') {
-                                                                return (
-                                                                    <Circle
-                                                                        key={`shape_${layer.numericId}`}
-                                                                        {...common}
-                                                                        offsetX={
-                                                                            layer.config.width / 2
-                                                                        }
-                                                                        offsetY={
-                                                                            layer.config.height / 2
-                                                                        }
-                                                                        radius={
-                                                                            layer.config.width / 2
-                                                                        }
-                                                                        dash={layer.strokeDash}
-                                                                    />
-                                                                );
-                                                            }
-                                                        }
-                                                        if (layer.type === 'line') {
-                                                            return (
-                                                                <Line
-                                                                    key={`lin_${layer.numericId}`}
-                                                                    points={layer.line}
-                                                                    stroke={layer.strokeColor}
-                                                                    strokeWidth={layer.strokeWidth}
+                                                                <Rect
+                                                                    key={`shape_${layer.numericId}`}
+                                                                    {...common}
+                                                                    width={layer.config.width}
+                                                                    height={layer.config.height}
+                                                                    offsetX={layer.config.width / 2}
+                                                                    offsetY={
+                                                                        layer.config.height / 2
+                                                                    }
                                                                     dash={layer.strokeDash}
-                                                                    dashEnabled={true}
-                                                                    tension={0.4}
-                                                                    lineCap="round"
-                                                                    lineJoin="round"
-                                                                    listening={false}
                                                                 />
                                                             );
                                                         }
-                                                        // Fallback placeholder
+                                                        if (layer.shape === 'circle') {
+                                                            return (
+                                                                <Circle
+                                                                    key={`shape_${layer.numericId}`}
+                                                                    {...common}
+                                                                    offsetX={layer.config.width / 2}
+                                                                    offsetY={
+                                                                        layer.config.height / 2
+                                                                    }
+                                                                    radius={layer.config.width / 2}
+                                                                    dash={layer.strokeDash}
+                                                                />
+                                                            );
+                                                        }
+                                                    }
+                                                    if (layer.type === 'line') {
+                                                        return (
+                                                            <Line
+                                                                key={`lin_${layer.numericId}`}
+                                                                points={layer.line}
+                                                                stroke={layer.strokeColor}
+                                                                strokeWidth={layer.strokeWidth}
+                                                                dash={layer.strokeDash}
+                                                                dashEnabled={true}
+                                                                tension={0.4}
+                                                                lineCap="round"
+                                                                lineJoin="round"
+                                                                listening={false}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'map') {
                                                         return (
                                                             <Rect
-                                                                key={`fallback_${layer.numericId}`}
+                                                                key={`map_${layer.numericId}`}
                                                                 x={layer.config.cx}
                                                                 y={layer.config.cy}
                                                                 width={layer.config.width}
                                                                 height={layer.config.height}
+                                                                scaleX={layer.config.scaleX}
+                                                                scaleY={layer.config.scaleY}
                                                                 offsetX={layer.config.width / 2}
                                                                 offsetY={layer.config.height / 2}
                                                                 rotation={layer.config.rotation}
-                                                                fill="#555"
+                                                                fill="#1f2937"
+                                                                stroke="#334155"
+                                                                strokeWidth={2}
                                                                 listening={false}
                                                             />
                                                         );
-                                                    })}
-                                                {currentLine.length > 3 && (
-                                                    <Line
-                                                        key="new-line"
-                                                        points={currentLine}
-                                                        stroke={strokeColor}
-                                                        strokeWidth={strokeWidth}
-                                                        dash={strokeDash}
-                                                        dashEnabled={true}
-                                                        tension={0.5}
-                                                        lineCap="round"
-                                                        lineJoin="round"
-                                                        listening={false}
-                                                    />
-                                                )}
-                                            </KonvaLayer>
-                                        </Stage>
-                                    </div>
+                                                    }
+                                                    // Fallback placeholder
+                                                    return (
+                                                        <Rect
+                                                            key={`fallback_${layer.numericId}`}
+                                                            x={layer.config.cx}
+                                                            y={layer.config.cy}
+                                                            width={layer.config.width}
+                                                            height={layer.config.height}
+                                                            offsetX={layer.config.width / 2}
+                                                            offsetY={layer.config.height / 2}
+                                                            rotation={layer.config.rotation}
+                                                            fill="#555"
+                                                            listening={false}
+                                                        />
+                                                    );
+                                                })}
+                                            {currentLine.length > 3 && (
+                                                <Line
+                                                    key="new-line"
+                                                    points={currentLine}
+                                                    stroke={strokeColor}
+                                                    strokeWidth={strokeWidth}
+                                                    dash={strokeDash}
+                                                    dashEnabled={true}
+                                                    tension={0.5}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                    listening={false}
+                                                />
+                                            )}
+                                        </KonvaLayer>
+                                    </Stage>
                                 </div>
                                 {pendingSlideId && (
                                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm">
