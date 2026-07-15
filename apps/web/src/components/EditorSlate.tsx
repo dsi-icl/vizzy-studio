@@ -992,6 +992,7 @@ export function EditorSlate() {
         }
 
         if (layer.type === 'map') {
+            // MapWrapper is DOM, so drag/resize needs React state updates while Konva moves.
             const mirroredConfig: Layer['config'] = {
                 ...layer.config,
                 cx: Math.round(node.x()),
@@ -1614,6 +1615,7 @@ export function EditorSlate() {
                 layer.type === 'map' &&
                 (layer.config.visible || selectedLayerIdSet.has(layer.numericId.toString()))
         )
+        // Keep DeckGL instances mounted while zIndex/order changes; CSS zIndex still controls stacking.
         .sort((a, b) => a.numericId - b.numericId);
 
     return (
@@ -1644,6 +1646,7 @@ export function EditorSlate() {
                             height: stagePixelHeight
                         }}
                     >
+                        {/* DeckGL maps render in DOM, so keep them between Konva background and hitboxes. */}
                         <Stage
                             width={stagePixelWidth}
                             height={stagePixelHeight}
