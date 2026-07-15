@@ -481,7 +481,9 @@ function HomePage() {
                 tags.add(t);
             }
         }
-        return Array.from(tags).sort((a, b) => a.localeCompare(b));
+        return Array.from(tags).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+        );
     }, [projectsData]);
 
     const visibleBuckets = useMemo(
@@ -625,38 +627,55 @@ function HomePage() {
                     className="w-full shrink-0 md:flex md:min-h-0 md:w-1/5 md:flex-col"
                 >
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
-                    <Button
-                        variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
-                        onClick={handleClearAll}
-                        className="mb-2 justify-start"
-                    >
-                        All ({projectsData.length})
-                    </Button>
-                    {visibleBuckets.length > 0 && (
-                        <div className="mb-2 flex flex-wrap gap-1">
-                            {visibleBuckets.map((bucket) => (
-                                <Button
-                                    key={bucket.key}
-                                    variant={activeBucket === bucket.key ? 'secondary' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => handleBucketClick(bucket.key)}
-                                >
-                                    {bucket.key}
-                                </Button>
-                            ))}
-                        </div>
-                    )}
-                    <div className="flex flex-wrap gap-2 md:min-h-0 md:flex-1 md:flex-col md:flex-nowrap md:overflow-y-auto md:pr-2">
-                        {visibleTags.map((tag) => (
+                    <div className="flex flex-wrap gap-1">
+                        <Button
+                            variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
+                            size="sm"
+                            onClick={handleClearAll}
+                        >
+                            All ({projectsData.length})
+                        </Button>
+                        {visibleBuckets.map((bucket) => (
                             <Button
-                                key={tag}
-                                variant={activeTag === tag ? 'secondary' : 'ghost'}
-                                onClick={() => setActiveTag(tag)}
-                                className="justify-start"
+                                key={bucket.key}
+                                variant={activeBucket === bucket.key ? 'secondary' : 'ghost'}
+                                size="sm"
+                                onClick={() => handleBucketClick(bucket.key)}
                             >
-                                {tag}
+                                {bucket.key}
                             </Button>
                         ))}
+                    </div>
+                    <div className="relative md:min-h-0 md:flex-1">
+                        <div className="gallery-gradient pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-3 bg-linear-to-b from-background to-transparent md:block" />
+                        <div className="scrollbar-none flex flex-wrap gap-2 md:h-full md:flex-col md:flex-nowrap md:overflow-y-auto md:py-3 md:pr-2">
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {visibleTags.map((tag) => (
+                                    <motion.div
+                                        key={tag}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        transition={{
+                                            type: 'spring',
+                                            duration: 0.3,
+                                            bounce: 0.2
+                                        }}
+                                        className="w-auto md:w-full"
+                                    >
+                                        <Button
+                                            variant={activeTag === tag ? 'secondary' : 'ghost'}
+                                            onClick={() => setActiveTag(tag)}
+                                            className="w-full justify-start capitalize"
+                                        >
+                                            {tag}
+                                        </Button>
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                        <div className="gallery-gradient pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden h-4 bg-linear-to-t from-background to-transparent md:block" />
                     </div>
                 </aside>
                 <main className="relative min-h-0 w-full flex-1 md:w-4/5">
