@@ -37,7 +37,7 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/permissi
         };
     },
     head: ({ loaderData }) => ({
-        meta: [{ title: `Permissions · ${loaderData?.projectName ?? 'Project'} · GemmaShop` }]
+        meta: [{ title: `Permissions · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     }),
     component: PermissionsTab
 });

@@ -55,9 +55,15 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
         return next();
     }
 
+    const requestUrl = new URL(request.url);
+    // Proxied third-party HTML should not inherit the app's CSP policy.
+    // The proxy route applies its own controls (allowlist, timeout, size caps, authz).
+    if (requestUrl.pathname.startsWith('/api/proxy')) {
+        return next();
+    }
+
     const isDev = import.meta.env.DEV;
     const nonce = crypto.randomBytes(16).toString('base64');
-    const requestUrl = new URL(request.url);
     const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
     const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
     const host = forwardedHost || requestUrl.host;

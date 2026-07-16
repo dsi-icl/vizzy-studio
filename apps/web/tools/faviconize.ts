@@ -49,7 +49,7 @@ const faviconSettings: DeepPartial<FaviconSettings> = {
                 backgroundRadius: 0,
                 imageScale: 0.6
             },
-            appTitle: 'GemmaShop'
+            appTitle: 'Vizzy Studio'
         },
         webAppManifest: {
             transformation: {
@@ -60,8 +60,8 @@ const faviconSettings: DeepPartial<FaviconSettings> = {
             },
             backgroundColor: '#ffffff',
             themeColor: '#ffffff',
-            name: 'GemmaShop Blackboard',
-            shortName: 'GemmaShop'
+            name: 'Vizzy Studio Blackboard',
+            shortName: 'Vizzy Studio'
         }
     },
     path: '/'

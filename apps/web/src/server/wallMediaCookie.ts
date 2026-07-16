@@ -6,7 +6,7 @@ import { env } from '@repo/env';
 import { dbCol } from '~/server/collections';
 import type { AuthContext } from '~/server/requestAuthContext';
 
-export const WALL_MEDIA_COOKIE_NAME = 'gemma_wall_media';
+export const WALL_MEDIA_COOKIE_NAME = 'vizzy_wall_media';
 export const WALL_MEDIA_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
 
 type WallMediaCookiePayload = {
@@ -84,7 +84,7 @@ function serializeCookie(input: {
     return [
         `${input.name}=${input.value}`,
         `Max-Age=${input.maxAgeSeconds}`,
-        'Path=/api/assets',
+        'Path=/api',
         'HttpOnly',
         'SameSite=Lax',
         ...(input.secure ? ['Secure'] : [])

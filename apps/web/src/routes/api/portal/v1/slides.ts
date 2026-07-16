@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { scopedState, wallBindings } from '~/lib/busState';
 import { getCorsHeaders, getBearerToken, json } from '~/lib/portalHttp';
 import { pruneExpiredPortalTokens, validatePortalToken } from '~/lib/portalTokens';
-import { logAuditDenied } from '~/server/audit';
+import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getSlidesMetadata } from '~/server/bus/bus.binding';
 
 export const Route = createFileRoute('/api/portal/v1/slides')({
@@ -49,6 +49,16 @@ export const Route = createFileRoute('/api/portal/v1/slides')({
 
                 const currentScopeId = wallBindings.get(validated.wallId);
                 if (currentScopeId === undefined || currentScopeId !== validated.scopeId) {
+                    await logAuditFailure({
+                        action: 'PORTAL_SLIDES_FAILED',
+                        resourceType: 'portal_token',
+                        reasonCode: 'TOKEN_SCOPE_MISMATCH',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'GET /api/portal/v1/slides',
+                            request
+                        }
+                    });
                     return json(request, 409, {
                         error: 'Wall is no longer bound to the token scope'
                     });
@@ -56,10 +66,36 @@ export const Route = createFileRoute('/api/portal/v1/slides')({
 
                 const scope = scopedState.get(validated.scopeId);
                 if (!scope) {
+                    await logAuditFailure({
+                        action: 'PORTAL_SLIDES_FAILED',
+                        resourceType: 'scope',
+                        resourceId: String(validated.scopeId),
+                        reasonCode: 'SCOPE_NOT_FOUND',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'GET /api/portal/v1/slides',
+                            request
+                        }
+                    });
                     return json(request, 409, { error: 'Scope no longer exists' });
                 }
 
                 const slidesMetadata = await getSlidesMetadata(scope.commitId);
+                await logAuditSuccess({
+                    action: 'PORTAL_SLIDES_READ',
+                    resourceType: 'commit',
+                    resourceId: scope.commitId,
+                    executionContext: {
+                        surface: 'http',
+                        operation: 'GET /api/portal/v1/slides',
+                        request
+                    },
+                    changes: {
+                        wallId: validated.wallId,
+                        projectId: scope.projectId,
+                        count: slidesMetadata.length
+                    }
+                });
 
                 return json(request, 200, {
                     ok: true,

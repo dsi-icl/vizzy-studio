@@ -33,6 +33,7 @@ export interface AuditLogInput {
     reasonCode?: string | null;
     changes?: { [key: string]: JsonValue } | null;
     error?: string | null;
+    statusMessage?: string | null;
     authContext?: AuthContext | null;
     executionContext?: AuditExecutionContextInput | null;
 }
@@ -190,10 +191,24 @@ export function buildAuditContext(input: {
 
 export async function logAudit(input: AuditLogInput): Promise<void> {
     try {
+        const statusMessage = cleanString(input.statusMessage);
+        const executionContextWithStatusMessage: AuditExecutionContextInput | null | undefined =
+            statusMessage
+                ? {
+                      ...(input.executionContext ?? {}),
+                      details: {
+                          ...((input.executionContext?.details ?? {}) as {
+                              [key: string]: JsonValue;
+                          }),
+                          statusMessage
+                      }
+                  }
+                : input.executionContext;
+
         const normalized = buildAuditContext({
             actorId: input.actorId ?? null,
             authContext: input.authContext ?? null,
-            executionContext: input.executionContext ?? null
+            executionContext: executionContextWithStatusMessage ?? null
         });
         await dbCol.audits.insertLog({
             projectId: input.projectId ?? null,

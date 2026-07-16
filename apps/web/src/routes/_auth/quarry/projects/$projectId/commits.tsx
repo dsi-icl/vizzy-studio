@@ -138,7 +138,7 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/commits'
     },
     component: CommitsTab,
     head: ({ loaderData }) => ({
-        meta: [{ title: `Commits · ${loaderData?.projectName ?? 'Project'} · GemmaShop` }]
+        meta: [{ title: `Commits · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     })
 });
 

@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This document gives a high-level map of the Gemma Shop runtime, boundaries, and entry points.
+This document gives a high-level map of the Vizzy Studio runtime, boundaries, and entry points.
 
 For transport and state-flow detail, see [BUS_PIPING.md](./BUS_PIPING.md).
 
 ## System At A Glance
 
-Gemma Shop is a collaborative slide platform with four realtime roles:
+Vizzy Studio is a collaborative slide platform with four realtime roles:
 
 - `editor`: authoring and stage editing
 - `wall`: rendering node endpoint

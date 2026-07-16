@@ -58,7 +58,7 @@ export const $requestBootstrapSetupCodeDisplay = createServerFn({ method: 'POST'
 );
 
 export const $verifyBootstrapSetupCode = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             code: z.string().min(1)
         })
@@ -88,7 +88,7 @@ export const $verifyBootstrapSetupCode = createServerFn({ method: 'POST' })
     });
 
 export const $submitBootstrapAdminAndSmtp = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             adminEmail: z.email(),
             smtp: z.object({
@@ -135,7 +135,7 @@ export const $submitBootstrapAdminAndSmtp = createServerFn({ method: 'POST' })
     });
 
 export const $verifyBootstrapOtpAndFinalize = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             otp: z.string().min(1)
         })

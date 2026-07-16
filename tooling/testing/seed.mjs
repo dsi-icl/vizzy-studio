@@ -7,7 +7,7 @@ const DEFAULT_WEB_PORT = process.env.WEB_HOST_PORT ?? '3870';
 const DEFAULT_BASE_URL = `http://localhost:${DEFAULT_WEB_PORT}`;
 const DEFAULT_DB_URL =
     process.env.SERVER_DATABASE_URL ??
-    'mongodb://localhost:37017/gemmashop?replicaSet=rs0&directConnection=true';
+    'mongodb://localhost:37017/vizzy?replicaSet=rs0&directConnection=true';
 
 function ensureEnvDefaults() {
     process.env.NODE_ENV = process.env.NODE_ENV || 'test';

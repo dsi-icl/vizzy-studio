@@ -40,7 +40,7 @@ function resolveDeviceSalt(): string {
 }
 
 function storageKey(kind: DeviceKind) {
-    return `gemma_device_identity_${kind}_${resolveDeviceSalt()}`;
+    return `vizzy_device_identity_${kind}_${resolveDeviceSalt()}`;
 }
 
 interface StoredIdentity {

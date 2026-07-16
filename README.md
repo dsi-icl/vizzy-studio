@@ -1,8 +1,8 @@
-# Gemma Shop
+# Vizzy Studio
 
 Collaborative, multi-tenant presentation system for large video walls.
 
-Gemma Shop lets multiple users edit decks in real time and publish synchronized output to distributed wall nodes. The platform is optimized for low-latency editing, fast wall playback, and commit-based versioning.
+Vizzy Studio lets multiple users edit decks in real time and publish synchronized output to distributed wall nodes. The platform is optimized for low-latency editing, fast wall playback, and commit-based versioning.
 
 ## Architecture Docs
 
@@ -87,17 +87,18 @@ For full flow maps (bind/unbind, hydrate, scope internals, YJS bridge path), see
 
 ### Portal API (Controller Tokens)
 
-- Gallery now issues short-lived controller API tokens (`gem_ctrl_*`) when opening a controller session.
-- Token is injected into controller URL as `_gem_t=<token>`.
+- Gallery now issues short-lived controller API tokens (`viz_ctrl_*`) when opening a controller session.
+- Token is injected into controller URL as `_viz_t=<token>`.
 - Tokens are bound to the current wall + bus scope and are revoked automatically when:
     - wall is rebound,
     - wall is unbound,
     - or scope is garbage-collected.
 - Current proof-of-concept endpoint:
     - `POST /api/portal/v1/reboot`
-    - Auth via `Authorization: Bearer <token>` (query fallback `_gem_t` is also accepted).
+    - Auth via `Authorization: Bearer <token>` (query fallback `_viz_t` is also accepted).
     - Optional node targeting using `{ c, r }` in JSON body for wall node coordinates.
 - CORS is enabled for `/api/portal/v1/reboot` to support external custom controllers on other domains.
+- Compatibility with older `_gem_t=<token>` is conserved
 
 ### 2) Editor State (`apps/web/src/lib/editorStore.ts`)
 

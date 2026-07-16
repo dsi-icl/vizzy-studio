@@ -50,7 +50,7 @@ export type AssetLibraryAsset = {
     previewUrl?: string;
 };
 
-const ASSET_DRAG_MIME = 'application/x-gemma-asset';
+const ASSET_DRAG_MIME = 'application/x-vizzy-asset';
 
 export function getAssetDragMimeType() {
     return ASSET_DRAG_MIME;

@@ -24,7 +24,7 @@ export const Route = createFileRoute('/_guest/login')({
         }
     },
     head: () => ({
-        meta: [{ title: 'Login · GemmaShop' }]
+        meta: [{ title: 'Login · Vizzy Studio' }]
     }),
     component: LoginForm
 });
@@ -229,9 +229,9 @@ function EmailView({ onSubmit }: { onSubmit: (email: string) => void }) {
                             <div className="flex h-12 w-12 items-center justify-center rounded-md">
                                 <DiscoBallIcon className="size-12" />
                             </div>
-                            <span className="sr-only">GemmaShop</span>
+                            <span className="sr-only">Vizzy Studio</span>
                         </Link>
-                        <h1 className="text-xl font-bold">Welcome to GemmaShop</h1>
+                        <h1 className="text-xl font-bold">Welcome to Vizzy Studio</h1>
                         <p className="text-sm text-muted-foreground">Enter your email to sign in</p>
                     </div>
                     <div className="flex flex-col gap-4">

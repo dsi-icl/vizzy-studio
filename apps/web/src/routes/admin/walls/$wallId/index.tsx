@@ -27,7 +27,7 @@ export const Route = createFileRoute('/admin/walls/$wallId/')({
         };
     },
     head: ({ loaderData }) => ({
-        meta: [{ title: `Wall Info · ${loaderData?.wallName ?? 'Wall'} · Admin · GemmaShop` }]
+        meta: [{ title: `Wall Info · ${loaderData?.wallName ?? 'Wall'} · Admin · Vizzy Studio` }]
     }),
     component: WallInfoTab
 });

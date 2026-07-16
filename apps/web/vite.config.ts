@@ -51,8 +51,8 @@ export default defineConfig(({ mode }) => {
         plugins: [
             isHttps
                 ? mkcert({
-                      keyFileName: 'gemma-shop-dev-key.pem',
-                      certFileName: 'gemma-shop-dev-cert.pem'
+                      keyFileName: 'vizzy-studio-dev-key.pem',
+                      certFileName: 'vizzy-studio-dev-cert.pem'
                   })
                 : undefined,
             ttfPlugin(),

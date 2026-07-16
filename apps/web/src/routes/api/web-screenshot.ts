@@ -8,7 +8,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 import { computeBlurhash, generateVariants } from '~/lib/serverAssetUtils';
 import { ASSET_DIR } from '~/lib/serverVariables';
-import { logAuditDenied } from '~/server/audit';
+import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { canEditProject } from '~/server/projectAuthz';
 import {
@@ -168,6 +168,18 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 try {
                     body = await request.json();
                 } catch {
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'INVALID_JSON_BODY',
+                        actorId: userEmail,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
                         status: 400,
                         headers: { 'Content-Type': 'application/json' }
@@ -177,6 +189,19 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 const { url, projectId, width, height, scale = 1 } = body;
 
                 if (!url || !projectId || !width || !height) {
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'MISSING_REQUIRED_FIELDS',
+                        actorId: userEmail,
+                        projectId: projectId || null,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     return new Response(
                         JSON.stringify({ error: 'projectId, url, width, and height are required' }),
                         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -215,12 +240,38 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     width > 8192 ||
                     height > 8192
                 ) {
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'INVALID_DIMENSIONS',
+                        actorId: userEmail,
+                        projectId,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     return new Response(JSON.stringify({ error: 'Invalid viewport dimensions' }), {
                         status: 400,
                         headers: { 'Content-Type': 'application/json' }
                     });
                 }
                 if (!Number.isFinite(scale) || scale <= 0 || scale > 4) {
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'INVALID_SCALE',
+                        actorId: userEmail,
+                        projectId,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     return new Response(JSON.stringify({ error: 'Invalid scale' }), {
                         status: 400,
                         headers: { 'Content-Type': 'application/json' }
@@ -230,6 +281,20 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 try {
                     await assertScreenshotTargetSafe(url);
                 } catch (error: any) {
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'BLOCKED_TARGET',
+                        statusMessage: error?.message ?? 'Blocked target',
+                        actorId: userEmail,
+                        projectId,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     return new Response(
                         JSON.stringify({ error: error?.message ?? 'Blocked target' }),
                         {
@@ -294,6 +359,24 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         name: `web-screenshot:${url}`,
                         createdBy: userEmail
                     });
+                    await logAuditSuccess({
+                        action: 'WEB_SCREENSHOT_CREATED',
+                        actorId: userEmail,
+                        projectId,
+                        resourceType: 'asset',
+                        resourceId: baseId,
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        },
+                        changes: {
+                            filename,
+                            width: viewportWidth,
+                            height: viewportHeight
+                        }
+                    });
 
                     return new Response(JSON.stringify({ filename, baseId, blurhash, sizes }), {
                         status: 200,
@@ -303,6 +386,20 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     console.error('[WebScreenshot] Failed:', err);
                     if (browser) await browser.close().catch(() => {});
                     const message = String(err?.message ?? 'Screenshot capture failed');
+                    await logAuditFailure({
+                        action: 'WEB_SCREENSHOT_FAILED',
+                        reasonCode: 'CAPTURE_ERROR',
+                        statusMessage: message,
+                        actorId: userEmail,
+                        projectId,
+                        resourceType: 'asset',
+                        authContext,
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/web-screenshot',
+                            request
+                        }
+                    });
                     const notReady =
                         message.includes('Executable does not exist') ||
                         message.includes('browserType.launch') ||

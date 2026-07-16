@@ -7,7 +7,7 @@ import { setResponseHeader } from '@tanstack/react-start/server';
 import { type CspDirectives, modifyCsp, serializeCsp } from '~/lib/csp';
 import { getCorsHeaders, json } from '~/lib/portalHttp';
 import { CONTROLLER_DIR } from '~/lib/serverVariables';
-import { logAuditDenied } from '~/server/audit';
+import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
 
 export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
@@ -56,6 +56,17 @@ export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
                         'utf8'
                     );
                 } catch {
+                    await logAuditFailure({
+                        action: 'CUSTOM_CONTROLLER_HTML_FAILED',
+                        resourceType: 'project',
+                        resourceId: projectId,
+                        reasonCode: 'CONTROLLER_HTML_NOT_FOUND',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'GET /api/portal/v1/controllers/$projectId',
+                            request
+                        }
+                    });
                     return json(request, 404, { error: 'No controller HTML found' });
                 }
 
@@ -68,6 +79,16 @@ export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
                     });
                     setResponseHeader(context.cspHeaderName, serializeCsp(directives));
                 }
+                await logAuditSuccess({
+                    action: 'CUSTOM_CONTROLLER_HTML_READ',
+                    resourceType: 'project',
+                    resourceId: projectId,
+                    executionContext: {
+                        surface: 'http',
+                        operation: 'GET /api/portal/v1/controllers/$projectId',
+                        request
+                    }
+                });
 
                 return new Response(html, {
                     status: 200,

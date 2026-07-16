@@ -4,6 +4,7 @@ import {
     GitBranchIcon,
     SlideshowIcon
 } from '@phosphor-icons/react';
+import { authSessionQueryOptions } from '@repo/auth/tanstack/queries';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
 import {
@@ -12,7 +13,7 @@ import {
     ResizablePanelGroup
 } from '@repo/ui/components/resizable';
 import { Separator } from '@repo/ui/components/separator';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
@@ -46,12 +47,13 @@ export const Route = createFileRoute('/_auth/quarry/view/$projectId/$commitId')(
     },
     component: CommitViewer,
     head: ({ loaderData }) => ({
-        meta: [{ title: `Commit Viewer · ${loaderData?.projectName ?? 'Project'} · GemmaShop` }]
+        meta: [{ title: `Commit Viewer · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     })
 });
 
 function CommitViewer() {
     const { projectId, commitId } = Route.useParams();
+    const { data: sessionData } = useQuery(authSessionQueryOptions());
     const { data: commit } = useSuspenseQuery(commitQueryOptions(commitId));
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
     const navigate = useNavigate();
@@ -60,6 +62,11 @@ function CommitViewer() {
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
     const [branching, setBranching] = useState(false);
+    const impersonatedBy =
+        sessionData?.session && typeof sessionData.session === 'object'
+            ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
+            : null;
+    const isImpersonating = typeof impersonatedBy === 'string' && impersonatedBy.length > 0;
 
     const slides = useMemo(() => commit.content?.slides ?? [], [commit]);
 
@@ -166,7 +173,9 @@ function CommitViewer() {
     };
 
     return (
-        <div className="container flex h-full max-h-full min-h-0 min-w-full flex-col overflow-hidden pt-18 pb-13">
+        <div
+            className={`container flex h-full max-h-full min-h-0 min-w-full flex-col overflow-hidden pb-13 ${isImpersonating ? 'pt-28' : 'pt-18'}`}
+        >
             <ResizablePanelGroup
                 orientation="horizontal"
                 className="h-full min-h-0 w-full overflow-hidden font-sans text-foreground"

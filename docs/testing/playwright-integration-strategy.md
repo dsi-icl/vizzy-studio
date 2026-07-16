@@ -92,7 +92,7 @@ Keep Playwright artifacts (`trace`, `video`, `screenshot`) only on failure for P
 
 ## 5) Data and Isolation
 
-- Use one Mongo database name per run (`gemmashop_ci_<run_id>`).
+- Use one Mongo database name per run (`vizzy_ci_<run_id>`).
 - Prefix project names/ids by run id.
 - Cleanup in `afterAll` and with a fallback TTL cleanup job.
 

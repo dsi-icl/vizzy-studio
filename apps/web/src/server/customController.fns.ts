@@ -10,7 +10,7 @@ import { logAuditDenied } from '~/server/audit';
 import { getProject } from '~/server/projects';
 
 export const $getCustomControllerHtml = createServerFn({ method: 'GET' })
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string()
         })
@@ -45,7 +45,7 @@ export const $getCustomControllerHtml = createServerFn({ method: 'GET' })
 
 export const $upsertCustomControllerHtml = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string(),
             html: z.string()

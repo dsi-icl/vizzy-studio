@@ -413,7 +413,12 @@ export default function TextEditorToolbar() {
                 <HighlighterIcon size={32} style={{ color: bgColor }} weight="fill" />
             </ColorPickerPopover>
             <Separator orientation="vertical" className="mx-1 my-1 h-6" />
-            <div className="flex min-w-56 items-center gap-2 px-1">
+            <div
+                className="flex min-w-56 items-center gap-2 px-1"
+                onPointerDownCapture={() => {
+                    editor.focus();
+                }}
+            >
                 <span className="text-xs text-muted-foreground">Size</span>
                 <input
                     type="number"
@@ -421,21 +426,10 @@ export default function TextEditorToolbar() {
                     max={FONT_SIZE_MAX}
                     value={fontSizeMixed ? '' : fontSizeInput}
                     placeholder={fontSizeMixed ? 'Mixed' : undefined}
-                    className="h-7 w-18 rounded border border-border bg-background px-2 text-xs"
-                    onChange={(e) => {
-                        setFontSizeMixed(false);
-                        setFontSizeInput(e.target.value);
-                    }}
-                    onBlur={() => {
-                        const parsed = Number.parseFloat(fontSizeInput);
-                        if (Number.isFinite(parsed)) applyFontSizePx(parsed);
-                        else setFontSizeInput(String(fontSizePx));
-                    }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            const parsed = Number.parseFloat(fontSizeInput);
-                            if (Number.isFinite(parsed)) applyFontSizePx(parsed);
-                        }
+                    disabled
+                    className="pointer-events-none h-7 w-18 rounded border border-border bg-background px-2 text-xs select-none"
+                    onPointerDownCapture={() => {
+                        editor.focus();
                     }}
                     aria-label="Font Size (virtual px)"
                 />

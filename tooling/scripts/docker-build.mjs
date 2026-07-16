@@ -29,9 +29,9 @@ const source =
     tryRun('git', ['remote', 'get-url', 'origin']).replace(
         /^git@github\.com:/,
         'https://github.com/'
-    ) || 'https://github.com/dsi-icl/gemma-shop';
+    ) || 'https://github.com/dsi-icl/vizzy-studio';
 
-const image = process.env.IMAGE_NAME || 'gemma-shop:local';
+const image = process.env.IMAGE_NAME || 'vizzy-studio:local';
 const buildSourceMaps = process.env.BUILD_SOURCEMAPS || 'false';
 const keepSourceMaps = process.env.KEEP_SOURCE_MAPS || buildSourceMaps;
 const extraArgs = process.argv.slice(2);

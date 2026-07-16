@@ -30,7 +30,7 @@ const TEMP_BOUND_SLIDE_ID = '__bound-current__';
 
 export const Route = createFileRoute('/controller/')({
     head: () => ({
-        meta: [{ title: 'Controller · GemmaShop' }]
+        meta: [{ title: 'Controller · Vizzy Studio' }]
     }),
     component: Controller
 });
@@ -135,7 +135,7 @@ function Controller() {
         return {
             wallId: params.get('w')?.trim(),
             mountLocation: params.get('l')?.trim(),
-            portalToken: params.get('_gem_t')?.trim()
+            portalToken: params.get('_gem_t')?.trim() ?? params.get('_viz_t')?.trim()
         };
     }, [searchStr]);
 
@@ -831,7 +831,7 @@ function Controller() {
                         : 'pt-18 pb-13'
                 )}
             >
-                <h2 className="text-xl font-semibold">Gemma Controller Unavailable</h2>
+                <h2 className="text-xl font-semibold">Vizzy Controller Unavailable</h2>
                 <p className="max-w-md text-muted-foreground">
                     This wall is currently in a live editing session. The gallery controller is
                     disabled while live control is active.
@@ -849,7 +849,7 @@ function Controller() {
                         : 'pt-18 pb-13'
                 )}
             >
-                <h2 className="text-xl font-semibold">Gemma Controller Unavailable</h2>
+                <h2 className="text-xl font-semibold">Vizzy Controller Unavailable</h2>
                 <p className="max-w-md text-muted-foreground">
                     This project uses a custom render URL and cannot be controlled with the built-in
                     controller. Set your custom control URL in the project settings.

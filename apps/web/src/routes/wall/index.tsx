@@ -34,7 +34,7 @@ type HydrateStagePayload = {
 
 export const Route = createFileRoute('/wall/')({
     head: () => ({
-        meta: [{ title: 'Wall Display · GemmaShop' }]
+        meta: [{ title: 'Wall Display · Vizzy Studio' }]
     }),
     component: WallApp
 });
@@ -474,7 +474,7 @@ function WallApp() {
         let cancelled = false;
         for (const url of urlsToCheck) {
             signedFetch(
-                `/proxy?check=1&url=${encodeURIComponent(url)}`,
+                `/api/proxy?check=1&url=${encodeURIComponent(url)}`,
                 undefined,
                 wallId ? { deviceKind: 'wall', wallId } : undefined
             )
@@ -623,7 +623,7 @@ function WallApp() {
                         ? (frameability.fallback ?? '/web-nonet?l=wall')
                         : null;
                 const iframeSrc = shouldProxy
-                    ? `/proxy?url=${encodeURIComponent(normalizedUrl)}`
+                    ? `/api/proxy?url=${encodeURIComponent(normalizedUrl)}`
                     : hasUsableUrl && frameability === null
                       ? '/web-placeholder?l=wall'
                       : hasUsableUrl && frameability?.ok === true
@@ -784,7 +784,7 @@ function WallApp() {
         }
         const finalSrc =
             customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
-                ? `/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
+                ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
                 : iframeSrc.toString();
         const worldWidth = SCREEN_W * COLS;
         const worldHeight = SCREEN_H * ROWS;
@@ -793,6 +793,7 @@ function WallApp() {
                 key={`custom-render:${iframeGateCycle}`}
                 title="Custom Render Wall"
                 src={finalSrc}
+                sandbox="allow-scripts allow-same-origin"
                 style={{
                     position: 'absolute',
                     top: customRenderCompat ? `${-myViewport.y}px` : 0,
@@ -835,6 +836,7 @@ function WallApp() {
                     layer={backgroundLayer}
                     col={myViewport.x / SCREEN_W}
                     row={myViewport.y / SCREEN_H}
+                    getNow={engine ? () => engine.getServerTime() : Date.now}
                 />
             )}
             {stageContent}

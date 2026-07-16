@@ -139,7 +139,7 @@ async function sendOtpWithSmtp(input: { smtp: BootstrapSmtpInput; to: string; ot
     await transport.sendMail({
         from: input.smtp.from,
         to: normalizeEmail(input.to),
-        subject: 'Gemma Shop Bootstrap Verification Code',
+        subject: 'Vizzy Studio Bootstrap Verification Code',
         html
     });
 }

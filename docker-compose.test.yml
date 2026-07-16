@@ -1,11 +1,11 @@
-name: gemma-shop-test
+name: vizzy-studio-test
 
 services:
     mongo:
-        image: mongo:8.0.4
+        image: mongo:8-noble
         command: ['mongod', '--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
         networks:
-            - gemma_network
+            - vizzy_network
         ports:
             - '${MONGO_HOST_PORT:-37017}:27017'
         volumes:
@@ -21,13 +21,13 @@ services:
             retries: 20
 
     mongo-init:
-        image: mongo:8.0.4
+        image: mongo:8-noble
         depends_on:
             mongo:
                 condition: service_healthy
         restart: 'no'
         networks:
-            - gemma_network
+            - vizzy_network
         entrypoint:
             - sh
             - -lc
@@ -63,12 +63,12 @@ services:
             mongo-init:
                 condition: service_completed_successfully
         networks:
-            - gemma_network
+            - vizzy_network
         environment:
             NODE_ENV: production
             PORT: 3000
             VITE_BASE_URL: http://localhost:${WEB_HOST_PORT:-3870}
-            SERVER_DATABASE_URL: mongodb://mongo:27017/gemmashop?replicaSet=rs0&directConnection=true
+            SERVER_DATABASE_URL: mongodb://mongo:27017/vizzy?replicaSet=rs0&directConnection=true
             SERVER_AUTH_SECRET: 00000000000000000000000000000000
             SERVER_CONFIG_ENCRYPTION_KEY: local-dev-encryption-key
             ALLOWED_HOSTS: http://localhost:${WEB_HOST_PORT:-3870}
@@ -85,7 +85,7 @@ services:
             retries: 30
 
 networks:
-    gemma_network:
+    vizzy_network:
         driver: bridge
         driver_opts:
             com.docker.network.driver.mtu: '1450'

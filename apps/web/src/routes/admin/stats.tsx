@@ -11,7 +11,7 @@ export const Route = createFileRoute('/admin/stats')({
     },
     component: AdminStats,
     head: () => ({
-        meta: [{ title: 'Stats · Admin · GemmaShop' }]
+        meta: [{ title: 'Stats · Admin · Vizzy Studio' }]
     })
 });
 

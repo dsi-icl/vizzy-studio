@@ -37,7 +37,8 @@ function readBearerToken(request: Request): string | null {
         return token.length > 0 ? token : null;
     }
     const url = new URL(request.url);
-    const queryToken = url.searchParams.get('_gem_t')?.trim();
+    const queryToken =
+        url.searchParams.get('_viz_t')?.trim() ?? url.searchParams.get('_viz_t')?.trim();
     return queryToken && queryToken.length > 0 ? queryToken : null;
 }
 

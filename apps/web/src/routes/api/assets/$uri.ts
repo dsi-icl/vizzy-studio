@@ -25,6 +25,7 @@ async function logAssetDenied(input: {
     projectId?: string | null;
     resourceId?: string | null;
     details?: Record<string, JsonValue>;
+    statusMessage?: string;
 }) {
     await logAuditDenied({
         action: 'ASSET_READ_DENIED',
@@ -32,6 +33,7 @@ async function logAssetDenied(input: {
         resourceType: 'asset',
         resourceId: input.resourceId ?? null,
         reasonCode: input.reasonCode,
+        statusMessage: input.statusMessage,
         authContext: input.authContext,
         ...(input.details ? { changes: input.details } : {}),
         executionContext: {
@@ -49,6 +51,7 @@ async function logAssetNotFound(input: {
     projectId?: string | null;
     resourceId?: string | null;
     details?: Record<string, JsonValue>;
+    statusMessage?: string;
 }) {
     await logAuditFailure({
         action: 'ASSET_READ_NOT_FOUND',
@@ -56,6 +59,7 @@ async function logAssetNotFound(input: {
         resourceType: 'asset',
         resourceId: input.resourceId ?? null,
         reasonCode: input.reasonCode,
+        statusMessage: input.statusMessage,
         authContext: input.authContext,
         ...(input.details ? { changes: input.details } : {}),
         executionContext: {
@@ -338,7 +342,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                         request,
                         authContext,
                         reasonCode: 'ASSET_RECORD_NOT_FOUND',
-                        resourceId: requestedFilename
+                        resourceId: requestedFilename,
+                        statusMessage: 'Asset Not Found'
                     });
                     return new Response('Not Found', {
                         status: 404,
@@ -352,7 +357,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                         request,
                         authContext,
                         reasonCode: 'ASSET_PROJECT_NOT_FOUND',
-                        resourceId: requestedFilename
+                        resourceId: requestedFilename,
+                        statusMessage: 'Project Not Found'
                     });
                     return new Response('Not Found', {
                         status: 404,
@@ -371,7 +377,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                             authContext,
                             reasonCode: 'ASSET_PROJECT_NOT_FOUND',
                             projectId,
-                            resourceId: requestedFilename
+                            resourceId: requestedFilename,
+                            statusMessage: 'Project Not Found'
                         });
                         return new Response('Not Found', {
                             status: 404,
@@ -389,7 +396,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                 authContext,
                                 reasonCode: 'UNAUTHORIZED_GUEST',
                                 projectId,
-                                resourceId: requestedFilename
+                                resourceId: requestedFilename,
+                                statusMessage: 'Unauthorized Guest'
                             });
                             return new Response('Not Found', {
                                 status: 404,
@@ -410,7 +418,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     authContext,
                                     reasonCode: 'PROJECT_VIEW_FORBIDDEN',
                                     projectId,
-                                    resourceId: requestedFilename
+                                    resourceId: requestedFilename,
+                                    statusMessage: 'Unauthorized'
                                 });
                                 return new Response('Not Found', {
                                     status: 404,
@@ -433,7 +442,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     authContext,
                                     reasonCode: 'DEVICE_WALL_ID_MISSING',
                                     projectId,
-                                    resourceId: requestedFilename
+                                    resourceId: requestedFilename,
+                                    statusMessage: 'Unauthorized Device'
                                 });
                                 return new Response('Not Found', {
                                     status: 404,
@@ -451,7 +461,8 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     reasonCode: 'DEVICE_WALL_NOT_BOUND_TO_PROJECT',
                                     projectId,
                                     resourceId: requestedFilename,
-                                    details: { wallId: deviceWallId }
+                                    details: { wallId: deviceWallId },
+                                    statusMessage: 'Unauthorized Wall'
                                 });
                                 return new Response('Not Found', {
                                     status: 404,

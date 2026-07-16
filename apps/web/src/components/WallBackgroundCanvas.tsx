@@ -18,10 +18,15 @@ interface WallBackgroundCanvasProps {
     layer: BackgroundLayer;
     col: number;
     row: number;
+    getNow: () => number;
 }
 
-export function WallBackgroundCanvas({ layer, col, row }: WallBackgroundCanvasProps) {
+export function WallBackgroundCanvas({ layer, col, row, getNow }: WallBackgroundCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const getNowRef = useRef(getNow);
+    useEffect(() => {
+        getNowRef.current = getNow;
+    }, [getNow]);
 
     useEffect(() => {
         if (layer.backgroundType === 'solid') {
@@ -37,9 +42,7 @@ export function WallBackgroundCanvas({ layer, col, row }: WallBackgroundCanvasPr
         const isWaveBackground = layer.backgroundType === 'waves';
         const isParticleBackground = layer.backgroundType === 'particle';
         const draw = () => {
-            // t is derived from wall-clock time so all screens are always in sync.
-            // Tiny increments mean adjacent frames are nearly identical → smooth drift.
-            const t = (Date.now() / 1000) * BACKGROUND_T_SPEED * layer.speedFactor;
+            const t = (getNowRef.current() / 1000) * BACKGROUND_T_SPEED * layer.speedFactor;
             if (isWaveBackground) {
                 renderBackgroundWaves(canvasRef.current!, layer, col, row, t);
             } else if (isParticleBackground) {

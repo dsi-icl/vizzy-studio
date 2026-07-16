@@ -22,7 +22,7 @@ Last reviewed: `2026-04-02`.
 
 1. Device-capable peers (`wall`, `controller`, `gallery`) use challenge/proof auth.
 2. `hello_challenge` is method-agnostic; server infers accepted proof type.
-3. Controllers may authenticate via device signature or portal token (`_gem_t`).
+3. Controllers may authenticate via device signature or portal token (`_viz_t`).
 4. Editor authentication uses server session from websocket request headers.
 5. Editor `hello` only authenticates/registers transport identity; scope is set via `switch_scope`.
 6. `leave_scope` clears editor scope only; it does not unregister the peer.
@@ -187,13 +187,13 @@ Current canonical request signature payload for HTTP auth-context derivation (`a
 
 Headers expected:
 
-1. `x-gemma-device-kind`
-2. `x-gemma-device-public-key`
-3. `x-gemma-device-timestamp`
-4. `x-gemma-device-nonce`
-5. `x-gemma-device-signature`
-6. optional `x-gemma-device-body-sha256`
-7. optional `x-gemma-device-wall-id`
+1. `x-vizzy-device-kind`
+2. `x-vizzy-device-public-key`
+3. `x-vizzy-device-timestamp`
+4. `x-vizzy-device-nonce`
+5. `x-vizzy-device-signature`
+6. optional `x-vizzy-device-body-sha256`
+7. optional `x-vizzy-device-wall-id`
 
 Replay and freshness controls:
 

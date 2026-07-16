@@ -30,7 +30,7 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/history'
     },
     component: HistoryTab,
     head: ({ loaderData }) => ({
-        meta: [{ title: `History · ${loaderData?.projectName ?? 'Project'} · GemmaShop` }]
+        meta: [{ title: `History · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     })
 });
 
@@ -95,6 +95,15 @@ function deviceKindFromChanges(changes: unknown): 'wall' | 'gallery' | 'controll
     const kind = (changes as { kind?: unknown }).kind;
     if (kind === 'wall' || kind === 'gallery' || kind === 'controller') return kind;
     return null;
+}
+
+function hasPayload(event: {
+    changes?: unknown;
+    error?: string | null;
+    authContext?: unknown;
+    executionContext?: unknown;
+}): boolean {
+    return Boolean(event.changes || event.error || event.authContext || event.executionContext);
 }
 
 function eventCollapseSignature(event: {
@@ -357,27 +366,40 @@ function HistoryTab() {
                                         : 'Unknown actor'}
                                 </p>
                                 {(log.executionContext?.operation ||
+                                    log.executionContext?.method ||
                                     log.executionContext?.path ||
                                     log.reasonCode) && (
                                     <p className="mt-1 text-xs text-muted-foreground">
                                         {log.executionContext?.operation
                                             ? `Operation: ${log.executionContext.operation}`
                                             : ''}
+                                        {log.executionContext?.method
+                                            ? `${log.executionContext?.operation ? ' · ' : ''}Method: ${log.executionContext.method}`
+                                            : ''}
                                         {log.executionContext?.path
-                                            ? `${log.executionContext?.operation ? ' · ' : ''}Path: ${log.executionContext.path}`
+                                            ? `${log.executionContext?.operation || log.executionContext?.method ? ' · ' : ''}Path: ${log.executionContext.path}`
                                             : ''}
                                         {log.reasonCode
-                                            ? `${log.executionContext?.operation || log.executionContext?.path ? ' · ' : ''}Reason: ${labelize(log.reasonCode)}`
+                                            ? `${log.executionContext?.operation || log.executionContext?.method || log.executionContext?.path ? ' · ' : ''}Reason: ${labelize(log.reasonCode)}`
                                             : ''}
                                     </p>
                                 )}
-                                {log.changes && (
+                                {hasPayload(log) && (
                                     <details className="mt-2">
                                         <summary className="cursor-pointer text-xs text-muted-foreground">
                                             View payload
                                         </summary>
                                         <pre className="mt-2 max-h-40 max-w-full overflow-auto rounded-lg bg-muted/50 p-2 text-xs break-words whitespace-pre-wrap select-text">
-                                            {JSON.stringify(log.changes, null, 2)}
+                                            {JSON.stringify(
+                                                {
+                                                    changes: log.changes ?? null,
+                                                    error: log.error ?? null,
+                                                    authContext: log.authContext ?? null,
+                                                    executionContext: log.executionContext ?? null
+                                                },
+                                                null,
+                                                2
+                                            )}
                                         </pre>
                                     </details>
                                 )}

@@ -10,16 +10,21 @@ import {
     SelectTrigger,
     SelectValue
 } from '@repo/ui/components/select';
-import { useQueryClient, useSuspenseInfiniteQuery } from '@tanstack/react-query';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
+import { useQueryClient, useSuspenseInfiniteQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { adminAuditsInfiniteQueryOptions, type AdminAuditFilters } from '~/server/admin.queries';
+import {
+    adminAuditsInfiniteQueryOptions,
+    adminProjectsQueryOptions,
+    type AdminAuditFilters
+} from '~/server/admin.queries';
 
 export const Route = createFileRoute('/admin/audits')({
     component: AdminAudits,
     head: () => ({
-        meta: [{ title: 'Audits · Admin · GemmaShop' }]
+        meta: [{ title: 'Audits · Admin · Vizzy Studio' }]
     })
 });
 
@@ -84,6 +89,15 @@ function deviceKindFromChanges(changes: unknown): 'wall' | 'gallery' | 'controll
     const kind = (changes as { kind?: unknown }).kind;
     if (kind === 'wall' || kind === 'gallery' || kind === 'controller') return kind;
     return null;
+}
+
+function hasPayload(event: {
+    changes?: unknown;
+    error?: string | null;
+    authContext?: unknown;
+    executionContext?: unknown;
+}): boolean {
+    return Boolean(event.changes || event.error || event.authContext || event.executionContext);
 }
 
 function eventCollapseSignature(event: {
@@ -160,6 +174,14 @@ function AdminAudits() {
         useSuspenseInfiniteQuery(queryOptions);
 
     const items = useMemo(() => data.pages.flatMap((page) => page.items), [data.pages]);
+    const { data: adminProjects } = useSuspenseQuery(adminProjectsQueryOptions());
+    const projectNamesById = useMemo(() => {
+        const map = new Map<string, string>();
+        adminProjects.forEach((project) => {
+            map.set(project.id, project.name);
+        });
+        return map;
+    }, [adminProjects]);
     const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
     const sentinelRef = useRef<HTMLDivElement | null>(null);
     const groupedItems = useMemo(() => {
@@ -419,12 +441,43 @@ function AdminAudits() {
 
                             <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground md:grid-cols-2">
                                 {event.actorId && <span>Actor: {event.actorId}</span>}
-                                {event.projectId && <span>Project: {event.projectId}</span>}
+                                {event.projectId && (
+                                    <Tooltip>
+                                        <TooltipTrigger
+                                            render={<span className="min-w-0 truncate" />}
+                                        >
+                                            Project:{' '}
+                                            {projectNamesById.get(event.projectId)
+                                                ? `${projectNamesById.get(event.projectId)} (${event.projectId})`
+                                                : event.projectId}
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" align="start">
+                                            <div className="max-w-[28rem] space-y-1">
+                                                <div className="font-medium">
+                                                    {projectNamesById.get(event.projectId) ??
+                                                        'Unknown project'}
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {event.projectId}
+                                                </div>
+                                            </div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                )}
                                 {event.executionContext?.operation && (
                                     <span>Operation: {event.executionContext.operation}</span>
                                 )}
+                                {event.executionContext?.method && (
+                                    <span>Method: {event.executionContext.method}</span>
+                                )}
                                 {event.executionContext?.path && (
                                     <span>Path: {event.executionContext.path}</span>
+                                )}
+                                {event.executionContext?.requestId && (
+                                    <span>Request ID: {event.executionContext.requestId}</span>
+                                )}
+                                {event.executionContext?.peerId && (
+                                    <span>Peer ID: {event.executionContext.peerId}</span>
                                 )}
                                 {event.reasonCode && (
                                     <span>Reason: {labelize(event.reasonCode)}</span>
@@ -434,13 +487,22 @@ function AdminAudits() {
                                 )}
                             </div>
 
-                            {event.changes && (
+                            {hasPayload(event) && (
                                 <details className="mt-2">
                                     <summary className="cursor-pointer text-xs text-muted-foreground">
                                         View payload
                                     </summary>
                                     <pre className="mt-2 max-h-44 max-w-full overflow-auto rounded-lg bg-muted/50 p-2 text-xs break-words whitespace-pre-wrap select-text">
-                                        {JSON.stringify(event.changes, null, 2)}
+                                        {JSON.stringify(
+                                            {
+                                                changes: event.changes ?? null,
+                                                error: event.error ?? null,
+                                                authContext: event.authContext ?? null,
+                                                executionContext: event.executionContext ?? null
+                                            },
+                                            null,
+                                            2
+                                        )}
                                     </pre>
                                 </details>
                             )}

@@ -7,7 +7,7 @@ interface CardProps {
 }
 
 export const OGCard: FC<CardProps> = ({ width, height, params }) => {
-    const title = `GemmaShop ${params?.o === 't' ? '𝕏' : ''}`;
+    const title = `Vizzy Studio ${params?.o === 't' ? '𝕏' : ''}`;
     return (
         <div
             style={{

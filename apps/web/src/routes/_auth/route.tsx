@@ -26,6 +26,6 @@ export const Route = createFileRoute('/_auth')({
     },
     component: Outlet,
     head: () => ({
-        meta: [{ title: 'Quarry · GemmaShop' }]
+        meta: [{ title: 'Quarry · Vizzy Studio' }]
     })
 });

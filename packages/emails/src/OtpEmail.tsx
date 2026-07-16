@@ -10,7 +10,7 @@ export const OtpEmail = ({ otp }: OtpEmailProps) => (
         <Preview>Your one-time password</Preview>
         <Body style={main}>
             <Container style={container}>
-                <Text style={h1}>Login to Gemma Shop</Text>
+                <Text style={h1}>Login to Vizzy Studio</Text>
                 <Text style={text}>Use the following code to log in to your account.</Text>
                 <Section style={codeBox}>
                     <Text style={code}>{otp}</Text>

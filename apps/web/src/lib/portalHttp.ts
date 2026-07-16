@@ -25,6 +25,6 @@ export function getBearerToken(request: Request): string | null {
         return auth.slice(7).trim();
     }
     const url = new URL(request.url);
-    const fallback = url.searchParams.get('_gem_t');
+    const fallback = url.searchParams.get('_gem_t') ?? url.searchParams.get('_viz_t');
     return fallback && fallback.trim().length > 0 ? fallback.trim() : null;
 }

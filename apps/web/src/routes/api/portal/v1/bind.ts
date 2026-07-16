@@ -8,7 +8,7 @@ import {
     createPortalToken
 } from '~/lib/portalTokens';
 import { z } from '~/lib/zod';
-import { logAuditDenied } from '~/server/audit';
+import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { performLiveBind } from '~/server/bus/bus.binding';
 
 const bindRequestSchema = z.object({
@@ -60,6 +60,17 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
                 try {
                     body = bindRequestSchema.parse(await request.json().catch(() => ({})));
                 } catch (error: any) {
+                    await logAuditFailure({
+                        action: 'PORTAL_BIND_FAILED',
+                        resourceType: 'portal_token',
+                        reasonCode: 'INVALID_REQUEST_BODY',
+                        statusMessage: error?.message ?? String(error),
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/bind',
+                            request
+                        }
+                    });
                     return json(request, 400, {
                         error: 'Invalid request body',
                         details: error?.message ?? String(error)
@@ -68,6 +79,16 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
 
                 const currentScopeId = wallBindings.get(validated.wallId);
                 if (currentScopeId === undefined || currentScopeId !== validated.scopeId) {
+                    await logAuditFailure({
+                        action: 'PORTAL_BIND_FAILED',
+                        resourceType: 'portal_token',
+                        reasonCode: 'TOKEN_SCOPE_MISMATCH',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/bind',
+                            request
+                        }
+                    });
                     return json(request, 409, {
                         error: 'Wall is no longer bound to the token scope'
                     });
@@ -75,6 +96,17 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
 
                 const scope = scopedState.get(validated.scopeId);
                 if (!scope) {
+                    await logAuditFailure({
+                        action: 'PORTAL_BIND_FAILED',
+                        resourceType: 'scope',
+                        resourceId: String(validated.scopeId),
+                        reasonCode: 'SCOPE_NOT_FOUND',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/bind',
+                            request
+                        }
+                    });
                     return json(request, 409, { error: 'Scope no longer exists' });
                 }
 
@@ -93,6 +125,17 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
                         : null;
 
                 if (!result.ok) {
+                    await logAuditFailure({
+                        action: 'PORTAL_BIND_FAILED',
+                        resourceType: 'wall',
+                        resourceId: validated.wallId,
+                        reasonCode: String(result.error ?? 'BIND_FAILED'),
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/bind',
+                            request
+                        }
+                    });
                     const status = result.error === 'unknown_wall' ? 404 : 400;
                     return json(request, status, {
                         error: result.error ?? 'bind_failed',
@@ -100,6 +143,21 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
                         expiresAt: fresh?.expiresAt
                     });
                 }
+                await logAuditSuccess({
+                    action: 'PORTAL_BIND_SUCCEEDED',
+                    resourceType: 'wall',
+                    resourceId: validated.wallId,
+                    executionContext: {
+                        surface: 'http',
+                        operation: 'POST /api/portal/v1/bind',
+                        request
+                    },
+                    changes: {
+                        projectId: scope.projectId,
+                        commitId: scope.commitId,
+                        slideId: result.resolvedSlideId ?? null
+                    }
+                });
 
                 return json(request, 200, {
                     ok: true,

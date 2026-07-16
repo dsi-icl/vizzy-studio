@@ -45,11 +45,13 @@ const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigSta
 
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
-const OptionalSizesSchema = z.preprocess((value) => {
-    if (!Array.isArray(value)) return undefined;
-    const numericSizes = value.filter((size): size is number => typeof size === 'number');
-    return numericSizes.length > 0 ? numericSizes : undefined;
-}, z.array(z.number()).optional());
+const OptionalSizesSchema = z
+    .preprocess((value) => {
+        if (!Array.isArray(value)) return undefined;
+        const numericSizes = value.filter((size): size is number => typeof size === 'number');
+        return numericSizes.length > 0 ? numericSizes : undefined;
+    }, z.array(z.number()))
+    .optional();
 
 const LayerSchema = z.discriminatedUnion('type', [
     z

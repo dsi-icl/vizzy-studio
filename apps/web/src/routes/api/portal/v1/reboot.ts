@@ -4,7 +4,7 @@ import { wallBindings } from '~/lib/busState';
 import { getCorsHeaders, getBearerToken, json } from '~/lib/portalHttp';
 import { pruneExpiredPortalTokens, validatePortalToken } from '~/lib/portalTokens';
 import { z } from '~/lib/zod';
-import { logAuditDenied } from '~/server/audit';
+import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 
 const rebootRequestSchema = z
     .object({
@@ -59,6 +59,17 @@ export const Route = createFileRoute('/api/portal/v1/reboot')({
                 try {
                     body = rebootRequestSchema.parse(await request.json().catch(() => ({})));
                 } catch (error: any) {
+                    await logAuditFailure({
+                        action: 'PORTAL_REBOOT_FAILED',
+                        resourceType: 'portal_token',
+                        reasonCode: 'INVALID_REQUEST_BODY',
+                        statusMessage: error?.message ?? String(error),
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/reboot',
+                            request
+                        }
+                    });
                     return json(request, 400, {
                         error: 'Invalid request body',
                         details: error?.message ?? String(error)
@@ -85,6 +96,16 @@ export const Route = createFileRoute('/api/portal/v1/reboot')({
 
                 const currentScopeId = wallBindings.get(targetWallId);
                 if (currentScopeId === undefined || currentScopeId !== validated.scopeId) {
+                    await logAuditFailure({
+                        action: 'PORTAL_REBOOT_FAILED',
+                        resourceType: 'portal_token',
+                        reasonCode: 'TOKEN_SCOPE_MISMATCH',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/reboot',
+                            request
+                        }
+                    });
                     return json(request, 409, {
                         error: 'Wall is no longer bound to the token scope'
                     });
@@ -92,11 +113,33 @@ export const Route = createFileRoute('/api/portal/v1/reboot')({
 
                 const rebootWall = process.__REBOOT_WALL__;
                 if (!rebootWall) {
+                    await logAuditFailure({
+                        action: 'PORTAL_REBOOT_FAILED',
+                        resourceType: 'wall',
+                        resourceId: targetWallId,
+                        reasonCode: 'BUS_BRIDGE_UNAVAILABLE',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/reboot',
+                            request
+                        }
+                    });
                     return json(request, 503, { error: 'Wall bus bridge unavailable' });
                 }
 
                 const hasNodeTarget = body.c !== undefined || body.r !== undefined;
                 if ((body.c === undefined) !== (body.r === undefined)) {
+                    await logAuditFailure({
+                        action: 'PORTAL_REBOOT_FAILED',
+                        resourceType: 'wall',
+                        resourceId: targetWallId,
+                        reasonCode: 'INVALID_NODE_TARGET',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/reboot',
+                            request
+                        }
+                    });
                     return json(request, 400, {
                         error: 'Both c and r must be provided together when targeting a node'
                     });
@@ -107,12 +150,37 @@ export const Route = createFileRoute('/api/portal/v1/reboot')({
                     : rebootWall(targetWallId);
 
                 if (sent <= 0) {
+                    await logAuditFailure({
+                        action: 'PORTAL_REBOOT_FAILED',
+                        resourceType: 'wall',
+                        resourceId: targetWallId,
+                        reasonCode: 'NO_CONNECTED_WALL_NODES',
+                        executionContext: {
+                            surface: 'http',
+                            operation: 'POST /api/portal/v1/reboot',
+                            request
+                        }
+                    });
                     return json(request, 404, {
                         error: hasNodeTarget
                             ? 'No wall node found for the requested c/r'
                             : 'No connected wall nodes for this wall'
                     });
                 }
+                await logAuditSuccess({
+                    action: 'PORTAL_REBOOT_SUCCEEDED',
+                    resourceType: 'wall',
+                    resourceId: targetWallId,
+                    executionContext: {
+                        surface: 'http',
+                        operation: 'POST /api/portal/v1/reboot',
+                        request
+                    },
+                    changes: {
+                        sent,
+                        targetedNode: hasNodeTarget ? `${body.c}:${body.r}` : null
+                    }
+                });
 
                 return json(request, 200, {
                     ok: true,

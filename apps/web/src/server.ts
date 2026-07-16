@@ -29,7 +29,7 @@ function renderBootErrorPage(issues: string[]): string {
         <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
-        <title>Gemma Shop Unavailable</title>
+        <title>Vizzy Studio Unavailable</title>
         <style>
             :root { color-scheme: dark; }
             body {
@@ -59,7 +59,7 @@ function renderBootErrorPage(issues: string[]): string {
             <body>
                 <main class="card">
                     <h1>Service temporarily unavailable</h1>
-                    <p>Gemma Shop started in degraded mode due to missing or invalid startup configuration.</p>
+                    <p>Vizzy Studio started in degraded mode due to missing or invalid startup configuration.</p>
                     <ul>${items}</ul>
                     <p class="hint">Update environment configuration and restart the service.</p>
                 </main>

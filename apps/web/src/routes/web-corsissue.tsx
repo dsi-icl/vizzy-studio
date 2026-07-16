@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/web-corsissue')({
     head: () => ({
-        meta: [{ title: 'CORS Issue · GemmaShop' }]
+        meta: [{ title: 'CORS Issue · Vizzy Studio' }]
     }),
     component: WebNoNet
 });

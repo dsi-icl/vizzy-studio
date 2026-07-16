@@ -43,7 +43,7 @@ export const Route = createFileRoute('/admin/users')({
     },
     component: AdminUsers,
     head: () => ({
-        meta: [{ title: 'Users · Admin · GemmaShop' }]
+        meta: [{ title: 'Users · Admin · Vizzy Studio' }]
     })
 });
 

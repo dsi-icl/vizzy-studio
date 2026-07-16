@@ -56,7 +56,7 @@ function revokeTokenInternal(token: string) {
 }
 
 function createRawPortalToken() {
-    return `gem_ctrl_${randomBytes(24).toString('hex')}`;
+    return `viz_ctrl_${randomBytes(24).toString('hex')}`;
 }
 
 export function createPortalToken(

@@ -76,9 +76,8 @@ function buildControllerUrl(
         try {
             const isAbsolute = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(input);
             const url = new URL(input, 'http://local');
-            if (!url.searchParams.has('_gem_t')) {
-                url.searchParams.set('_gem_t', portalToken);
-            }
+            if (!url.searchParams.has('_gem_t')) url.searchParams.set('_gem_t', portalToken);
+            if (!url.searchParams.has('_viz_t')) url.searchParams.set('_viz_t', portalToken);
             if (isAbsolute) return url.toString();
             return `${url.pathname}${url.search}${url.hash}`;
         } catch {
@@ -98,9 +97,10 @@ function buildControllerUrl(
 
         if (!url.searchParams.has('l')) url.searchParams.set('l', 'gallery');
         if (!url.searchParams.has('w')) url.searchParams.set('w', wallId);
-        if (portalToken && !url.searchParams.has('_gem_t')) {
+        if (portalToken && !url.searchParams.has('_gem_t'))
             url.searchParams.set('_gem_t', portalToken);
-        }
+        if (portalToken && !url.searchParams.has('_viz_t'))
+            url.searchParams.set('_viz_t', portalToken);
 
         if (isAbsolute) return url.toString();
         return `${url.pathname}${url.search}${url.hash}`;

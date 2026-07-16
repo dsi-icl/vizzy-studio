@@ -33,6 +33,7 @@ import { Route as LegalNoticesRouteImport } from './routes/legal/notices'
 import { Route as ApiWebScreenshotRouteImport } from './routes/api/web-screenshot'
 import { Route as ApiVersionRouteImport } from './routes/api/version'
 import { Route as ApiReportCspRouteImport } from './routes/api/report-csp'
+import { Route as ApiProxyRouteImport } from './routes/api/proxy'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminStatsRouteImport } from './routes/admin/stats'
 import { Route as AdminProjectsRouteImport } from './routes/admin/projects'
@@ -186,6 +187,11 @@ const ApiVersionRoute = ApiVersionRouteImport.update({
 const ApiReportCspRoute = ApiReportCspRouteImport.update({
   id: '/api/report-csp',
   path: '/api/report-csp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProxyRoute = ApiProxyRouteImport.update({
+  id: '/api/proxy',
+  path: '/api/proxy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -398,6 +404,7 @@ export interface FileRoutesByFullPath {
   '/admin/projects': typeof AdminProjectsRoute
   '/admin/stats': typeof AdminStatsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/proxy': typeof ApiProxyRoute
   '/api/report-csp': typeof ApiReportCspRoute
   '/api/version': typeof ApiVersionRoute
   '/api/web-screenshot': typeof ApiWebScreenshotRoute
@@ -457,6 +464,7 @@ export interface FileRoutesByTo {
   '/admin/projects': typeof AdminProjectsRoute
   '/admin/stats': typeof AdminStatsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/proxy': typeof ApiProxyRoute
   '/api/report-csp': typeof ApiReportCspRoute
   '/api/version': typeof ApiVersionRoute
   '/api/web-screenshot': typeof ApiWebScreenshotRoute
@@ -518,6 +526,7 @@ export interface FileRoutesById {
   '/admin/projects': typeof AdminProjectsRoute
   '/admin/stats': typeof AdminStatsRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/proxy': typeof ApiProxyRoute
   '/api/report-csp': typeof ApiReportCspRoute
   '/api/version': typeof ApiVersionRoute
   '/api/web-screenshot': typeof ApiWebScreenshotRoute
@@ -580,6 +589,7 @@ export interface FileRouteTypes {
     | '/admin/projects'
     | '/admin/stats'
     | '/admin/users'
+    | '/api/proxy'
     | '/api/report-csp'
     | '/api/version'
     | '/api/web-screenshot'
@@ -639,6 +649,7 @@ export interface FileRouteTypes {
     | '/admin/projects'
     | '/admin/stats'
     | '/admin/users'
+    | '/api/proxy'
     | '/api/report-csp'
     | '/api/version'
     | '/api/web-screenshot'
@@ -699,6 +710,7 @@ export interface FileRouteTypes {
     | '/admin/projects'
     | '/admin/stats'
     | '/admin/users'
+    | '/api/proxy'
     | '/api/report-csp'
     | '/api/version'
     | '/api/web-screenshot'
@@ -753,6 +765,7 @@ export interface RootRouteChildren {
   WebCorsissueRoute: typeof WebCorsissueRoute
   WebNonetRoute: typeof WebNonetRoute
   WebPlaceholderRoute: typeof WebPlaceholderRoute
+  ApiProxyRoute: typeof ApiProxyRoute
   ApiReportCspRoute: typeof ApiReportCspRoute
   ApiVersionRoute: typeof ApiVersionRoute
   ApiWebScreenshotRoute: typeof ApiWebScreenshotRoute
@@ -945,6 +958,13 @@ declare module '@tanstack/react-router' {
       path: '/api/report-csp'
       fullPath: '/api/report-csp'
       preLoaderRoute: typeof ApiReportCspRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/proxy': {
+      id: '/api/proxy'
+      path: '/api/proxy'
+      fullPath: '/api/proxy'
+      preLoaderRoute: typeof ApiProxyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/users': {
@@ -1354,6 +1374,7 @@ const rootRouteChildren: RootRouteChildren = {
   WebCorsissueRoute: WebCorsissueRoute,
   WebNonetRoute: WebNonetRoute,
   WebPlaceholderRoute: WebPlaceholderRoute,
+  ApiProxyRoute: ApiProxyRoute,
   ApiReportCspRoute: ApiReportCspRoute,
   ApiVersionRoute: ApiVersionRoute,
   ApiWebScreenshotRoute: ApiWebScreenshotRoute,

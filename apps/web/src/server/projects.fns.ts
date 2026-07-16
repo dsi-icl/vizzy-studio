@@ -139,7 +139,7 @@ async function denyProjectFn(params: {
 }
 
 export const $listProjects = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ includeArchived: z.boolean().optional() }))
+    .validator(z.object({ includeArchived: z.boolean().optional() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         return listProjects(context.user.email, data.includeArchived);
@@ -156,7 +156,7 @@ export const $listKnownTags = createServerFn({ method: 'GET' })
     });
 
 export const $listAssets = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -187,7 +187,7 @@ export const $listAssets = createServerFn({ method: 'GET' })
     });
 
 export const $listAssetsByUrlsForPicker = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string(),
             urls: z.array(z.string()).max(200)
@@ -223,7 +223,7 @@ export const $listAssetsByUrlsForPicker = createServerFn({ method: 'POST' })
     });
 
 export const $getProject = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const project = await getProject(data.id);
@@ -260,7 +260,7 @@ export const $getProject = createServerFn({ method: 'GET' })
     });
 
 export const $getCommit = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const commit = await getCommit(data.id);
@@ -298,7 +298,7 @@ export const $getCommit = createServerFn({ method: 'GET' })
     });
 
 export const $createProject = createServerFn({ method: 'POST' })
-    .inputValidator(CreateProjectInput)
+    .validator(CreateProjectInput)
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         return createProject(
@@ -309,7 +309,7 @@ export const $createProject = createServerFn({ method: 'POST' })
     });
 
 export const $updateProject = createServerFn({ method: 'POST' })
-    .inputValidator(UpdateProjectInput)
+    .validator(UpdateProjectInput)
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -344,7 +344,7 @@ export const $updateProject = createServerFn({ method: 'POST' })
     });
 
 export const $archiveProject = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -379,7 +379,7 @@ export const $archiveProject = createServerFn({ method: 'POST' })
     });
 
 export const $deleteAsset = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const assetRecord = await dbCol.assets.findById(data.id);
@@ -429,7 +429,7 @@ export const $deleteAsset = createServerFn({ method: 'POST' })
     });
 
 export const $restoreProject = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -464,7 +464,7 @@ export const $restoreProject = createServerFn({ method: 'POST' })
     });
 
 export const $publishCommit = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string(), commitId: z.string().nullable() }))
+    .validator(z.object({ projectId: z.string(), commitId: z.string().nullable() }))
     .middleware([freshAuthMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -511,7 +511,7 @@ export const $publishCommit = createServerFn({ method: 'POST' })
     });
 
 export const $publishCustomRenderProject = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([freshAuthMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -557,7 +557,7 @@ export const $publishCustomRenderProject = createServerFn({ method: 'POST' })
     });
 
 export const $getAudits = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -588,7 +588,7 @@ export const $getAudits = createServerFn({ method: 'GET' })
     });
 
 export const $getAuditsPage = createServerFn({ method: 'GET' })
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string(),
             limit: z.number().int().min(1).max(100).optional(),
@@ -652,7 +652,7 @@ export const $getAuditsPage = createServerFn({ method: 'GET' })
     });
 
 export const $ensureMutableHead = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -687,7 +687,7 @@ export const $ensureMutableHead = createServerFn({ method: 'POST' })
     });
 
 export const $getProjectCommits = createServerFn({ method: 'GET' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -718,7 +718,7 @@ export const $getProjectCommits = createServerFn({ method: 'GET' })
     });
 
 export const $createBranchHead = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string(), sourceCommitId: z.string() }))
+    .validator(z.object({ projectId: z.string(), sourceCommitId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -754,7 +754,7 @@ export const $createBranchHead = createServerFn({ method: 'POST' })
     });
 
 export const $promoteBranchHead = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string(), branchCommitId: z.string() }))
+    .validator(z.object({ projectId: z.string(), branchCommitId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -792,7 +792,7 @@ export const $promoteBranchHead = createServerFn({ method: 'POST' })
 // ── Slide operations ─────────────────────────────────────────────────────────
 
 export const $copySlideInCommit = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             commitId: z.string(),
             sourceSlideId: z.string(),
@@ -839,7 +839,7 @@ export const $copySlideInCommit = createServerFn({ method: 'POST' })
     });
 
 export const $deleteSlideFromCommit = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ commitId: z.string(), slideId: z.string() }))
+    .validator(z.object({ commitId: z.string(), slideId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const projectId = await resolveProjectIdForCommit(data.commitId);
@@ -879,7 +879,7 @@ export const $deleteSlideFromCommit = createServerFn({ method: 'POST' })
 // ── Upload tokens ─────────────────────────────────────────────────────────────
 
 export const $createUploadToken = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -919,7 +919,7 @@ export const $createUploadToken = createServerFn({ method: 'POST' })
     });
 
 export const $revokeUploadToken = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ token: z.string() }))
+    .validator(z.object({ token: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const projectId = resolveProjectIdForUploadToken(data.token);
@@ -954,7 +954,7 @@ export const $revokeUploadToken = createServerFn({ method: 'POST' })
     });
 
 export const $validateUploadToken = createServerFn({ method: 'POST' })
-    .inputValidator(z.object({ token: z.string() }))
+    .validator(z.object({ token: z.string() }))
     .handler(async ({ data }) => {
         return validateUploadToken(data.token);
     });

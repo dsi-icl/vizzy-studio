@@ -28,7 +28,7 @@ export const Route = createFileRoute('/_guest')({
     },
     component: RouteComponent,
     head: () => ({
-        meta: [{ title: 'Sign In · GemmaShop' }]
+        meta: [{ title: 'Sign In · Vizzy Studio' }]
     })
 });
 

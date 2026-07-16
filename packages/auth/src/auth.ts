@@ -185,7 +185,7 @@ export const auth = betterAuth({
                 const html = await render(OtpEmail({ otp }));
                 await sendAuthEmail({
                     to: email,
-                    subject: 'Your Gemma Shop OTP',
+                    subject: 'Your Vizzy Studio OTP',
                     html,
                     fallbackLog: `OTP to ${email} : ${otp} (${type})`
                 });

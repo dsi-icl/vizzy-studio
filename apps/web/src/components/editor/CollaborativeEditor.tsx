@@ -13,7 +13,7 @@ import theme from './theme';
 
 const editorConfig = {
     editorState: null,
-    namespace: 'Gemma Shop Text Bonanza',
+    namespace: 'Vizzy Studio Text Bonanza',
     nodes: [],
     onError(error: Error) {
         throw error;

@@ -993,8 +993,8 @@ export async function adminSendSmtpTest(
     await transporter.sendMail({
         from: smtp.from,
         to: input.to,
-        subject: 'Gemma Shop SMTP test',
-        html: '<p>This is a test email from Gemma Shop admin configuration.</p>'
+        subject: 'Vizzy Studio SMTP test',
+        html: '<p>This is a test email from Vizzy Studio admin configuration.</p>'
     });
 
     await logAuditSuccess({

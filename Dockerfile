@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM oven/bun:1.3.11 AS build
+FROM oven/bun:1.3.13 AS build
 ARG BUILD_SOURCEMAPS=false
 ARG VITE_GIT_SHA=
 ARG APP_COMMIT_SHA=
@@ -27,25 +27,25 @@ COPY . .
 RUN NITRO_PRESET=bun bun run faviconize --filter=@repo/web
 RUN NITRO_PRESET=bun bun run build --filter=@repo/web
 
-FROM oven/bun:1.3.11 AS runtime
+FROM oven/bun:1 AS runtime
 ARG KEEP_SOURCE_MAPS=false
 
 ARG OCI_CREATED=unknown
 ARG OCI_VERSION=dev
 ARG OCI_REVISION=unknown
-ARG OCI_SOURCE=https://github.com/dsi-icl/gemma-shop
+ARG OCI_SOURCE=https://github.com/dsi-icl/vizzy-studio
 
-LABEL org.opencontainers.image.title="gemma-shop" \
+LABEL org.opencontainers.image.title="vizzy-studio" \
       org.opencontainers.image.description="Collaborative multi-tenant presentation system for large video walls" \
-      org.opencontainers.image.url="https://github.com/dsi-icl/gemma-shop" \
+      org.opencontainers.image.url="https://github.com/dsi-icl/vizzy-studio" \
       org.opencontainers.image.source="${OCI_SOURCE}" \
-      org.opencontainers.image.documentation="https://github.com/dsi-icl/gemma-shop#readme" \
+      org.opencontainers.image.documentation="https://github.com/dsi-icl/vizzy-studio#readme" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${OCI_VERSION}" \
       org.opencontainers.image.revision="${OCI_REVISION}" \
       org.opencontainers.image.created="${OCI_CREATED}" \
       org.opencontainers.image.vendor="florian-guitton" \
-      org.opencontainers.image.base.name="docker.io/oven/bun:1.3.11"
+      org.opencontainers.image.base.name="docker.io/oven/bun:1"
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
@@ -83,7 +83,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends tini ca-certificates curl xz-utils iputils-ping netcat-openbsd gosu; \
     rm -rf /var/lib/apt/lists/*
 
-# Layer C: browser shared-library dependencies used by Playwright Chromium.
+# Layer browser shared-library dependencies used by Playwright Chromium.
 RUN set -eux; \
     PW_VERSION="$(cat /app/.playwright-version)"; \
     bunx "playwright@$PW_VERSION" install-deps chromium; \
@@ -98,6 +98,19 @@ COPY --from=build --chown=app:app /workspace/apps/web/.output/server ./.output/s
 COPY --from=build --chown=app:app /workspace/apps/web/.output/public ./.output/public
 COPY --from=build --chown=app:app /workspace/apps/web/.output/nitro.json ./.output/nitro.json
 
+RUN set -eux; \
+    PW_VERSION="$(cat /app/.playwright-version)"; \
+    mkdir -p /tmp/pw && \
+    printf '{"name":"pw","private":true}\n' > /tmp/pw/package.json && \
+    cd /tmp/pw && bun add "playwright@${PW_VERSION}" && \
+    cp -r /tmp/pw/node_modules/. /app/node_modules/ && \
+    rm -rf /tmp/pw
+
+# Nitro bundles sharp's JavaScript into the server output but cannot inline its native addon,
+# which sharp loads at runtime through a bare "@img/sharp-<platform>" specifier. Ship the
+# platform binaries so the resolver finds them in /app/node_modules (same idea as Playwright).
+COPY --from=build --chown=app:app /workspace/node_modules/@img /app/node_modules/@img
+
 # Source maps are not needed in production runtime image.
 RUN if [ "${KEEP_SOURCE_MAPS}" = "true" ] || [ "${KEEP_SOURCE_MAPS}" = "1" ]; then \
       echo "Keeping sourcemaps in runtime image"; \
@@ -110,5 +123,5 @@ RUN sed -i 's/\r$//' /usr/local/bin/container-start.sh && chmod +x /usr/local/bi
 
 EXPOSE 3000
 
-ENTRYPOINT ["tini", "--", "/usr/local/bin/container-start.sh"]
-
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["tini", "-g", "--", "/usr/local/bin/container-start.sh"]

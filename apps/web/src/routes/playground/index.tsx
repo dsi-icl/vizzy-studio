@@ -36,7 +36,7 @@ const NATIVE_PREVIEW_HEIGHT = 1080;
 export const Route = createFileRoute('/playground/')({
     beforeLoad: guardPlaygroundDevOnly,
     head: () => ({
-        meta: [{ title: 'Playground · GemmaShop' }]
+        meta: [{ title: 'Playground · Vizzy Studio' }]
     }),
     component: HomePage
 });
@@ -154,7 +154,7 @@ function HomePage() {
             ) : null}
 
             <header className="shrink-0 rounded-xl border border-border bg-card px-4 py-3">
-                <h1 className="text-sm font-semibold">Gemma Shop Testing Playground</h1>
+                <h1 className="text-sm font-semibold">Vizzy Studio Testing Playground</h1>
             </header>
 
             <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-4">

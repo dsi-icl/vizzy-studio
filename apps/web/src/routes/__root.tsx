@@ -55,12 +55,12 @@ export const Route = createRootRouteWithContext<RootRouteContext>()({
                     content: 'width=device-width, initial-scale=1'
                 },
                 {
-                    title: 'GemmaShop'
+                    title: 'Vizzy Studio'
                 },
-                { property: 'og:title', content: 'GemmaShop' },
-                { property: 'og:description', content: 'GemmaShop' },
-                { name: 'twitter:title', content: 'GemmaShop' },
-                { name: 'twitter:description', content: 'GemmaShop' },
+                { property: 'og:title', content: 'Vizzy Studio' },
+                { property: 'og:description', content: 'Vizzy Studio' },
+                { name: 'twitter:title', content: 'Vizzy Studio' },
+                { name: 'twitter:description', content: 'Vizzy Studio' },
                 {
                     name: 'description',
                     content: 'Blackboard playground for the Data Observatory at Imperial'

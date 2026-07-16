@@ -265,7 +265,7 @@ export function Header() {
             className={`absolute left-0 flex w-full items-center justify-end gap-2 p-4 ${isImpersonating ? 'top-10' : 'top-0'}`}
         >
             <Link to="/" className="flex flex-row gap-3 font-mono">
-                Gemma Shop
+                Vizzy Studio
             </Link>
             <span className="grow" />
             <KeyboardToggle />

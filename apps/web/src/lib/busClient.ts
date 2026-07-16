@@ -72,7 +72,7 @@ function checkForVersionMismatch(message: Pick<ServerHelloMessage, 'commit' | 'b
     return mismatch;
 }
 
-const getGemmaBusUrl = (): string => {
+const getVizzyBusUrl = (): string => {
     return getWebSocketUrl('/bus');
 };
 
@@ -87,7 +87,7 @@ export class BusClient {
     constructor(options: BusClientOptions) {
         this.opts = options;
 
-        this.rws = new ReconnectingWebSocket(getGemmaBusUrl(), {
+        this.rws = new ReconnectingWebSocket(getVizzyBusUrl(), {
             binaryType: 'arraybuffer',
             onOpen: () => {
                 void this.handleOpen();

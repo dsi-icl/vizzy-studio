@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/web-nonet')({
     head: () => ({
-        meta: [{ title: 'Network Error · GemmaShop' }]
+        meta: [{ title: 'Network Error · Vizzy Studio' }]
     }),
     component: WebNoNet
 });

@@ -15,7 +15,7 @@ import { SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 export const Route = createFileRoute('/playground/bg')({
     beforeLoad: guardPlaygroundDevOnly,
     head: () => ({
-        meta: [{ title: 'Playground Background Tile · GemmaShop' }]
+        meta: [{ title: 'Playground Background Tile · Vizzy Studio' }]
     }),
     component: PlaygroundBackgroundTile
 });

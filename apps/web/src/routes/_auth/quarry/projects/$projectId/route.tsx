@@ -10,11 +10,11 @@ import {
     UsersIcon,
     CodeIcon
 } from '@phosphor-icons/react';
-import { authQueryOptions } from '@repo/auth/tanstack/queries';
+import { authQueryOptions, authSessionQueryOptions } from '@repo/auth/tanstack/queries';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
 import { Tabs, TabsList, TabsTrigger } from '@repo/ui/components/tabs';
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import {
     createFileRoute,
     Link,
@@ -47,7 +47,7 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId')({
     },
     component: ProjectLayout,
     head: ({ loaderData }) => ({
-        meta: [{ title: `${loaderData?.projectName ?? 'Project'} · Quarry · GemmaShop` }]
+        meta: [{ title: `${loaderData?.projectName ?? 'Project'} · Quarry · Vizzy Studio` }]
     })
 });
 
@@ -127,6 +127,7 @@ function ProjectLayout() {
     const { projectId } = Route.useParams();
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
     const { data: user } = useSuspenseQuery(authQueryOptions());
+    const { data: sessionData } = useQuery(authSessionQueryOptions());
     const location = useLocation();
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
@@ -138,6 +139,11 @@ function ProjectLayout() {
     ).filter((t) => t.key !== 'controller' || user?.role === 'admin');
     const queryClient = useQueryClient();
     const [openingEditor, setOpeningEditor] = useState(false);
+    const impersonatedBy =
+        sessionData?.session && typeof sessionData.session === 'object'
+            ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
+            : null;
+    const isImpersonating = typeof impersonatedBy === 'string' && impersonatedBy.length > 0;
 
     const publishCustomRender = useMutation({
         mutationFn: () => $publishCustomRenderProject({ data: { projectId } }),
@@ -161,7 +167,9 @@ function ProjectLayout() {
 
     return (
         <SubHeaderSlotProvider>
-            <div className="flex h-full flex-col overflow-hidden pt-14 pb-14">
+            <div
+                className={`flex h-full flex-col overflow-hidden pb-14 ${isImpersonating ? 'pt-24' : 'pt-14'}`}
+            >
                 <div className="mx-auto w-full max-w-6xl shrink-0 px-6 pt-4">
                     <div className="mb-6 flex items-center gap-3">
                         <Button
@@ -293,7 +301,7 @@ function ProjectLayout() {
 
                 <div className="relative mx-auto min-h-0 w-full max-w-6xl flex-1">
                     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-background to-transparent" />
-                    <div className="scrollbar-none h-full overflow-y-auto px-6 pt-8 pb-6">
+                    <div className="h-full scrollbar-none overflow-y-auto px-6 pt-8 pb-6">
                         <div className="relative grid">
                             <AnimatePresence mode="sync" initial={false}>
                                 <motion.div

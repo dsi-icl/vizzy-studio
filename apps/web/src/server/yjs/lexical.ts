@@ -8,7 +8,7 @@ import * as Y from 'yjs';
 
 // ── Lexical namespace ─────────────────────────────────────────────────────────
 
-export const LEXICAL_NAMESPACE = 'Gemma Shop Text Bonanza';
+export const LEXICAL_NAMESPACE = 'Vizzy Studio Text Bonanza';
 
 // ── DOM globals shim for headless Lexical ─────────────────────────────────────
 // Lexical requires browser globals. We inject a happy-dom Window before each

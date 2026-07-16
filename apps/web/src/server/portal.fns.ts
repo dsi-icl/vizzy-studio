@@ -8,7 +8,7 @@ import { actorAuthContextMiddleware } from '~/server/auth-context.middleware';
 import type { AuthContext } from '~/server/requestAuthContext';
 
 export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
-    .inputValidator(
+    .validator(
         z.object({
             wallId: z.string()
         })

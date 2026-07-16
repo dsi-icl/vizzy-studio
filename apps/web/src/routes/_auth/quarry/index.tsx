@@ -11,6 +11,7 @@ import {
 import type { ProjectDocument } from '@repo/db/documents';
 
 type Project = Omit<ProjectDocument, '_id' | '_version'>;
+import { authSessionQueryOptions } from '@repo/auth/tanstack/queries';
 import { Badge } from '@repo/ui/components/badge';
 import AnimatedBlurPattern from '@repo/ui/components/blur-pattern';
 import { Button } from '@repo/ui/components/button';
@@ -47,7 +48,7 @@ export const Route = createFileRoute('/_auth/quarry/')({
     },
     component: QuarryIndex,
     head: () => ({
-        meta: [{ title: 'Projects · Quarry · GemmaShop' }]
+        meta: [{ title: 'Projects · Quarry · Vizzy Studio' }]
     })
 });
 
@@ -65,6 +66,12 @@ function QuarryIndex() {
         enabled: showArchived
     });
     const projects = showArchived ? (archivedProjects ?? defaultProjects) : defaultProjects;
+    const { data: sessionData } = useQuery(authSessionQueryOptions());
+    const impersonatedBy =
+        sessionData?.session && typeof sessionData.session === 'object'
+            ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
+            : null;
+    const isImpersonating = typeof impersonatedBy === 'string' && impersonatedBy.length > 0;
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const invalidate = () => queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -270,7 +277,9 @@ function QuarryIndex() {
     });
 
     return (
-        <div className="flex h-full flex-col overflow-hidden pt-14 pb-14">
+        <div
+            className={`flex h-full flex-col overflow-hidden pb-14 ${isImpersonating ? 'pt-24' : 'pt-14'}`}
+        >
             <div className="mx-auto w-full max-w-5xl shrink-0 px-6 pt-4">
                 <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Projects</h2>
@@ -301,7 +310,7 @@ function QuarryIndex() {
 
             <div className="relative mx-auto min-h-0 w-full max-w-5xl flex-1">
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-background to-transparent" />
-                <div className="scrollbar-none h-full overflow-y-auto px-6 py-6">
+                <div className="h-full scrollbar-none overflow-y-auto px-6 py-6">
                     {table.getRowModel().rows.length === 0 ? (
                         <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-12 text-muted-foreground">
                             <p>No projects found</p>

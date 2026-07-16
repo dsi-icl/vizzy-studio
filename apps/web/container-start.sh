@@ -43,6 +43,14 @@ run_as_app() {
   exec "$@"
 }
 
+start_as_app_background() {
+  if [ "$(id -u)" = "0" ]; then
+    gosu app "$@" &
+    return
+  fi
+  "$@" &
+}
+
 resolve_playwright_version() {
   if [ -n "${PLAYWRIGHT_VERSION:-}" ]; then
     printf '%s' "$PLAYWRIGHT_VERSION"
@@ -69,6 +77,29 @@ resolve_playwright_version() {
 }
 
 normalize_runtime_env
+
+APP_PID=""
+PW_INSTALL_PID=""
+FFMPEG_INSTALL_PID=""
+
+shutdown() {
+  signal="$1"
+  log "Received ${signal}; forwarding to child processes"
+
+  if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+    kill -TERM "$APP_PID" 2>/dev/null || true
+  fi
+  if [ -n "$PW_INSTALL_PID" ] && kill -0 "$PW_INSTALL_PID" 2>/dev/null; then
+    kill -TERM "$PW_INSTALL_PID" 2>/dev/null || true
+  fi
+  if [ -n "$FFMPEG_INSTALL_PID" ] && kill -0 "$FFMPEG_INSTALL_PID" 2>/dev/null; then
+    kill -TERM "$FFMPEG_INSTALL_PID" 2>/dev/null || true
+  fi
+}
+
+trap 'shutdown TERM' TERM
+trap 'shutdown INT' INT
+trap 'shutdown QUIT' QUIT
 
 # Runtime browser cache path. Mount this as a volume to persist binaries.
 DEPS_ROOT="${APP_DATA_DIR:-/app/data}"
@@ -118,6 +149,7 @@ log "Playwright version: ${PW_VERSION}"
     log "Chromium install failed (app will continue; screenshot feature may be unavailable temporarily)"
   fi
 ) &
+PW_INSTALL_PID="$!"
 
 # Install static ffmpeg silently in the background if missing.
 FFMPEG_BIN="${FFMPEG_PATH:-$DEPS_ROOT/bin/ffmpeg}"
@@ -176,9 +208,25 @@ if [ ! -x "$FFMPEG_BIN" ]; then
     fi
     rm -rf "$TMP_DIR"
   ) &
+  FFMPEG_INSTALL_PID="$!"
 else
   log "FFmpeg already present at $FFMPEG_BIN"
 fi
 
 log "Starting app server"
-run_as_app bun --dns-result-order="${DNS_RESULT_ORDER:-ipv4first}" .output/server/index.mjs
+start_as_app_background bun --dns-result-order="${DNS_RESULT_ORDER:-ipv4first}" .output/server/index.mjs
+APP_PID="$!"
+
+set +e
+wait "$APP_PID"
+APP_EXIT_CODE="$?"
+set -e
+
+if [ -n "$PW_INSTALL_PID" ] && kill -0 "$PW_INSTALL_PID" 2>/dev/null; then
+  wait "$PW_INSTALL_PID" 2>/dev/null || true
+fi
+if [ -n "$FFMPEG_INSTALL_PID" ] && kill -0 "$FFMPEG_INSTALL_PID" 2>/dev/null; then
+  wait "$FFMPEG_INSTALL_PID" 2>/dev/null || true
+fi
+
+exit "$APP_EXIT_CODE"

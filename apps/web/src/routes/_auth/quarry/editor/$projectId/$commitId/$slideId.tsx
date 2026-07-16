@@ -27,7 +27,7 @@ export const Route = createFileRoute('/_auth/quarry/editor/$projectId/$commitId/
         };
     },
     head: ({ loaderData }) => ({
-        meta: [{ title: `Editor · ${loaderData?.projectName ?? 'Project'} · GemmaShop` }]
+        meta: [{ title: `Editor · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     }),
     component: SlideEditor
 });
@@ -41,7 +41,7 @@ function SlideEditor() {
     if (project.customRenderUrl) {
         return (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-                <h2 className="text-xl font-semibold">Gemma Editor Unavailable</h2>
+                <h2 className="text-xl font-semibold">Vizzy Studio Editor Unavailable</h2>
                 <p className="max-w-md text-muted-foreground">
                     This project uses a custom render URL and cannot be edited with the built-in
                     editor.

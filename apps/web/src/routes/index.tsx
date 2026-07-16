@@ -22,7 +22,7 @@ export const Route = createFileRoute('/')({
         context.queryClient.ensureQueryData(publishedProjectsQueryOptions());
     },
     head: () => ({
-        meta: [{ title: 'Home · GemmaShop' }]
+        meta: [{ title: 'Home · Vizzy Studio' }]
     })
 });
 

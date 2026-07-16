@@ -5,7 +5,7 @@ export const Route = createFileRoute('/admin/')({
         throw redirect({ to: '/admin/users' });
     },
     head: () => ({
-        meta: [{ title: 'Admin · GemmaShop' }]
+        meta: [{ title: 'Admin · Vizzy Studio' }]
     }),
     component: () => null
 });

@@ -40,7 +40,8 @@
         "WS_RATE_LIMIT_STRIKE_LIMIT",
         "WEB_SCREENSHOT_ALLOWLIST",
         "WEB_SCREENSHOT_RATE_LIMIT_PER_MIN",
-        "SCREENSHOT_INTERNAL_TOKEN"
+        "SCREENSHOT_INTERNAL_TOKEN",
+        "USER_LAST_SEEN_THROTTLE_MS"
     ],
     "tasks": {
         "build": {

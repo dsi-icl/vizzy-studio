@@ -6,7 +6,7 @@ import { guardPlaygroundDevOnly } from '~/lib/playgroundGuard';
 export const Route = createFileRoute('/playground/anima')({
     beforeLoad: guardPlaygroundDevOnly,
     head: () => ({
-        meta: [{ title: 'Background Anima Playground · GemmaShop' }]
+        meta: [{ title: 'Background Anima Playground · Vizzy Studio' }]
     }),
     component: PlaygroundAnima
 });
