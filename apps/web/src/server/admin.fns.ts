@@ -69,7 +69,7 @@ export const $adminListProjects = createServerFn({ method: 'GET' })
 
 export const $adminUpdateProjectCollaborators = createServerFn({ method: 'POST' })
     .middleware([operatorMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string(),
             collaborators: z.array(Collaborator)
@@ -105,7 +105,7 @@ const AuditSurfaceEnum = z.enum(['http', 'serverfn', 'ws', 'yjs', 'job', 'system
 
 export const $adminListAuditsPage = createServerFn({ method: 'GET' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             projectId: z.string().nullable().optional(),
             limit: z.number().int().min(1).max(100).optional(),
@@ -152,27 +152,27 @@ export const $adminListPublicAssets = createServerFn({ method: 'GET' })
 
 export const $adminDeletePublicAsset = createServerFn({ method: 'POST' })
     .middleware([operatorMiddleware])
-    .inputValidator(z.object({ id: z.string() }))
+    .validator(z.object({ id: z.string() }))
     .handler(async ({ data, context }) => adminDeletePublicAsset(data.id, context.user.email));
 
 export const $adminUnbindWall = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ wallId: z.string() }))
+    .validator(z.object({ wallId: z.string() }))
     .handler(async ({ data }) => adminUnbindWall(data.wallId));
 
 export const $adminCreateWall = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ wallId: z.string(), name: z.string().optional().nullable() }))
+    .validator(z.object({ wallId: z.string(), name: z.string().optional().nullable() }))
     .handler(async ({ data }) => adminCreateWall({ wallId: data.wallId, name: data.name ?? null }));
 
 export const $adminGetWall = createServerFn({ method: 'GET' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ wallId: z.string() }))
+    .validator(z.object({ wallId: z.string() }))
     .handler(async ({ data }) => adminGetWall(data.wallId));
 
 export const $adminUpdateWallMetadata = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             wallId: z.string(),
             name: z.string().optional().nullable(),
@@ -191,7 +191,7 @@ export const $adminUpdateWallMetadata = createServerFn({ method: 'POST' })
 
 export const $adminDeleteWall = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ wallId: z.string() }))
+    .validator(z.object({ wallId: z.string() }))
     .handler(async ({ data }) => adminDeleteWall(data.wallId));
 
 export const $adminGetUploadToken = createServerFn({ method: 'POST' })
@@ -213,7 +213,7 @@ export const $adminGetUploadToken = createServerFn({ method: 'POST' })
 
 export const $adminGetWallBindingMeta = createServerFn({ method: 'GET' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             boundProjectId: z.string().nullable().optional(),
             boundCommitId: z.string().nullable().optional(),
@@ -234,7 +234,7 @@ export const $adminListConfig = createServerFn({ method: 'GET' })
 
 export const $adminSetConfig = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             key: z.string(),
             value: z.string()
@@ -249,7 +249,7 @@ export const $adminSetConfig = createServerFn({ method: 'POST' })
 
 export const $adminSendSmtpTest = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ to: z.email() }))
+    .validator(z.object({ to: z.email() }))
     .handler(async ({ data, context }) =>
         adminSendSmtpTest(
             { to: data.to, actorEmail: context.user.email },
@@ -263,12 +263,12 @@ export const $adminDevicesList = createServerFn({ method: 'GET' })
 
 export const $adminDevicesForWall = createServerFn({ method: 'GET' })
     .middleware([adminMiddleware])
-    .inputValidator(z.object({ wallId: z.string() }))
+    .validator(z.object({ wallId: z.string() }))
     .handler(async ({ data }) => adminListDevicesForWall(data.wallId));
 
 export const $adminDevicesEnrollBySignature = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             id: z.string(),
             signature: z.string(),
@@ -288,7 +288,7 @@ export const $adminDevicesEnrollBySignature = createServerFn({ method: 'POST' })
 
 export const $adminDeleteDevice = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             id: z.string()
         })
@@ -302,7 +302,7 @@ export const $adminDeleteDevice = createServerFn({ method: 'POST' })
 
 export const $adminSetUserBanStatus = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             userId: z.string(),
             banned: z.boolean()
@@ -318,7 +318,7 @@ export const $adminSetUserBanStatus = createServerFn({ method: 'POST' })
 
 export const $adminSetUserRole = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             userId: z.string().optional().nullable(),
             userEmail: z.string().optional().nullable(),
@@ -336,7 +336,7 @@ export const $adminSetUserRole = createServerFn({ method: 'POST' })
 
 export const $adminSetUserTrustedPublisher = createServerFn({ method: 'POST' })
     .middleware([operatorMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             userId: z.string(),
             trustedPublisher: z.boolean()
@@ -352,7 +352,7 @@ export const $adminSetUserTrustedPublisher = createServerFn({ method: 'POST' })
 
 export const $adminImpersonateUser = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
-    .inputValidator(
+    .validator(
         z.object({
             userId: z.string()
         })
