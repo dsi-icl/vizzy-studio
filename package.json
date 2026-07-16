@@ -140,6 +140,7 @@
         "lint:fix": "oxlint --type-aware --type-check --fix",
         "prepare": "husky",
         "test:e2e": "bunx playwright test --config apps/web/playwright.config.ts",
+        "test:e2e:full": "bun run tooling/testing/e2e-full.mjs",
         "test:harness:down": "bun run docker:test:down",
         "test:harness:prepare": "bun run tooling/testing/prepare.mjs",
         "test:harness:seed": "bun run tooling/testing/seed.mjs",
