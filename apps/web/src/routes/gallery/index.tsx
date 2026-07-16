@@ -627,11 +627,12 @@ function HomePage() {
                     className="w-full shrink-0 md:flex md:min-h-0 md:w-1/5 md:flex-col"
                 >
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="grid grid-cols-3 gap-1">
                         <Button
                             variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
                             size="sm"
                             onClick={handleClearAll}
+                            className="w-full"
                         >
                             All ({projectsData.length})
                         </Button>
@@ -641,6 +642,7 @@ function HomePage() {
                                 variant={activeBucket === bucket.key ? 'secondary' : 'ghost'}
                                 size="sm"
                                 onClick={() => handleBucketClick(bucket.key)}
+                                className="w-full"
                             >
                                 {bucket.key}
                             </Button>
@@ -667,7 +669,7 @@ function HomePage() {
                                         <Button
                                             variant={activeTag === tag ? 'secondary' : 'ghost'}
                                             onClick={() => setActiveTag(tag)}
-                                            className="w-full justify-start capitalize"
+                                            className="w-full justify-start"
                                         >
                                             {tag}
                                         </Button>
