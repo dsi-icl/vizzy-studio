@@ -9,6 +9,8 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
+type MapViewField = keyof Extract<LayerWithEditorState, { type: 'map' }>['view'];
+
 interface ParametersPanelProps {
     titleBarSize?: number;
     collapsed?: boolean;
@@ -96,6 +98,25 @@ export function ParametersPanel({
         [selectedLayer, markDirty]
     );
 
+    const updateMapView = useCallback(
+        (field: MapViewField, value: number) => {
+            if (!selectedLayer || selectedLayer.type !== 'map') return;
+            const updatedLayer = {
+                ...selectedLayer,
+                view: { ...selectedLayer.view, [field]: value }
+            };
+
+            useEditorStore.setState((s) => {
+                const newLayers = new Map(s.layers);
+                newLayers.set(selectedLayer.numericId, updatedLayer);
+                return { layers: newLayers };
+            });
+
+            throttledConfigUpdate.current(updatedLayer);
+        },
+        [selectedLayer]
+    );
+
     const selectedLeftX = selectedLayer
         ? selectedLayer.config.cx - selectedLayer.config.width / 2
         : null;
@@ -132,7 +153,6 @@ export function ParametersPanel({
                                         className={'text-xs'}
                                         allowWheelScrub={true}
                                         value={selectedLeftX ?? 0}
-                                        onInput={(e) => console.log(e)}
                                         onValueChange={(v) => {
                                             if (v === null || !selectedLayer) return;
                                             updateConfig('cx', v + selectedLayer.config.width / 2);
@@ -217,6 +237,50 @@ export function ParametersPanel({
                                         </div>
                                     </fieldset>
                                 </>
+                            )}
+
+                            {selectedLayer.type === 'map' && (
+                                <fieldset className="space-y-1.5">
+                                    <Label className="text-xs font-semibold">Map View</Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <SideButtonNumberField
+                                            label="Longitude"
+                                            allowWheelScrub={true}
+                                            step={0.1}
+                                            smallStep={0.01}
+                                            min={-180}
+                                            max={180}
+                                            value={selectedLayer.view.longitude}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('longitude', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Latitude"
+                                            allowWheelScrub={true}
+                                            step={0.1}
+                                            smallStep={0.01}
+                                            min={-85.0511}
+                                            max={85.0511}
+                                            value={selectedLayer.view.latitude}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('latitude', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Zoom"
+                                            allowWheelScrub={true}
+                                            step={0.25}
+                                            smallStep={0.1}
+                                            min={0}
+                                            max={selectedLayer.tile?.dataMaxZoom ?? 24}
+                                            value={selectedLayer.view.zoom}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('zoom', v);
+                                            }}
+                                        />
+                                    </div>
+                                </fieldset>
                             )}
                         </div>
                     ) : (
