@@ -2,6 +2,8 @@ import { env } from '@repo/env';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
+import { dbCol } from '~/server/collections';
+import { actorFromAuthContext, canViewProject } from '~/server/projectAuthz';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { hasAuthenticatedActor } from '~/server/requestAuthContext';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
@@ -15,10 +17,6 @@ function parseTileCoord(value: unknown, max: number): number | null {
     const parsed = Number(value);
     if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > max) return null;
     return parsed;
-}
-
-function getTileLimitForZoom(z: number): number {
-    return 2 ** z - 1;
 }
 
 function makeStatusHeaders(message: string): HeadersInit | undefined {
@@ -37,23 +35,37 @@ function getMartinBaseUrl(): string | null {
     }
 }
 
+async function canReadProjectTiles(authContext: AuthContext, projectId: string) {
+    const actor = actorFromAuthContext(authContext);
+    if (actor) return canViewProject(actor, projectId);
+
+    const wallId = authContext.device?.kind === 'wall' ? authContext.device.wallId : null;
+    if (!wallId) return false;
+
+    const wall = await dbCol.walls.findByWallId(wallId);
+    return wall?.boundProjectId === projectId;
+}
+
 async function logTileDenied(input: {
     request: Request;
     authContext: AuthContext;
+    projectId?: string;
     layer?: string;
     reasonCode: string;
     statusMessage?: string;
 }) {
     await logAuditDenied({
         action: 'TILE_GATEWAY_DENIED',
-        resourceType: 'asset',
-        resourceId: input.layer ?? null,
+        resourceType: 'project',
+        resourceId: input.projectId ?? null,
+        projectId: input.projectId,
         reasonCode: input.reasonCode,
         statusMessage: input.statusMessage,
         authContext: input.authContext,
         executionContext: {
             surface: 'http',
-            operation: 'GET /api/tiles/$layer/$z/$x/$y',
+            operation: 'GET /api/projects/$projectId/tiles/$layer/$z/$x/$y',
+            details: input.layer ? { layer: input.layer } : undefined,
             request: input.request
         }
     });
@@ -62,26 +74,29 @@ async function logTileDenied(input: {
 async function logTileFailure(input: {
     request: Request;
     authContext: AuthContext;
+    projectId: string;
     layer: string;
     reasonCode: string;
     statusMessage?: string;
 }) {
     await logAuditFailure({
         action: 'TILE_GATEWAY_FAILED',
-        resourceType: 'asset',
-        resourceId: input.layer,
+        resourceType: 'project',
+        resourceId: input.projectId,
+        projectId: input.projectId,
         reasonCode: input.reasonCode,
         statusMessage: input.statusMessage,
         authContext: input.authContext,
         executionContext: {
             surface: 'http',
-            operation: 'GET /api/tiles/$layer/$z/$x/$y',
+            operation: 'GET /api/projects/$projectId/tiles/$layer/$z/$x/$y',
+            details: { layer: input.layer },
             request: input.request
         }
     });
 }
 
-export const Route = createFileRoute('/api/tiles/$layer/$z/$x/$y')({
+export const Route = createFileRoute('/api/projects/$projectId/tiles/$layer/$z/$x/$y')({
     server: {
         handlers: {
             GET: async ({ request, params, context }) => {
@@ -102,21 +117,23 @@ export const Route = createFileRoute('/api/tiles/$layer/$z/$x/$y')({
                     await logTileDenied({
                         request,
                         authContext,
+                        projectId: params.projectId,
                         reasonCode: 'AUTH_REQUIRED',
                         statusMessage: 'Unauthorized'
                     });
-                    return new Response('Unauthorized', {
-                        status: 401,
+                    return new Response('Not Found', {
+                        status: 404,
                         headers: makeStatusHeaders('Unauthorized')
                     });
                 }
 
-                const layer = params.layer;
+                const { projectId, layer } = params;
                 const z = parseTileCoord(params.z, TILE_COORDINATE_MAX_ZOOM);
-                if (!LAYER_PATTERN.test(layer) || z === null) {
+                if (!projectId || !LAYER_PATTERN.test(layer) || z === null) {
                     await logTileDenied({
                         request,
                         authContext,
+                        projectId,
                         layer,
                         reasonCode: 'INVALID_TILE_REQUEST',
                         statusMessage: 'Invalid Tile Request'
@@ -127,13 +144,30 @@ export const Route = createFileRoute('/api/tiles/$layer/$z/$x/$y')({
                     });
                 }
 
-                const tileLimit = getTileLimitForZoom(z);
+                const allowed = await canReadProjectTiles(authContext, projectId);
+                if (!allowed) {
+                    await logTileDenied({
+                        request,
+                        authContext,
+                        projectId,
+                        layer,
+                        reasonCode: 'PROJECT_VIEW_FORBIDDEN',
+                        statusMessage: 'Unauthorized'
+                    });
+                    return new Response('Not Found', {
+                        status: 404,
+                        headers: makeStatusHeaders('Unauthorized')
+                    });
+                }
+
+                const tileLimit = 2 ** z - 1;
                 const x = parseTileCoord(params.x, tileLimit);
                 const y = parseTileCoord(params.y, tileLimit);
                 if (x === null || y === null) {
                     await logTileDenied({
                         request,
                         authContext,
+                        projectId,
                         layer,
                         reasonCode: 'INVALID_TILE_COORDINATES',
                         statusMessage: 'Invalid Tile Coordinates'
@@ -149,6 +183,7 @@ export const Route = createFileRoute('/api/tiles/$layer/$z/$x/$y')({
                     await logTileFailure({
                         request,
                         authContext,
+                        projectId,
                         layer,
                         reasonCode: 'MARTIN_BASE_URL_MISSING',
                         statusMessage: 'Martin Base URL Missing'
@@ -192,6 +227,7 @@ export const Route = createFileRoute('/api/tiles/$layer/$z/$x/$y')({
                     await logTileFailure({
                         request,
                         authContext,
+                        projectId,
                         layer,
                         reasonCode: 'UPSTREAM_FETCH_FAILED',
                         statusMessage: err instanceof Error ? err.message : 'Upstream Fetch Failed'
