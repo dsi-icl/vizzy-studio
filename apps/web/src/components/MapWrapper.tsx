@@ -9,15 +9,18 @@ import { setRefs } from '~/lib/setRefs';
 import type { Layer } from '~/lib/types';
 
 type MapLayer = Extract<Layer, { type: 'map' }>;
+type MapWrapperProps = {
+    layer: MapLayer;
+    projectId?: string | null;
+} & RefAttributes<HTMLDivElement> &
+    Partial<HTMLAttributes<HTMLDivElement>>;
 
 const FILL_COLOR: [number, number, number, number] = [60, 95, 120, 150];
 const LINE_COLOR: [number, number, number, number] = [220, 218, 205, 200];
 const POINT_COLOR: [number, number, number, number] = [245, 210, 110, 220];
 
-export const MapWrapper: FC<
-    { layer: MapLayer } & RefAttributes<HTMLDivElement> & Partial<HTMLAttributes<HTMLDivElement>>
-> = ({ ref, layer, style, ...props }) => {
-    const tileSource = useMemo(() => getMapTileSource(layer), [layer.tile]);
+export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, ...props }) => {
+    const tileSource = useMemo(() => getMapTileSource(layer, projectId), [layer.tile, projectId]);
     const layers = useMemo(
         () => [
             new MVTLayer<Record<string, unknown>>({
