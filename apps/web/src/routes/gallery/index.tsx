@@ -650,7 +650,7 @@ function HomePage() {
                     </div>
                     <div className="relative md:min-h-0 md:flex-1">
                         <div className="gallery-gradient pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-3 bg-linear-to-b from-background to-transparent md:block" />
-                        <div className="scrollbar-none flex flex-wrap gap-2 md:h-full md:flex-col md:flex-nowrap md:overflow-y-auto md:py-3 md:pr-2">
+                        <div className="flex scrollbar-none flex-wrap gap-2 md:h-full md:flex-col md:flex-nowrap md:overflow-y-auto md:py-3 md:pr-2">
                             <AnimatePresence mode="popLayout" initial={false}>
                                 {visibleTags.map((tag) => (
                                     <motion.div
