@@ -58,10 +58,12 @@ type EditorMapLayer = Extract<LayerWithEditorState, { type: 'map' }>;
 
 function EditorMapOverlay({
     layer,
+    projectId,
     selected,
     stageScaleFactor
 }: {
     layer: EditorMapLayer;
+    projectId?: string | null;
     selected: boolean;
     stageScaleFactor: number;
 }) {
@@ -85,6 +87,7 @@ function EditorMapOverlay({
         >
             <MapWrapper
                 layer={layer}
+                projectId={projectId}
                 style={{
                     position: 'relative',
                     width: '100%',
@@ -109,6 +112,7 @@ export function EditorSlate() {
     const showGrid = useEditorStore((s) => s.showGrid);
     const isDrawing = useEditorStore((s) => s.isDrawing);
     const isSnapping = useEditorStore((s) => s.isSnapping);
+    const projectId = useEditorStore((s) => s.projectId);
     const addLineLayer = useEditorStore((s) => s.addLineLayer);
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
@@ -1347,6 +1351,7 @@ export function EditorSlate() {
                                 <EditorMapOverlay
                                     key={`map_overlay_${layer.numericId}`}
                                     layer={layer}
+                                    projectId={projectId}
                                     selected={selectedLayerIdSet.has(layer.numericId.toString())}
                                     stageScaleFactor={stageScaleFactor}
                                 />

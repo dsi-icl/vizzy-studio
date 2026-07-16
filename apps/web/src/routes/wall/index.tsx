@@ -605,7 +605,14 @@ function WallApp() {
             }
 
             if (layer.type === 'map') {
-                return <MapWrapper key={layer.numericId} {...commonProps} layer={layer} />;
+                return (
+                    <MapWrapper
+                        key={layer.numericId}
+                        {...commonProps}
+                        layer={layer}
+                        projectId={lastHydrateContextRef.current.projectId}
+                    />
+                );
             }
 
             if (layer.type === 'web') {
