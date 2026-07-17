@@ -33,6 +33,15 @@ export const Route = createFileRoute('/gallery/')({
     })
 });
 
+type TagBucketKey = 'A-F' | 'G-L' | 'M-R' | 'S-Z' | '#';
+const TAG_BUCKETS: { key: TagBucketKey; matches: (tag: string) => boolean }[] = [
+    { key: 'A-F', matches: (t) => /^[a-f]/i.test(t) },
+    { key: 'G-L', matches: (t) => /^[g-l]/i.test(t) },
+    { key: 'M-R', matches: (t) => /^[m-r]/i.test(t) },
+    { key: 'S-Z', matches: (t) => /^[s-z]/i.test(t) },
+    { key: '#', matches: (t) => !/^[a-z]/i.test(t) }
+];
+
 type ProjectWithId = Project & { id: string; publishedCommitId?: string | null };
 type WallListEntry = {
     wallId: string;
@@ -47,6 +56,7 @@ type WallListEntry = {
 function HomePage() {
     const { user } = useAuth();
     const [activeTag, setActiveTag] = useState<string | null>(null);
+    const [activeBucket, setActiveBucket] = useState<TagBucketKey | null>(null);
     const [enrollmentQrDataUrl, setEnrollmentQrDataUrl] = useState<string | null>(null);
     const [autoOpenRevision, setAutoOpenRevision] = useState(0);
     const [liveSessionRevision, setLiveSessionRevision] = useState(0);
@@ -471,8 +481,31 @@ function HomePage() {
                 tags.add(t);
             }
         }
-        return Array.from(tags);
+        return Array.from(tags).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+        );
     }, [projectsData]);
+
+    const visibleBuckets = useMemo(
+        () => TAG_BUCKETS.filter((b) => allTags.some((t) => b.matches(t))),
+        [allTags]
+    );
+
+    const visibleTags = useMemo(() => {
+        if (!activeBucket) return allTags;
+        const bucket = TAG_BUCKETS.find((b) => b.key === activeBucket);
+        return bucket ? allTags.filter((t) => bucket.matches(t)) : allTags;
+    }, [allTags, activeBucket]);
+
+    const handleBucketClick = (key: TagBucketKey) => {
+        setActiveBucket((prev) => (prev === key ? null : key));
+        setActiveTag(null);
+    };
+
+    const handleClearAll = () => {
+        setActiveTag(null);
+        setActiveBucket(null);
+    };
 
     const filteredProjects = useMemo(() => {
         if (!activeTag) return projectsData;
@@ -589,26 +622,62 @@ function HomePage() {
                 </div>
             ) : null}
             <div className="flex min-h-0 flex-1 flex-col gap-8 px-8 md:flex-row md:px-[5vw]">
-                <aside ref={filtersAsideRef} className="w-full shrink-0 md:w-1/5">
+                <aside
+                    ref={filtersAsideRef}
+                    className="w-full shrink-0 md:flex md:min-h-0 md:w-1/5 md:flex-col"
+                >
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
-                    <div className="flex flex-wrap gap-2 md:flex-col md:flex-nowrap">
+                    <div className="grid grid-cols-3 gap-1">
                         <Button
-                            variant={!activeTag ? 'secondary' : 'ghost'}
-                            onClick={() => setActiveTag(null)}
-                            className="justify-start"
+                            variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
+                            size="sm"
+                            onClick={handleClearAll}
+                            className="w-full"
                         >
                             All ({projectsData.length})
                         </Button>
-                        {allTags.map((tag) => (
+                        {visibleBuckets.map((bucket) => (
                             <Button
-                                key={tag}
-                                variant={activeTag === tag ? 'secondary' : 'ghost'}
-                                onClick={() => setActiveTag(tag)}
-                                className="justify-start"
+                                key={bucket.key}
+                                variant={activeBucket === bucket.key ? 'secondary' : 'ghost'}
+                                size="sm"
+                                onClick={() => handleBucketClick(bucket.key)}
+                                className="w-full"
                             >
-                                {tag}
+                                {bucket.key}
                             </Button>
                         ))}
+                    </div>
+                    <div className="relative md:min-h-0 md:flex-1">
+                        <div className="gallery-gradient pointer-events-none absolute inset-x-0 top-0 z-10 hidden h-3 bg-linear-to-b from-background to-transparent md:block" />
+                        <div className="flex scrollbar-none flex-wrap gap-2 md:h-full md:flex-col md:flex-nowrap md:overflow-y-auto md:py-3 md:pr-2">
+                            <AnimatePresence mode="popLayout" initial={false}>
+                                {visibleTags.map((tag) => (
+                                    <motion.div
+                                        key={tag}
+                                        layout
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        transition={{
+                                            type: 'spring',
+                                            duration: 0.3,
+                                            bounce: 0.2
+                                        }}
+                                        className="w-auto md:w-full"
+                                    >
+                                        <Button
+                                            variant={activeTag === tag ? 'secondary' : 'ghost'}
+                                            onClick={() => setActiveTag(tag)}
+                                            className="w-full justify-start"
+                                        >
+                                            {tag}
+                                        </Button>
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                        <div className="gallery-gradient pointer-events-none absolute inset-x-0 bottom-0 z-10 hidden h-4 bg-linear-to-t from-background to-transparent md:block" />
                     </div>
                 </aside>
                 <main className="relative min-h-0 w-full flex-1 md:w-4/5">
