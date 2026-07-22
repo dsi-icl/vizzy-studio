@@ -488,7 +488,7 @@ export function EditorSlate() {
             const store = useEditorStore.getState();
             if (!store.selectedLayerIds.length) return;
 
-            if (e.key === 'Delete') store.deleteSelectedLayer();
+            if (e.key === 'Delete' || e.key === 'Backspace') store.deleteSelectedLayer();
             if (e.key === 'Escape') store.deselectAllLayers();
             const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
             if (!currentSelected) return;
