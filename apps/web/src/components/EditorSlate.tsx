@@ -1071,6 +1071,18 @@ export function EditorSlate() {
             if (clickedOnEmpty && currentSelectedIds.length) {
                 flushNodeState(currentSelectedIds[0]);
                 deselectAllLayers();
+            } else if (!clickedOnEmpty) {
+                const hasModifier = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
+                const targetId = e.target.id();
+                if (
+                    !hasModifier &&
+                    targetId &&
+                    layers.has(parseInt(targetId)) &&
+                    !currentSelectedIds.includes(targetId)
+                ) {
+                    if (currentSelectedIds.length) flushNodeState(currentSelectedIds[0]);
+                    toggleLayerSelection(targetId, false, false);
+                }
             }
             if (!isDrawing) return;
         }
