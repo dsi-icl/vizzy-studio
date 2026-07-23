@@ -482,6 +482,20 @@
             }
         },
         {
+            "id": "building-3d",
+            "type": "fill-extrusion",
+            "source": "protomaps",
+            "source-layer": "buildings",
+            "minzoom": 14,
+            "filter": ["in", "kind", "building", "building_part"],
+            "paint": {
+                "fill-extrusion-color": "#e0e0e0",
+                "fill-extrusion-height": ["coalesce", ["get", "height"], 12],
+                "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+                "fill-extrusion-opacity": 0.65
+            }
+        },
+        {
             "id": "roads_pier",
             "type": "line",
             "source": "protomaps",

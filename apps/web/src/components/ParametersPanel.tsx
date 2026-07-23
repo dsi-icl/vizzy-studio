@@ -294,10 +294,34 @@ export function ParametersPanel({
                                             step={0.25}
                                             smallStep={0.1}
                                             min={0}
-                                            max={15}
+                                            max={20}
                                             value={selectedLayer.view.zoom}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('zoom', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Pitch"
+                                            allowWheelScrub={true}
+                                            step={1}
+                                            smallStep={0.25}
+                                            min={0}
+                                            max={85}
+                                            value={selectedLayer.view.pitch}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('pitch', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Bearing"
+                                            allowWheelScrub={true}
+                                            step={1}
+                                            smallStep={0.25}
+                                            min={0}
+                                            max={360}
+                                            value={selectedLayer.view.bearing}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('bearing', v);
                                             }}
                                         />
                                         <div className="space-y-1">
