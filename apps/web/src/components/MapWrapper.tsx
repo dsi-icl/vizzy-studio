@@ -1,56 +1,68 @@
 'use client';
 
-import { MVTLayer } from '@deck.gl/geo-layers';
-import DeckGL from '@deck.gl/react';
-import { useMemo, type FC, type HTMLAttributes, type RefAttributes } from 'react';
+import { MapboxOverlay, type MapboxOverlayProps } from '@deck.gl/mapbox';
+import type { StyleSpecification } from 'maplibre-gl';
+import { useCallback, useMemo, type FC, type HTMLAttributes, type RefAttributes } from 'react';
+import Map, { useControl } from 'react-map-gl/maplibre';
 
-import { getMapTileSource } from '~/lib/mapTileSources';
 import { setRefs } from '~/lib/setRefs';
-import type { Layer } from '~/lib/types';
+import { DEFAULT_MAP_STYLE_ID, type Layer, type MapStyleId } from '~/lib/types';
+import protomapsDarkStyle from '~/map-styles/protomaps-dark.json';
+import protomapsDarkVizGrayStyle from '~/map-styles/protomaps-darkvizgray.json';
+import protomapsDarkVizWhiteStyle from '~/map-styles/protomaps-darkvizwhite.json';
+import protomapsLightStyle from '~/map-styles/protomaps-light.json';
 
 type MapLayer = Extract<Layer, { type: 'map' }>;
+
+const MAP_STYLES: Record<MapStyleId, StyleSpecification> = {
+    'protomaps-light': protomapsLightStyle as StyleSpecification,
+    'protomaps-dark': protomapsDarkStyle as StyleSpecification,
+    'protomaps-darkvizgray': protomapsDarkVizGrayStyle as StyleSpecification,
+    'protomaps-darkvizwhite': protomapsDarkVizWhiteStyle as StyleSpecification
+};
+
 type MapWrapperProps = {
     layer: MapLayer;
     projectId?: string | null;
 } & RefAttributes<HTMLDivElement> &
     Partial<HTMLAttributes<HTMLDivElement>>;
 
-const FILL_COLOR: [number, number, number, number] = [60, 95, 120, 150];
-const LINE_COLOR: [number, number, number, number] = [220, 218, 205, 200];
-const POINT_COLOR: [number, number, number, number] = [245, 210, 110, 220];
+function DeckGLOverlay(props: MapboxOverlayProps) {
+    const overlay = useControl<MapboxOverlay>(() => new MapboxOverlay(props));
+    overlay.setProps(props);
+    return null;
+}
 
 export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, ...props }) => {
-    const tileSource = useMemo(() => getMapTileSource(layer, projectId), [layer.tile, projectId]);
-    const layers = useMemo(
-        () => [
-            new MVTLayer<Record<string, unknown>>({
-                id: `map-vector-${layer.numericId}`,
-                data: tileSource.tileUrl,
-                minZoom: 0,
-                maxZoom: tileSource.dataMaxZoom,
-                binary: false,
-                pickable: false,
-                stroked: true,
-                filled: true,
-                pointType: 'circle',
-                getFillColor: (feature) =>
-                    feature.geometry?.type.includes('Point') ? POINT_COLOR : FILL_COLOR,
-                getLineColor: LINE_COLOR,
-                getLineWidth: 1,
-                lineWidthUnits: 'pixels',
-                getPointRadius: 3,
-                pointRadiusUnits: 'pixels',
-                refinementStrategy: 'best-available',
-                loadOptions: {
-                    mvt: {
-                        coordinates: 'wgs84',
-                        ...(tileSource.sourceLayers ? { layers: tileSource.sourceLayers } : {})
-                    }
+    const styleId = layer.style ?? DEFAULT_MAP_STYLE_ID;
+    const tileUrl = useMemo(() => {
+        if (!projectId) return null;
+        const path = `/api/projects/${encodeURIComponent(projectId)}/tiles/protomaps/{z}/{x}/{y}`;
+        return typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
+    }, [projectId]);
+
+    const mapStyle = useMemo(() => {
+        const baseStyle = MAP_STYLES[styleId];
+        if (!tileUrl) return baseStyle;
+
+        return {
+            ...baseStyle,
+            sources: {
+                ...baseStyle.sources,
+                protomaps: {
+                    ...baseStyle.sources.protomaps,
+                    tiles: [tileUrl]
                 }
-            })
-        ],
-        [layer.numericId, tileSource]
-    );
+            }
+        } as StyleSpecification;
+    }, [styleId, tileUrl]);
+    const deckLayers = useMemo<MapboxOverlayProps['layers']>(() => [], []);
+    const transformRequest = useCallback((url: string) => {
+        if (url.includes('/api/projects/') && url.includes('/tiles/')) {
+            return { url, credentials: 'include' as const };
+        }
+        return { url };
+    }, []);
 
     return (
         <div
@@ -58,24 +70,31 @@ export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, 
             {...props}
             style={{
                 ...style,
-                background: '#111317',
+                position: style?.position ?? 'relative',
+                background: '#f4f1ea',
                 overflow: 'hidden'
             }}
         >
-            <DeckGL
-                layers={layers}
-                viewState={{
-                    longitude: layer.view.longitude,
-                    latitude: layer.view.latitude,
-                    zoom: layer.view.zoom,
-                    pitch: layer.view.pitch,
-                    bearing: layer.view.bearing
+            <Map
+                key={`${styleId}:${tileUrl ?? 'pending'}`}
+                mapStyle={mapStyle}
+                interactive={false}
+                longitude={layer.view.longitude}
+                latitude={layer.view.latitude}
+                zoom={layer.view.zoom}
+                pitch={layer.view.pitch}
+                bearing={layer.view.bearing}
+                attributionControl={false}
+                transformRequest={transformRequest}
+                onError={(event) => {
+                    if (process.env.NODE_ENV === 'development') {
+                        console.warn('[MapWrapper]', event.error);
+                    }
                 }}
-                controller={false}
-                width="100%"
-                height="100%"
                 style={{ position: 'absolute', inset: '0px' }}
-            />
+            >
+                <DeckGLOverlay layers={deckLayers} interleaved />
+            </Map>
         </div>
     );
 };
