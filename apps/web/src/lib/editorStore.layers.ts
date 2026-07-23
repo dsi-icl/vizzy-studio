@@ -7,9 +7,8 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { DEFAULT_LONDON_TILE_SOURCE } from './mapTileSources';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import type { Layer, LayerWithEditorState } from './types';
+import { DEFAULT_MAP_STYLE_ID, type Layer, type LayerWithEditorState } from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -507,6 +506,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const newLayer: LayerWithEditorState = {
                 numericId,
                 type: 'map',
+                style: DEFAULT_MAP_STYLE_ID,
                 config: {
                     cx: insertionCenter.x,
                     cy: insertionCenter.y,
@@ -524,8 +524,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     zoom: 14,
                     bearing: 0,
                     pitch: 0
-                },
-                tile: { ...DEFAULT_LONDON_TILE_SOURCE }
+                }
             };
 
             set((s) => {
