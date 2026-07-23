@@ -306,7 +306,7 @@ export function ParametersPanel({
                                             step={1}
                                             smallStep={0.25}
                                             min={0}
-                                            max={85}
+                                            max={60}
                                             value={selectedLayer.view.pitch}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('pitch', v);
