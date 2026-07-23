@@ -7,7 +7,12 @@ import { useCallback, useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
-import type { LayerWithEditorState } from '~/lib/types';
+import {
+    DEFAULT_MAP_STYLE_ID,
+    MAP_STYLE_OPTIONS,
+    type LayerWithEditorState,
+    type MapStyleId
+} from '~/lib/types';
 
 type MapViewField = keyof Extract<LayerWithEditorState, { type: 'map' }>['view'];
 
@@ -78,7 +83,7 @@ export function ParametersPanel({
 
             throttledWebUrlUpdate.current(updatedLayer);
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
     );
 
     const updateConfig = useCallback(
@@ -95,7 +100,7 @@ export function ParametersPanel({
 
             throttledConfigUpdate.current(updatedLayer);
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
     );
 
     const updateMapView = useCallback(
@@ -105,6 +110,22 @@ export function ParametersPanel({
                 ...selectedLayer,
                 view: { ...selectedLayer.view, [field]: value }
             };
+
+            useEditorStore.setState((s) => {
+                const newLayers = new Map(s.layers);
+                newLayers.set(selectedLayer.numericId, updatedLayer);
+                return { layers: newLayers };
+            });
+
+            throttledConfigUpdate.current(updatedLayer);
+        },
+        [selectedLayer]
+    );
+
+    const updateMapStyle = useCallback(
+        (value: MapStyleId) => {
+            if (!selectedLayer || selectedLayer.type !== 'map') return;
+            const updatedLayer = { ...selectedLayer, style: value };
 
             useEditorStore.setState((s) => {
                 const newLayers = new Map(s.layers);
@@ -273,12 +294,28 @@ export function ParametersPanel({
                                             step={0.25}
                                             smallStep={0.1}
                                             min={0}
-                                            max={selectedLayer.tile?.dataMaxZoom ?? 24}
+                                            max={15}
                                             value={selectedLayer.view.zoom}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('zoom', v);
                                             }}
                                         />
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Style</Label>
+                                            <select
+                                                value={selectedLayer.style ?? DEFAULT_MAP_STYLE_ID}
+                                                onChange={(e) =>
+                                                    updateMapStyle(e.target.value as MapStyleId)
+                                                }
+                                                className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                            >
+                                                {MAP_STYLE_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 </fieldset>
                             )}

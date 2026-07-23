@@ -2,6 +2,24 @@ import { z } from '~/lib/zod';
 
 // ── Layer schemas ────────────────────────────────────────────────────────────
 
+export const MAP_STYLE_IDS = [
+    'protomaps-light',
+    'protomaps-dark',
+    'protomaps-darkvizgray',
+    'protomaps-darkvizwhite'
+] as const;
+
+export const DEFAULT_MAP_STYLE_ID = 'protomaps-light';
+
+export const MAP_STYLE_OPTIONS = [
+    { value: 'protomaps-light', label: 'Light' },
+    { value: 'protomaps-dark', label: 'Dark' },
+    { value: 'protomaps-darkvizgray', label: 'Dark Gray' },
+    { value: 'protomaps-darkvizwhite', label: 'Dark White' }
+] satisfies Array<{ value: MapStyleId; label: string }>;
+
+export type MapStyleId = (typeof MAP_STYLE_IDS)[number];
+
 const LayerPositionStateSchema = z.object({
     cx: z.number(),
     cy: z.number(),
@@ -78,21 +96,14 @@ const LayerSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('map'),
+            style: z.enum(MAP_STYLE_IDS).default(DEFAULT_MAP_STYLE_ID),
             view: z.object({
                 latitude: z.number(),
                 longitude: z.number(),
                 zoom: z.number(),
                 bearing: z.number(),
                 pitch: z.number()
-            }),
-            tile: z
-                .object({
-                    kind: z.literal('vector').default('vector'),
-                    tileUrl: z.string().min(1),
-                    dataMaxZoom: z.number().int().nonnegative(),
-                    sourceLayers: z.array(z.string()).optional()
-                })
-                .optional()
+            })
         })
         .extend(LayerBaseSchema.shape),
     z
