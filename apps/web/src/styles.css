@@ -1,5 +1,6 @@
 @import '@repo/ui/styles/base.css';
 @import './textEditor.css';
+@import 'maplibre-gl/dist/maplibre-gl.css';
 
 @source './';
 
