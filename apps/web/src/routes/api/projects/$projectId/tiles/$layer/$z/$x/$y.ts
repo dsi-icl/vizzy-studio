@@ -9,8 +9,8 @@ import { hasAuthenticatedActor } from '~/server/requestAuthContext';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
 const isDev = process.env.NODE_ENV === 'development';
-const LAYER_PATTERN = /^[a-z0-9_-]{1,80}$/;
-const TILE_COORDINATE_MAX_ZOOM = 24;
+const MARTIN_SOURCE = 'protomaps';
+const TILE_COORDINATE_MAX_ZOOM = 15;
 
 function parseTileCoord(value: unknown, max: number): number | null {
     if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
@@ -19,8 +19,11 @@ function parseTileCoord(value: unknown, max: number): number | null {
     return parsed;
 }
 
-function makeStatusHeaders(message: string): HeadersInit | undefined {
-    return isDev ? { 'X-Dev-Status-Message': message } : undefined;
+function makeStatusHeaders(message: string): HeadersInit {
+    return {
+        'Cache-Control': 'no-store',
+        ...(isDev ? { 'X-Dev-Status-Message': message } : {})
+    };
 }
 
 function getMartinBaseUrl(): string | null {
@@ -129,7 +132,7 @@ export const Route = createFileRoute('/api/projects/$projectId/tiles/$layer/$z/$
 
                 const { projectId, layer } = params;
                 const z = parseTileCoord(params.z, TILE_COORDINATE_MAX_ZOOM);
-                if (!projectId || !LAYER_PATTERN.test(layer) || z === null) {
+                if (!projectId || layer !== MARTIN_SOURCE || z === null) {
                     await logTileDenied({
                         request,
                         authContext,
@@ -208,7 +211,9 @@ export const Route = createFileRoute('/api/projects/$projectId/tiles/$layer/$z/$
                     });
 
                     const headers = new Headers({
-                        'Cache-Control': 'private, max-age=3600, stale-while-revalidate=86400',
+                        'Cache-Control': upstream.ok
+                            ? 'private, max-age=3600, stale-while-revalidate=86400'
+                            : 'no-store',
                         'X-Content-Type-Options': 'nosniff'
                     });
                     const contentType = upstream.headers.get('content-type');
