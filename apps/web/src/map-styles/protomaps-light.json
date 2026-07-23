@@ -516,7 +516,7 @@
             "filter": ["in", "kind", "building", "building_part"],
             "paint": {
                 "fill-extrusion-color": "#cccccc",
-                "fill-extrusion-height": ["coalesce", ["get", "height"], 12],
+                "fill-extrusion-height": ["coalesce", ["get", "height"], 30],
                 "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
                 "fill-extrusion-opacity": 0.65
             }
