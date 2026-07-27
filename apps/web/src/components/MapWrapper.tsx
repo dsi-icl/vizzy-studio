@@ -23,7 +23,7 @@ const MAP_STYLES: Record<MapStyleId, StyleSpecification> = {
 
 type MapWrapperProps = {
     layer: MapLayer;
-    projectId?: string | null;
+    projectId: string;
 } & RefAttributes<HTMLDivElement> &
     Partial<HTMLAttributes<HTMLDivElement>>;
 
@@ -36,14 +36,12 @@ function DeckGLOverlay(props: MapboxOverlayProps) {
 export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, ...props }) => {
     const styleId = layer.style ?? DEFAULT_MAP_STYLE_ID;
     const tileUrl = useMemo(() => {
-        if (!projectId) return null;
         const path = `/api/projects/${encodeURIComponent(projectId)}/tiles/protomaps/{z}/{x}/{y}`;
         return typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
     }, [projectId]);
 
     const mapStyle = useMemo(() => {
         const baseStyle = MAP_STYLES[styleId];
-        if (!tileUrl) return baseStyle;
 
         return {
             ...baseStyle,
@@ -53,9 +51,20 @@ export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, 
                     ...baseStyle.sources.protomaps,
                     tiles: [tileUrl]
                 }
-            }
+            },
+            layers: baseStyle.layers.map((styleLayer) => {
+                return styleLayer.id === 'building-3d'
+                    ? {
+                          ...styleLayer,
+                          layout: {
+                              ...styleLayer.layout,
+                              visibility: layer.view.pitch > 0 ? 'visible' : 'none'
+                          }
+                      }
+                    : styleLayer;
+            })
         } as StyleSpecification;
-    }, [styleId, tileUrl]);
+    }, [styleId, tileUrl, layer.view.pitch]);
     const deckLayers = useMemo<MapboxOverlayProps['layers']>(() => [], []);
     const transformRequest = useCallback((url: string) => {
         if (url.includes('/api/projects/') && url.includes('/tiles/')) {
@@ -76,16 +85,20 @@ export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, 
             }}
         >
             <Map
-                key={`${styleId}:${tileUrl ?? 'pending'}`}
+                key={`${styleId}:${tileUrl}`}
                 mapStyle={mapStyle}
                 interactive={false}
                 longitude={layer.view.longitude}
                 latitude={layer.view.latitude}
                 zoom={layer.view.zoom}
+                maxPitch={90}
                 pitch={layer.view.pitch}
                 bearing={layer.view.bearing}
                 attributionControl={false}
                 transformRequest={transformRequest}
+                onLoad={(event) => {
+                    event.target.setVerticalFieldOfView(10);
+                }}
                 onError={(event) => {
                     if (process.env.NODE_ENV === 'development') {
                         console.warn('[MapWrapper]', event.error);
