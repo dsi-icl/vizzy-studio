@@ -2,6 +2,13 @@ import { CaretDownIcon, SlidersHorizontalIcon } from '@phosphor-icons/react';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
 import SideButtonNumberField from '@repo/ui/components/number-field';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from '@repo/ui/components/select';
 import { throttle } from '@tanstack/pacer';
 import { useCallback, useRef } from 'react';
 
@@ -306,7 +313,7 @@ export function ParametersPanel({
                                             step={1}
                                             smallStep={0.25}
                                             min={0}
-                                            max={60}
+                                            max={90}
                                             value={selectedLayer.view.pitch}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('pitch', v);
@@ -324,21 +331,28 @@ export function ParametersPanel({
                                                 if (v !== null) updateMapView('bearing', v);
                                             }}
                                         />
-                                        <div className="space-y-1">
-                                            <Label className="text-xs">Style</Label>
-                                            <select
+                                        <div className="flex flex-col items-start gap-1">
+                                            <Label className="text-sm font-medium">Style</Label>
+                                            <Select
                                                 value={selectedLayer.style ?? DEFAULT_MAP_STYLE_ID}
-                                                onChange={(e) =>
-                                                    updateMapStyle(e.target.value as MapStyleId)
+                                                onValueChange={(value) =>
+                                                    updateMapStyle(value as MapStyleId)
                                                 }
-                                                className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs"
                                             >
-                                                {MAP_STYLE_OPTIONS.map((option) => (
-                                                    <option key={option.value} value={option.value}>
-                                                        {option.label}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                <SelectTrigger className="w-44 border-border bg-transparent text-sm data-[size=default]:h-10 dark:bg-transparent">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent align="start">
+                                                    {MAP_STYLE_OPTIONS.map((option) => (
+                                                        <SelectItem
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
                                         </div>
                                     </div>
                                 </fieldset>

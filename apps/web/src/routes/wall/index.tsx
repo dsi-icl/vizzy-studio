@@ -605,12 +605,14 @@ function WallApp() {
             }
 
             if (layer.type === 'map') {
+                const projectId = lastHydrateContextRef.current.projectId;
+                if (!projectId) return null;
                 return (
                     <MapWrapper
                         key={layer.numericId}
                         {...commonProps}
                         layer={layer}
-                        projectId={lastHydrateContextRef.current.projectId}
+                        projectId={projectId}
                     />
                 );
             }

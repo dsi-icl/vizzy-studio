@@ -518,7 +518,7 @@
                 "fill-extrusion-color": "#cccccc",
                 "fill-extrusion-height": ["coalesce", ["get", "height"], 30],
                 "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
-                "fill-extrusion-opacity": 0.65
+                "fill-extrusion-opacity": 0.7
             }
         },
         {

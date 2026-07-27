@@ -23,13 +23,13 @@ import {
 import { toast } from 'sonner';
 
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
+import { EditorMapOverlay } from '~/components/EditorMapOverlay';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
-import { MapWrapper } from '~/components/MapWrapper';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
@@ -55,48 +55,6 @@ const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
 type EditorMapLayer = Extract<LayerWithEditorState, { type: 'map' }>;
-
-function EditorMapOverlay({
-    layer,
-    projectId,
-    selected,
-    stageScaleFactor
-}: {
-    layer: EditorMapLayer;
-    projectId?: string | null;
-    selected: boolean;
-    stageScaleFactor: number;
-}) {
-    const hidden = !layer.config.visible;
-    return (
-        <div
-            style={{
-                position: 'absolute',
-                left: layer.config.cx * stageScaleFactor,
-                top: layer.config.cy * stageScaleFactor,
-                width: layer.config.width * stageScaleFactor,
-                height: layer.config.height * stageScaleFactor,
-                transform: `translate(-50%, -50%) rotate(${layer.config.rotation}deg) scale(${layer.config.scaleX}, ${layer.config.scaleY})`,
-                transformOrigin: 'center',
-                opacity: hidden ? 0.3 : 1,
-                pointerEvents: 'none',
-                overflow: 'hidden',
-                outline: selected ? '2px solid rgba(0, 161, 255, 0.85)' : undefined,
-                zIndex: layer.config.zIndex
-            }}
-        >
-            <MapWrapper
-                layer={layer}
-                projectId={projectId}
-                style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%'
-                }}
-            />
-        </div>
-    );
-}
 
 export function EditorSlate() {
     const engine = useMemo(
@@ -1345,15 +1303,19 @@ export function EditorSlate() {
                                 zIndex: 1
                             }}
                         >
-                            {visibleMapLayers.map((layer) => (
-                                <EditorMapOverlay
-                                    key={`map_overlay_${layer.numericId}`}
-                                    layer={layer}
-                                    projectId={projectId}
-                                    selected={selectedLayerIdSet.has(layer.numericId.toString())}
-                                    stageScaleFactor={stageScaleFactor}
-                                />
-                            ))}
+                            {projectId
+                                ? visibleMapLayers.map((layer) => (
+                                      <EditorMapOverlay
+                                          key={`map_overlay_${layer.numericId}`}
+                                          layer={layer}
+                                          projectId={projectId}
+                                          selected={selectedLayerIdSet.has(
+                                              layer.numericId.toString()
+                                          )}
+                                          stageScaleFactor={stageScaleFactor}
+                                      />
+                                  ))
+                                : null}
                         </div>
                         <Stage
                             ref={stageInstance}
