@@ -349,6 +349,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('gallery_state'),
         wallId: z.string().optional(),
+        layout: StageLayoutSchema.optional(),
         walls: z.array(
             z.object({
                 wallId: z.string(),

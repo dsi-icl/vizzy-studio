@@ -381,7 +381,7 @@ function StageDetail({
         mutationFn: () => $setDefaultStage({ data: { projectId, stageId: stage.id } }),
         onSuccess: () => {
             invalidate();
-            toast.success('Default Gallery stage updated');
+            toast.success('Default stage updated');
         },
         onError: (error) => toast.error(error.message)
     });
@@ -446,7 +446,7 @@ function StageDetail({
                         <h3 className="font-medium">{stage.name}</h3>
                         <p className="text-xs text-muted-foreground">
                             {isDefault
-                                ? 'Default editing and Gallery stage'
+                                ? 'Default editing and global Gallery stage'
                                 : 'Independent stage history'}
                         </p>
                     </div>
@@ -467,7 +467,7 @@ function StageDetail({
                                 variant="outline"
                                 onClick={() => defaultMutation.mutate()}
                             >
-                                <StarIcon /> Present to Gallery
+                                <StarIcon /> Make default
                             </Button>
                         )}
                         {!stage.archivedAt && (

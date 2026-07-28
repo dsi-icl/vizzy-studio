@@ -443,7 +443,11 @@ export async function completeHelloRegistration(
         ...(effectiveWallId ? { wallId: effectiveWallId } : {}),
         authContext
     });
-    void sendGalleryStateSnapshot(peer, effectiveWallId);
+    const canReceiveWallLayout =
+        Boolean(galleryDevice?.assignedWallId) ||
+        passedAuthContext.user?.role === 'admin' ||
+        passedAuthContext.user?.role === 'operator';
+    void sendGalleryStateSnapshot(peer, effectiveWallId, canReceiveWallLayout);
     console.log(
         `[WS] Gallery joined${effectiveWallId ? ` wallId=${effectiveWallId}` : ` (global)`}`
     );

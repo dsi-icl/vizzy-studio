@@ -99,16 +99,18 @@ Every project has one `defaultStageId`.
 For the MVP, this single concept serves both purposes:
 
 - It is the stage opened by project-level Edit/default navigation.
-- It is the stage presented by Gallery.
+- It is the fallback stage presented by a global Gallery or by a Gallery whose assigned wall has
+  no configured layout template.
 
-The stage configuration UI exposes this as a single-choice control such as **Present to Gallery**
-or **Default / Gallery stage**. New and migrated projects default it to their Main stage.
+The stage configuration UI exposes this as a single-choice **Default stage** control. New and
+migrated projects default it to their Main stage.
 
 Do not add separate `mainStageId` and `galleryStageId` fields during the MVP. They can be split in a
 later change if editing-default and Gallery-presentation requirements genuinely diverge.
 
-The coupling is intentional: project-level Edit should open the stage currently presented by
-Gallery.
+The coupling remains intentional for project-level Edit and the Gallery fallback. An enrolled
+Gallery assigned to a wall may instead select the unique published stage matching that wall's
+configured full layout.
 
 ## Data Model
 
@@ -536,23 +538,29 @@ The Stages area provides:
 - Stage-specific commit tree and branches.
 - Stage-specific publish and unpublish.
 - Archive stage.
-- Set the single Default / Present to Gallery stage.
+- Set the single Default stage.
 
 Remove global project publication controls and binary project-level Published status. Suitable
 project summaries include:
 
 - Number of published stages.
-- Whether the default Gallery stage is published.
+- Whether the default stage is published.
 - Validation warnings for missing default stage or invalid pointers.
 
 ## Publishing and Gallery
 
 Each stage owns its published commit.
 
-Gallery presents `project.defaultStageId` and its latest published commit. If the default stage is
-not published, the project is unavailable to Gallery.
+Gallery presentation depends on its server-resolved context:
 
-Gallery does not choose a stage from wall dimensions in the MVP.
+- An enrolled Gallery assigned to a wall receives that wall's configured logical layout through
+  its authenticated Gallery-state message. It presents the unique active stage matching all four
+  layout values and filters out projects without such a published stage.
+- A global Gallery, or an assigned Gallery whose wall has no layout template, presents
+  `project.defaultStageId`.
+
+This does not require wall clients to report physical viewport dimensions. The logical wall
+template is admin-configured and is distinct from later physical calibration telemetry.
 
 Project visibility and stage publication have separate purposes:
 
@@ -564,12 +572,12 @@ Project visibility and stage publication have separate purposes:
 - A wall may receive a private project's assets only while it is authorized for the project
   currently bound by the server.
 
-When wall observations or a configured wall template are available, Gallery may show a warning if
-the default stage layout differs from the selected wall layout. The mismatch does not block
-presentation.
+The signage management UI marks wall-template mismatches visibly. They remain advisory rather than
+blocking in this iteration.
 
-Changing the Default / Present to Gallery control changes `project.defaultStageId`. This also
-changes the stage opened by project-level default Edit navigation in the MVP.
+Changing the Default stage control changes `project.defaultStageId`. This also changes the stage
+opened by project-level default Edit navigation and the fallback used by global Galleries in the
+MVP.
 
 ## Explicit Slideshow Queue
 
@@ -973,22 +981,20 @@ The following are intentionally deferred and must be recorded when the MVP is ha
 
 1. Split editing default and Gallery presentation into separate stage selectors if one
    `defaultStageId` proves insufficient.
-2. Make Gallery select or filter stages using target-wall layout.
-3. Define blocking versus warning behavior for Gallery/wall layout mismatch.
-4. Add grouped project-import provenance and a first-class **Refresh project slides** operation.
-5. Add commit pinning for slideshow entries.
-6. Define calibrated overscan, bezel compensation, browser-zoom policy, and irregular or
+2. Revisit the Gallery behavior for configured wall-template mismatches. The MVP excludes projects
+   without one exact published match; it falls back to the default stage only when no wall template
+   is available.
+3. Add commit pinning for slideshow entries.
+4. Define calibrated overscan, bezel compensation, browser-zoom policy, and irregular or
    mixed-aspect physical wall layouts beyond the MVP's uniform best-effort scaling.
-7. Add calendar scheduling, dayparts, transitions, or time-zone behavior.
-8. Add custom-render project support.
-9. Add distributed/multi-process slideshow coordination.
-10. Revisit commit-layout snapshots only if reproducible historical dimensions become a product
-    requirement.
-11. Decide whether wall clients should report physical viewport width, height, and device pixel
-    ratio. The MVP deliberately observes only the existing row/column peer coordinates and lets
-    admins configure logical panel dimensions, avoiding another wall-handshake protocol change.
-12. Add richer runner telemetry (current entry, phase, next transition, and last bind error) to the
-    signage panel if operational feedback beyond per-entry validation is needed.
+5. Add calendar scheduling, dayparts, transitions, or time-zone behavior.
+6. Add custom-render project support.
+7. Add distributed/multi-process slideshow coordination.
+8. Revisit commit-layout snapshots only if reproducible historical dimensions become a product
+   requirement.
+9. Decide whether wall clients should report physical viewport width, height, and device pixel
+   ratio for calibration diagnostics. It is not required for stage selection: the application
+   uses the admin-configured logical wall template and avoids a wall-handshake protocol change.
 
 ## Acceptance Summary
 

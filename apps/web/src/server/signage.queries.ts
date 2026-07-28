@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import {
+    $getSignageRuntimeStatus,
     $getSignageSlideshow,
     $listSignageSlideshows,
     $listSignageSources,
@@ -23,6 +24,13 @@ export const signageEntryStatusQueryOptions = (id: string) =>
     queryOptions({
         queryKey: ['signage', 'slideshows', id, 'entry-status'],
         queryFn: () => $resolveSignageEntries({ data: { id } })
+    });
+
+export const signageRuntimeStatusQueryOptions = (id: string) =>
+    queryOptions({
+        queryKey: ['signage', 'slideshows', id, 'runtime'],
+        queryFn: () => $getSignageRuntimeStatus({ data: { id } }),
+        refetchInterval: 2_000
     });
 
 export const signageSourcesQueryOptions = (layout: {

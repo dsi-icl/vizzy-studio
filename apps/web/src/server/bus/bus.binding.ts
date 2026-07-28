@@ -195,7 +195,11 @@ export function broadcastProjectsChanged(projectId?: string) {
     }
 }
 
-export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
+export async function sendGalleryStateSnapshot(
+    peer: Peer,
+    wallId?: string,
+    includeWallLayout = false
+) {
     const candidateWallIds = new Set<string>();
     if (wallId) {
         candidateWallIds.add(wallId);
@@ -223,8 +227,22 @@ export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
     });
 
     let publishedProjects: Array<{ projectId: string; publishedCommitId: string | null }> = [];
+    let layout:
+        | { columns: number; rows: number; screenWidth: number; screenHeight: number }
+        | undefined;
     try {
         publishedProjects = await dbCol.projects.findPublishedCommitRefs();
+        if (wallId && includeWallLayout) {
+            const wall = await dbCol.walls.findByWallId(wallId);
+            if (wall?.layoutTemplate) {
+                layout = {
+                    columns: wall.layoutTemplate.columns,
+                    rows: wall.layoutTemplate.rows,
+                    screenWidth: wall.layoutTemplate.screenWidth,
+                    screenHeight: wall.layoutTemplate.screenHeight
+                };
+            }
+        }
     } catch (error) {
         console.warn('[WS] gallery_state: failed to read published projects snapshot', error);
     }
@@ -232,9 +250,21 @@ export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
     sendJSON(peer, {
         type: 'gallery_state',
         ...(wallId ? { wallId } : {}),
+        ...(layout ? { layout } : {}),
         walls,
         publishedProjects
     });
+}
+
+export function broadcastGalleryStateSnapshot(wallId: string) {
+    for (const entry of galleriesByWallId.get(wallId) ?? []) {
+        const role = entry.meta.authContext?.user?.role;
+        const isAssignedGallery =
+            entry.meta.authContext?.device?.kind === 'gallery' &&
+            entry.meta.authContext.device.wallId === wallId;
+        const canReceiveWallLayout = isAssignedGallery || role === 'admin' || role === 'operator';
+        void sendGalleryStateSnapshot(entry.peer, wallId, canReceiveWallLayout);
+    }
 }
 
 export async function isWallTargetedBySignage(wallId: string): Promise<boolean> {

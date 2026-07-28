@@ -191,8 +191,10 @@ export async function listPublishedProjects() {
     );
 
     const visibleProjects = projectDocs.filter((project) => {
-        const defaultStage = getDefaultStage(project);
-        return project.visibility === 'public' && Boolean(defaultStage?.publishedCommitId);
+        return (
+            project.visibility === 'public' &&
+            project.stages.some((stage) => !stage.archivedAt && Boolean(stage.publishedCommitId))
+        );
     });
 
     const heroFilenames = Array.from(
