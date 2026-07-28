@@ -1,7 +1,6 @@
 import { CaretDownIcon, StackSimpleIcon } from '@phosphor-icons/react';
 
 import { useEditorStore } from '~/lib/editorStore';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 
 import { DraggableList } from './DraggableList';
 import { LayerItem } from './LayerItem';
@@ -18,6 +17,7 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
     const reorderLayers = useEditorStore((s) => s.reorderLayers);
     const toggleLayerSelection = useEditorStore((s) => s.toggleLayerSelection);
+    const stageLayout = useEditorStore((s) => s.stageLayout);
 
     const sortedLayers = Array.from(layers.values()).sort(
         (a, b) => b.config.zIndex - a.config.zIndex
@@ -39,8 +39,8 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
         const slate = document.getElementById('slate');
         if (!(slate instanceof HTMLDivElement)) return;
 
-        const logicalWidth = COLS * SCREEN_W;
-        const logicalHeight = ROWS * SCREEN_H;
+        const logicalWidth = stageLayout.columns * stageLayout.screenWidth;
+        const logicalHeight = stageLayout.rows * stageLayout.screenHeight;
         const scaleX = slate.scrollWidth / Math.max(1, logicalWidth);
         const scaleY = slate.scrollHeight / Math.max(1, logicalHeight);
         const targetLeft = layer.config.cx * scaleX - slate.clientWidth / 2;

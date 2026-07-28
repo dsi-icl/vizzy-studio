@@ -1,3 +1,5 @@
+import { StageLayout as StageLayoutSchema, type StageLayout } from '@repo/db/schema';
+
 import { z } from '~/lib/zod';
 
 // ── Layer schemas ────────────────────────────────────────────────────────────
@@ -233,6 +235,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
+        layout: StageLayoutSchema.optional(),
         customRender: z
             .object({
                 url: z.string(),
@@ -240,7 +243,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
                 proxy: z.boolean().default(false)
             })
             .optional(),
-        boundSource: z.enum(['live', 'gallery']).optional()
+        boundSource: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({ type: z.literal('rehydrate_please') }),
     z.object({
@@ -447,6 +450,8 @@ export interface ScopeState {
     projectId: string;
     commitId: string;
     slideId: string;
+    stageId?: string;
+    layout: StageLayout;
     dirty: boolean;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;

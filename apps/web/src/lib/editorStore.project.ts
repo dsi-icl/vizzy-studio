@@ -39,7 +39,15 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                 projectName: project.name,
                 stageId: stage.id,
                 stageLayout: stage.layout,
-                headCommitId: stage.headCommitId
+                headCommitId: stage.headCommitId,
+                insertionCenter: {
+                    x: (stage.layout.columns * stage.layout.screenWidth) / 2,
+                    y: (stage.layout.rows * stage.layout.screenHeight) / 2
+                },
+                insertionViewport: {
+                    width: stage.layout.screenWidth,
+                    height: stage.layout.screenHeight
+                }
             });
 
             const engine = EditorEngine.getInstance();

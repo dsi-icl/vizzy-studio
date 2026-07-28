@@ -245,9 +245,10 @@ export async function performLiveBind(
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
     try {
         cancelWallUnbindGrace(wallId);
-        const [resolvedSlideId, project, wallExists] = await Promise.all([
+        const [resolvedSlideId, project, commit, wallExists] = await Promise.all([
             resolveBoundSlideId(projectId, commitId, requestedSlideId),
             dbCol.projects.findById(projectId),
+            dbCol.commits.findById(commitId),
             dbCol.walls.findOne({ wallId })
         ]);
         if (!wallExists) {
@@ -256,6 +257,11 @@ export async function performLiveBind(
         if (!resolvedSlideId) {
             return { ok: false, error: 'invalid_slide' };
         }
+        if (!project || !commit || commit.projectId !== projectId) {
+            return { ok: false, error: 'invalid_commit' };
+        }
+        const stage = project.stages.find(({ id }) => id === commit.stageId);
+        if (!stage) return { ok: false, error: 'invalid_stage' };
 
         const scopeId = internScope(projectId, commitId, resolvedSlideId);
         const scope = getOrCreateScope(
@@ -265,7 +271,9 @@ export async function performLiveBind(
             resolvedSlideId,
             project?.customRenderUrl ?? undefined,
             project?.customRenderCompat,
-            project?.customRenderProxy
+            project?.customRenderProxy,
+            stage.layout,
+            stage.id
         );
         bindWall(wallId, scopeId, source);
 

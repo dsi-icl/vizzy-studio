@@ -72,7 +72,11 @@ export interface ProjectAuditListInput {
     toCreatedAt?: number;
 }
 
-import { scopedState, updateProjectCustomRenderSettings } from '~/lib/busState';
+import {
+    scopedState,
+    updateProjectCustomRenderSettings,
+    updateRuntimeStageLayout
+} from '~/lib/busState';
 import { revokeUploadToken, validateUploadToken } from '~/lib/uploadTokens';
 import { logAuditSuccess } from '~/server/audit';
 import { dbCol, collections } from '~/server/collections';
@@ -438,6 +442,9 @@ export async function updateStage(
     );
     const updated = await dbCol.projects.replaceStages(projectId, stages, project.defaultStageId);
     if (!updated) throw new Error('Project not found');
+    if (!stageLayoutsEqual(existingStage.layout, layout)) {
+        updateRuntimeStageLayout(projectId, stageId, layout);
+    }
 
     await logAuditSuccess({
         action: 'STAGE_UPDATED',

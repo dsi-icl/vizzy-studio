@@ -80,9 +80,11 @@ export async function registerEditorPeer(
         return false;
     }
 
-    const [canView, canEdit] = await Promise.all([
+    const [canView, canEdit, project, commit] = await Promise.all([
         canViewProject(userActor, scopeInput.projectId),
-        canEditProject(userActor, scopeInput.projectId)
+        canEditProject(userActor, scopeInput.projectId),
+        dbCol.projects.findById(scopeInput.projectId),
+        dbCol.commits.findById(scopeInput.commitId)
     ]);
     if (!canView) {
         await logAuditDenied({
@@ -110,6 +112,32 @@ export async function registerEditorPeer(
         }
         return false;
     }
+    const stage =
+        commit?.projectId === scopeInput.projectId
+            ? project?.stages.find(({ id }) => id === commit.stageId)
+            : null;
+    if (!stage || stage.archivedAt) {
+        await logAuditDenied({
+            action: 'WS_SESSION_DENIED',
+            reasonCode: 'INVALID_STAGE_SCOPE',
+            projectId: scopeInput.projectId,
+            resourceType: 'scope',
+            resourceId: makeScopeLabel(
+                scopeInput.projectId,
+                scopeInput.commitId,
+                scopeInput.slideId
+            ),
+            authContext,
+            executionContext: {
+                surface: 'ws',
+                operation: 'registerEditorPeer',
+                peerId: peer.id
+            }
+        });
+        sendJSON(peer, { type: 'auth_denied' });
+        peer.close();
+        return false;
+    }
     editorProjectPermissions.set(peer.id, {
         projectId: scopeInput.projectId,
         canView,
@@ -121,7 +149,12 @@ export async function registerEditorPeer(
         scopeId,
         scopeInput.projectId,
         scopeInput.commitId,
-        scopeInput.slideId
+        scopeInput.slideId,
+        undefined,
+        undefined,
+        undefined,
+        stage.layout,
+        stage.id
     );
 
     const existing = peers.get(peer.id);

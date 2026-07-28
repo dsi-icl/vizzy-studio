@@ -5,6 +5,7 @@ import {
     SlideshowIcon
 } from '@phosphor-icons/react';
 import { authSessionQueryOptions } from '@repo/auth/tanstack/queries';
+import { DEFAULT_STAGE_LAYOUT } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
 import {
@@ -30,10 +31,6 @@ import { $createBranchHead } from '~/server/projects.fns';
 import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
-const SCREEN_W = 1920;
-const SCREEN_H = 1080;
-const COLS = 16;
-const ROWS = 4;
 
 export const Route = createFileRoute('/_auth/quarry/view/$projectId/$commitId')({
     loader: async ({ context, params }) => {
@@ -56,6 +53,9 @@ function CommitViewer() {
     const { data: sessionData } = useQuery(authSessionQueryOptions());
     const { data: commit } = useSuspenseQuery(commitQueryOptions(commitId));
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
+    const stageLayout =
+        project.stages.find(({ id }) => id === commit.stageId)?.layout ?? DEFAULT_STAGE_LAYOUT;
+    const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const navigate = useNavigate();
     const stageSlot = useRef<HTMLDivElement>(null);
     const stageInstance = useRef<Konva.Stage>(null);
@@ -103,7 +103,7 @@ function CommitViewer() {
         const slot = stageSlot.current;
         if (!slot) return;
 
-        const logicalHeight = SCREEN_H * ROWS;
+        const logicalHeight = screenHeight * rows;
         const minScale = 0.01;
 
         const recomputeScale = () => {
@@ -120,7 +120,7 @@ function CommitViewer() {
         observer.observe(slot);
 
         return () => observer.disconnect();
-    }, []);
+    }, [rows, screenHeight]);
 
     const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
         const slot = stageSlot.current;
@@ -245,6 +245,7 @@ function CommitViewer() {
                                     stageInstance={stageInstance}
                                     stageScaleFactor={stageScaleFactor}
                                     layers={sortedLayers}
+                                    layout={stageLayout}
                                 />
                                 <div
                                     ref={stageSlot}
@@ -252,8 +253,8 @@ function CommitViewer() {
                                 >
                                     <Stage
                                         ref={stageInstance}
-                                        width={COLS * SCREEN_W * stageScaleFactor}
-                                        height={ROWS * SCREEN_H * stageScaleFactor}
+                                        width={columns * screenWidth * stageScaleFactor}
+                                        height={rows * screenHeight * stageScaleFactor}
                                         onWheel={handleStageWheel}
                                         scaleX={stageScaleFactor}
                                         scaleY={stageScaleFactor}
@@ -264,6 +265,7 @@ function CommitViewer() {
                                                     key={`bg_${backgroundLayer.numericId}`}
                                                     layer={backgroundLayer}
                                                     previewScale={1}
+                                                    layout={stageLayout}
                                                 />
                                             ) : null}
                                             {foregroundLayers
@@ -395,7 +397,11 @@ function CommitViewer() {
                                                         />
                                                     );
                                                 })}
-                                            {getDOGridLines(COLS * SCREEN_W, ROWS * SCREEN_H, 20)}
+                                            {getDOGridLines(
+                                                columns * screenWidth,
+                                                rows * screenHeight,
+                                                20
+                                            )}
                                         </KonvaLayer>
                                     </Stage>
                                 </div>

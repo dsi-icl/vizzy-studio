@@ -768,6 +768,30 @@ and custom-background renderers through the root transform, but does not promise
 calibration for browser zoom, overscan, bezel compensation, mixed-aspect screens, or irregular
 physical arrangements.
 
+### Geometry constant audit
+
+Hard-coded sizes must be classified by purpose rather than removed indiscriminately:
+
+- Logical geometry comes from `StageLayout`. This includes Editor and viewer canvas bounds,
+  insertion points, layer background bounds, wall origin/culling, and custom background world
+  coordinates.
+- Legacy defaults remain `16 × 4` at `1920 × 1080` only for migration, initial/fallback state,
+  and the isolated background playground.
+- Browser-only SSR fallbacks such as preview-overlay viewport dimensions do not define project
+  geometry and may remain.
+- Editor interaction measurements such as edge-scroll zones are CSS/browser pixels and remain
+  independent of stage layout.
+- Rendering budgets are allowed to be fixed, but must cap both dimensions and total work rather
+  than masquerade as logical geometry.
+
+In particular, the former width-only `MAX_PREVIEW_W` background limit is replaced by an
+aspect-preserving raster budget with a maximum edge and maximum pixel count. This prevents
+portrait or extreme-aspect stages from allocating an unexpectedly tall canvas. Background
+particle count is proportional to panel count with a hard performance ceiling, particle/wave
+measurements are converted from logical pixels to raster pixels, wave placement is relative to
+the configured row count, and the Editor snap grid preserves the existing per-panel grid density
+for arbitrary `screenWidth` and `screenHeight`.
+
 ## Authorization
 
 The current Better Auth integration stores and checks one exact role string. Application

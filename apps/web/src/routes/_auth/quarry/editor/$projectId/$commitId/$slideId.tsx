@@ -15,15 +15,23 @@ import { ParametersPanel } from '~/components/ParametersPanel';
 import { SlideList } from '~/components/SlideList';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
-import { projectQueryOptions } from '~/server/projects.queries';
+import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
 export const Route = createFileRoute('/_auth/quarry/editor/$projectId/$commitId/$slideId')({
     loader: async ({ context, params }) => {
-        const project = await context.queryClient.ensureQueryData(
-            projectQueryOptions(params.projectId)
-        );
+        const [project, commit] = await Promise.all([
+            context.queryClient.ensureQueryData(projectQueryOptions(params.projectId)),
+            context.queryClient.ensureQueryData(commitQueryOptions(params.commitId))
+        ]);
+        if (!project || commit.projectId !== params.projectId) {
+            throw new Error('Commit does not belong to this project');
+        }
+        const stage = project.stages.find(({ id }) => id === commit.stageId);
+        if (!stage) throw new Error('Commit stage not found');
+        if (stage.archivedAt) throw new Error('Archived stages cannot be edited');
         return {
-            projectName: project?.name ?? 'Project'
+            projectName: project.name,
+            stageName: stage.name
         };
     },
     head: ({ loaderData }) => ({
