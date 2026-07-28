@@ -1,3 +1,4 @@
+import { DEFAULT_STAGE_LAYOUT } from '@repo/db/schema';
 import { throttle } from '@tanstack/pacer';
 import { create } from 'zustand';
 
@@ -64,6 +65,8 @@ export const useEditorStore =
                   // ── Initial state ──
                   projectId: null,
                   projectName: null,
+                  stageId: null,
+                  stageLayout: { ...DEFAULT_STAGE_LAYOUT },
                   parentSaveMessage: null,
                   layers: new Map(),
                   selectedLayerIds: [],

@@ -388,7 +388,10 @@ export const Route = createFileRoute('/api/assets/$uri')({
                         });
                     }
 
-                    if (project.visibility !== 'public' || !project.publishedCommitId) {
+                    const defaultStage = project.stages.find(
+                        ({ id }) => id === project.defaultStageId
+                    );
+                    if (project.visibility !== 'public' || !defaultStage?.publishedCommitId) {
                         cacheControl = 'private, max-age=31536000, immutable';
                         if (!user && !device) {
                             await logAssetDenied({

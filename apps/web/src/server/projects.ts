@@ -1,6 +1,19 @@
 import '@tanstack/react-start/server-only';
-import type { AuthContext, AuditResourceType, CommitDocument } from '@repo/db/documents';
-import type { Collaborator, CollaboratorRole, ProjectVisibility } from '@repo/db/schema';
+import { getConfigValue } from '@repo/db/config';
+import type {
+    AuthContext,
+    AuditResourceType,
+    CommitDocument,
+    ProjectStage
+} from '@repo/db/documents';
+import {
+    DEFAULT_STAGE_LAYOUT,
+    StageLayout,
+    stageLayoutsEqual,
+    type Collaborator,
+    type CollaboratorRole,
+    type ProjectVisibility
+} from '@repo/db/schema';
 
 import type { AuditExecutionContextInput } from '~/server/audit';
 
@@ -31,7 +44,11 @@ interface UpdateProjectInput {
     customRenderCompat?: boolean;
     customRenderProxy?: boolean;
     collaborators?: Array<{ email: string; role: CollaboratorRole }>;
-    publishedCommitId?: string | null;
+}
+
+export interface StageLayoutLimits {
+    maxColumns: number;
+    maxRows: number;
 }
 
 export type AuditOutcome = 'success' | 'denied' | 'failure' | 'error';
@@ -90,6 +107,57 @@ function normalizeAssetFilename(value: unknown): string | null {
     return noQuery;
 }
 
+export function getDefaultStage(project: { defaultStageId: string; stages: ProjectStage[] }) {
+    return project.stages.find((stage) => stage.id === project.defaultStageId) ?? null;
+}
+
+export function getProjectStage(
+    project: { stages: ProjectStage[] },
+    stageId: string
+): ProjectStage {
+    const stage = project.stages.find(({ id }) => id === stageId);
+    if (!stage) throw new Error('Stage not found');
+    return stage;
+}
+
+export async function getStageLayoutLimits(): Promise<StageLayoutLimits> {
+    const [configuredColumns, configuredRows] = await Promise.all([
+        getConfigValue<number>('stage.maxColumns'),
+        getConfigValue<number>('stage.maxRows')
+    ]);
+    return {
+        maxColumns:
+            typeof configuredColumns === 'number' &&
+            Number.isInteger(configuredColumns) &&
+            configuredColumns > 0
+                ? configuredColumns
+                : 16,
+        maxRows:
+            typeof configuredRows === 'number' &&
+            Number.isInteger(configuredRows) &&
+            configuredRows > 0
+                ? configuredRows
+                : 4
+    };
+}
+
+async function validateStageLayout(
+    layoutInput: StageLayout,
+    existingLayout?: StageLayout
+): Promise<StageLayout> {
+    const layout = StageLayout.parse(layoutInput);
+    const limits = await getStageLayoutLimits();
+    const unchangedGrandfathered =
+        existingLayout !== undefined && stageLayoutsEqual(existingLayout, layout);
+    if (!unchangedGrandfathered && layout.columns > limits.maxColumns) {
+        throw new Error(`Stage columns cannot exceed ${limits.maxColumns}`);
+    }
+    if (!unchangedGrandfathered && layout.rows > limits.maxRows) {
+        throw new Error(`Stage rows cannot exceed ${limits.maxRows}`);
+    }
+    return layout;
+}
+
 export async function listProjects(userEmail: string, includeArchived = false) {
     const filter: Record<string, unknown> = {
         $or: [{ createdBy: userEmail }, { 'collaborators.email': userEmail }]
@@ -107,9 +175,10 @@ export async function listPublishedProjects() {
         { sort: { updatedAt: -1 } }
     );
 
-    const visibleProjects = projectDocs.filter(
-        (project) => project.visibility === 'public' && Boolean(project.publishedCommitId)
-    );
+    const visibleProjects = projectDocs.filter((project) => {
+        const defaultStage = getDefaultStage(project);
+        return project.visibility === 'public' && Boolean(defaultStage?.publishedCommitId);
+    });
 
     const heroFilenames = Array.from(
         new Set(
@@ -225,8 +294,17 @@ export async function createProject(
         ...input,
         collaborators: [{ email: userEmail, role: 'owner' as const }, ...input.collaborators],
         visibility: input.visibility ?? 'private',
-        headCommitId: null,
-        publishedCommitId: null,
+        defaultStageId: 'main',
+        stages: [
+            {
+                id: 'main',
+                name: 'Main',
+                order: 0,
+                layout: { ...DEFAULT_STAGE_LAYOUT },
+                headCommitId: null,
+                publishedCommitId: null
+            }
+        ],
         createdBy: userEmail
     });
 
@@ -249,7 +327,7 @@ export async function updateProject(
     userEmail: string,
     auditContext?: ProjectAuditContext
 ) {
-    const { id: projectId, publishedCommitId: rawPublishedCommitId, ...updates } = input;
+    const { id: projectId, ...updates } = input;
     const existing = await dbCol.projects.findById(projectId);
     if (!existing) throw new Error('Project not found');
 
@@ -257,22 +335,13 @@ export async function updateProject(
     const result = await dbCol.projects.update(projectId, updates as any);
     if (!result) throw new Error('Update failed');
 
-    // Handle publishedCommitId separately via typed method (avoids raw ObjectId construction)
-    if (rawPublishedCommitId !== undefined) {
-        await dbCol.projects.setPublishedCommit(
-            projectId,
-            rawPublishedCommitId ?? null,
-            rawPublishedCommitId ? 'public' : (updates.visibility ?? existing.visibility)
-        );
-    }
-
     await logAuditSuccess({
         action: 'PROJECT_UPDATED',
         actorId: userEmail,
         projectId,
         resourceType: 'project',
         resourceId: projectId,
-        changes: { ...updates, publishedCommitId: rawPublishedCommitId ?? null },
+        changes: updates,
         ...withProjectAuditContext(auditContext)
     });
 
@@ -295,6 +364,156 @@ export async function updateProject(
     const updated = await dbCol.projects.findById(projectId);
     if (!updated) throw new Error('Project not found after update');
     return updated;
+}
+
+export async function createStage(
+    projectId: string,
+    input: { name: string; layout: StageLayout },
+    userEmail: string,
+    auditContext?: ProjectAuditContext
+) {
+    const project = await dbCol.projects.findById(projectId);
+    if (!project) throw new Error('Project not found');
+    const layout = await validateStageLayout(input.layout);
+    const duplicate = project.stages.some(
+        (stage) => !stage.archivedAt && stageLayoutsEqual(stage.layout, layout)
+    );
+    if (duplicate) throw new Error('An active stage already uses this layout');
+
+    const stage: ProjectStage = {
+        id: crypto.randomUUID(),
+        name: input.name.trim(),
+        order: Math.max(-1, ...project.stages.map(({ order }) => order)) + 1,
+        layout,
+        headCommitId: null,
+        publishedCommitId: null
+    };
+    if (!stage.name) throw new Error('Stage name is required');
+
+    const updated = await dbCol.projects.replaceStages(
+        projectId,
+        [...project.stages, stage],
+        project.defaultStageId
+    );
+    if (!updated) throw new Error('Project not found');
+
+    await logAuditSuccess({
+        action: 'STAGE_CREATED',
+        actorId: userEmail,
+        projectId,
+        resourceType: 'project',
+        resourceId: projectId,
+        changes: { stageId: stage.id, name: stage.name, layout },
+        ...withProjectAuditContext(auditContext)
+    });
+    process.__BROADCAST_PROJECTS_CHANGED__?.(projectId);
+    return stage;
+}
+
+export async function updateStage(
+    projectId: string,
+    stageId: string,
+    input: { name?: string; layout?: StageLayout },
+    userEmail: string,
+    auditContext?: ProjectAuditContext
+) {
+    const project = await dbCol.projects.findById(projectId);
+    if (!project) throw new Error('Project not found');
+    const existingStage = getProjectStage(project, stageId);
+    if (existingStage.archivedAt) throw new Error('Archived stages cannot be edited');
+
+    const layout = input.layout
+        ? await validateStageLayout(input.layout, existingStage.layout)
+        : existingStage.layout;
+    const duplicate = project.stages.some(
+        (stage) =>
+            stage.id !== stageId && !stage.archivedAt && stageLayoutsEqual(stage.layout, layout)
+    );
+    if (duplicate) throw new Error('An active stage already uses this layout');
+
+    const name = input.name === undefined ? existingStage.name : input.name.trim();
+    if (!name) throw new Error('Stage name is required');
+    const stages = project.stages.map((stage) =>
+        stage.id === stageId ? { ...stage, name, layout } : stage
+    );
+    const updated = await dbCol.projects.replaceStages(projectId, stages, project.defaultStageId);
+    if (!updated) throw new Error('Project not found');
+
+    await logAuditSuccess({
+        action: 'STAGE_UPDATED',
+        actorId: userEmail,
+        projectId,
+        resourceType: 'project',
+        resourceId: projectId,
+        changes: { stageId, name, layout },
+        ...withProjectAuditContext(auditContext)
+    });
+    process.__BROADCAST_PROJECTS_CHANGED__?.(projectId);
+    return getProjectStage(updated, stageId);
+}
+
+export async function setDefaultStage(
+    projectId: string,
+    stageId: string,
+    userEmail: string,
+    auditContext?: ProjectAuditContext
+) {
+    const project = await dbCol.projects.findById(projectId);
+    if (!project) throw new Error('Project not found');
+    const stage = getProjectStage(project, stageId);
+    if (stage.archivedAt) throw new Error('Archived stages cannot be the default');
+    const updated = await dbCol.projects.replaceStages(projectId, project.stages, stageId);
+    if (!updated) throw new Error('Project not found');
+
+    await logAuditSuccess({
+        action: 'PROJECT_DEFAULT_STAGE_CHANGED',
+        actorId: userEmail,
+        projectId,
+        resourceType: 'project',
+        resourceId: projectId,
+        changes: { defaultStageId: stageId },
+        ...withProjectAuditContext(auditContext)
+    });
+    process.__BROADCAST_PROJECTS_CHANGED__?.(projectId);
+    return updated;
+}
+
+export async function archiveStage(
+    projectId: string,
+    stageId: string,
+    userEmail: string,
+    auditContext?: ProjectAuditContext
+) {
+    const project = await dbCol.projects.findById(projectId);
+    if (!project) throw new Error('Project not found');
+    const stage = getProjectStage(project, stageId);
+    if (stage.archivedAt) return stage;
+    if (project.defaultStageId === stageId) {
+        throw new Error('Choose another default stage before archiving this stage');
+    }
+    if (stage.publishedCommitId) throw new Error('Unpublish the stage before archiving it');
+    if (project.stages.filter((candidate) => !candidate.archivedAt).length <= 1) {
+        throw new Error('A project must retain at least one active stage');
+    }
+
+    const archivedAt = Date.now();
+    const stages = project.stages.map((candidate) =>
+        candidate.id === stageId ? { ...candidate, archivedAt } : candidate
+    );
+    const updated = await dbCol.projects.replaceStages(projectId, stages, project.defaultStageId);
+    if (!updated) throw new Error('Project not found');
+
+    await logAuditSuccess({
+        action: 'STAGE_ARCHIVED',
+        actorId: userEmail,
+        projectId,
+        resourceType: 'project',
+        resourceId: projectId,
+        changes: { stageId, archivedAt },
+        ...withProjectAuditContext(auditContext)
+    });
+    process.__BROADCAST_PROJECTS_CHANGED__?.(projectId);
+    return getProjectStage(updated, stageId);
 }
 
 export async function archiveProject(
@@ -370,28 +589,35 @@ export async function restoreProject(
 
 export async function publishCommit(
     projectId: string,
+    stageId: string,
     commitId: string | null,
     userEmail: string,
     auditContext?: ProjectAuditContext
 ) {
     const existing = await dbCol.projects.findById(projectId);
     if (!existing) throw new Error('Project not found');
+    const stage = getProjectStage(existing, stageId);
+    if (stage.archivedAt) throw new Error('Archived stages cannot be published');
+
+    if (commitId) {
+        const commit = await dbCol.commits.findById(commitId);
+        if (!commit) throw new Error('Commit not found');
+        if (commit.projectId !== projectId || commit.stageId !== stageId) {
+            throw new Error('Commit does not belong to this stage');
+        }
+    }
 
     const isPublishing = commitId !== null;
 
-    await dbCol.projects.setPublishedCommit(
-        projectId,
-        commitId,
-        isPublishing ? 'public' : 'private'
-    );
+    await dbCol.projects.setStagePublishedCommit(projectId, stageId, commitId);
 
     await logAuditSuccess({
-        action: commitId ? 'PROJECT_PUBLISHED' : 'PROJECT_UNPUBLISHED',
+        action: commitId ? 'STAGE_PUBLISHED' : 'STAGE_UNPUBLISHED',
         actorId: userEmail,
         projectId,
         resourceType: 'project',
         resourceId: projectId,
-        changes: { publishedCommitId: commitId },
+        changes: { stageId, publishedCommitId: commitId },
         ...withProjectAuditContext(auditContext)
     });
 
@@ -412,12 +638,15 @@ export async function publishCustomRenderProject(
     const existing = await dbCol.projects.findById(projectId);
     if (!existing) throw new Error('Project not found');
     if (!existing.customRenderUrl) throw new Error('Project has no custom render URL');
+    const stage = getDefaultStage(existing);
+    if (!stage) throw new Error('Default stage not found');
 
     // If already published, no-op
-    if (existing.publishedCommitId) return true;
+    if (stage.publishedCommitId) return true;
 
     const sentinel = await dbCol.commits.insert({
         projectId,
+        stageId: stage.id,
         parentId: null,
         authorEmail: userEmail,
         message: 'Published (custom render)',
@@ -426,7 +655,7 @@ export async function publishCustomRenderProject(
         isMutableHead: false
     });
 
-    return publishCommit(projectId, sentinel.id, userEmail, auditContext);
+    return publishCommit(projectId, stage.id, sentinel.id, userEmail, auditContext);
 }
 
 /**
@@ -435,37 +664,42 @@ export async function publishCustomRenderProject(
  */
 export async function ensureMutableHead(
     projectId: string,
+    requestedStageId: string | undefined,
     userEmail: string,
     auditContext?: ProjectAuditContext
 ): Promise<string> {
     const project = await dbCol.projects.findById(projectId);
     if (!project) throw new Error('Project not found');
+    const stageId = requestedStageId ?? project.defaultStageId;
+    const stage = getProjectStage(project, stageId);
+    if (stage.archivedAt) throw new Error('Archived stages cannot be edited');
 
     // Case 1: HEAD exists and is already mutable
-    if (project.headCommitId) {
-        const head = await dbCol.commits.findById(project.headCommitId);
-        if (head?.isMutableHead) {
-            return project.headCommitId;
+    if (stage.headCommitId) {
+        const head = await dbCol.commits.findById(stage.headCommitId);
+        if (head?.isMutableHead && head.stageId === stageId) {
+            return stage.headCommitId;
         }
 
         // Case 2: HEAD exists but is immutable (legacy) — create mutable HEAD on top
         const newHead = await dbCol.commits.insert({
             projectId,
-            parentId: project.headCommitId,
+            stageId,
+            parentId: stage.headCommitId,
             authorEmail: userEmail,
             message: 'HEAD',
             content: head?.content ?? { slides: [] },
             isAutoSave: false,
             isMutableHead: true
         });
-        await dbCol.projects.setHeadCommit(projectId, newHead.id);
+        await dbCol.projects.setStageHeadCommit(projectId, stageId, newHead.id);
         await logAuditSuccess({
             action: 'MUTABLE_HEAD_ENSURED',
             actorId: userEmail,
             projectId,
             resourceType: 'commit',
             resourceId: newHead.id,
-            changes: { source: 'legacy-head-migration' },
+            changes: { source: 'legacy-head-migration', stageId },
             ...withProjectAuditContext(auditContext)
         });
         return newHead.id;
@@ -474,6 +708,7 @@ export async function ensureMutableHead(
     // Case 3: No HEAD at all — create fresh mutable HEAD with a default slide
     const newHead = await dbCol.commits.insert({
         projectId,
+        stageId,
         parentId: null,
         authorEmail: userEmail,
         message: 'HEAD',
@@ -481,14 +716,14 @@ export async function ensureMutableHead(
         isAutoSave: false,
         isMutableHead: true
     });
-    await dbCol.projects.setHeadCommit(projectId, newHead.id);
+    await dbCol.projects.setStageHeadCommit(projectId, stageId, newHead.id);
     await logAuditSuccess({
         action: 'MUTABLE_HEAD_ENSURED',
         actorId: userEmail,
         projectId,
         resourceType: 'commit',
         resourceId: newHead.id,
-        changes: { source: 'head-created' },
+        changes: { source: 'head-created', stageId },
         ...withProjectAuditContext(auditContext)
     });
     return newHead.id;
@@ -514,6 +749,7 @@ export async function createBranchHead(
 
     const branchHead = await dbCol.commits.insert({
         projectId,
+        stageId: source.stageId,
         parentId: sourceCommitId,
         authorEmail: userEmail,
         message: 'HEAD',
@@ -527,7 +763,7 @@ export async function createBranchHead(
         projectId,
         resourceType: 'commit',
         resourceId: branchHead.id,
-        changes: { sourceCommitId },
+        changes: { sourceCommitId, stageId: source.stageId },
         ...withProjectAuditContext(auditContext)
     });
     return branchHead.id;
@@ -551,7 +787,10 @@ export async function promoteBranchHead(
     if (!branch.isMutableHead) throw new Error('Can only promote a mutable branch head');
     if (branch.projectId !== projectId) throw new Error('Commit does not belong to project');
 
-    await dbCol.projects.setHeadCommit(projectId, branchCommitId);
+    const stage = getProjectStage(project, branch.stageId);
+    if (stage.archivedAt) throw new Error('Archived stages cannot be promoted');
+
+    await dbCol.projects.setStageHeadCommit(projectId, branch.stageId, branchCommitId);
 
     await logAuditSuccess({
         action: 'BRANCH_PROMOTED',
@@ -559,7 +798,7 @@ export async function promoteBranchHead(
         projectId,
         resourceType: 'project',
         resourceId: projectId,
-        changes: { headCommitId: branchCommitId },
+        changes: { stageId: branch.stageId, headCommitId: branchCommitId },
         ...withProjectAuditContext(auditContext)
     });
 }
@@ -592,8 +831,11 @@ export async function getAuditsPage(projectId: string, input: ProjectAuditListIn
     });
 }
 
-export async function getProjectCommits(projectId: string) {
-    return dbCol.commits.findByProject(projectId, { sort: { createdAt: -1 } });
+export async function getProjectCommits(projectId: string, stageId: string) {
+    const project = await dbCol.projects.findById(projectId);
+    if (!project) throw new Error('Project not found');
+    getProjectStage(project, stageId);
+    return dbCol.commits.findByProjectStage(projectId, stageId, { sort: { createdAt: -1 } });
 }
 
 /**

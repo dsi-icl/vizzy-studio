@@ -1,5 +1,5 @@
 import { authMiddleware, freshAuthMiddleware } from '@repo/auth/tanstack/middleware';
-import { Collaborator, ProjectVisibility } from '@repo/db/schema';
+import { Collaborator, ProjectVisibility, StageLayout } from '@repo/db/schema';
 import { createServerFn } from '@tanstack/react-start';
 
 import { createUploadToken, validateUploadToken } from '~/lib/uploadTokens';
@@ -20,9 +20,11 @@ import type { AuthContext } from '~/server/requestAuthContext';
 
 import {
     archiveProject,
+    archiveStage,
     copySlideInCommit,
     createBranchHead,
     createProject,
+    createStage,
     deleteAsset,
     deleteSlideFromCommit,
     ensureMutableHead,
@@ -31,6 +33,8 @@ import {
     getCommit,
     getProject,
     getProjectCommits,
+    getStageLayoutLimits,
+    getDefaultStage,
     listAssets,
     listAssetsByUrlsForPicker,
     listKnownTags,
@@ -41,6 +45,8 @@ import {
     publishCustomRenderProject,
     restoreProject,
     revokeUploadTokenForActor,
+    setDefaultStage,
+    updateStage,
     updateProject
 } from './projects';
 
@@ -70,8 +76,7 @@ const UpdateProjectInput = z.object({
     customRenderUrl: z.string().optional(),
     customRenderCompat: z.boolean().optional(),
     customRenderProxy: z.boolean().optional(),
-    collaborators: z.array(Collaborator).optional(),
-    publishedCommitId: z.string().nullable().optional()
+    collaborators: z.array(Collaborator).optional()
 });
 const AuditOutcomeEnum = z.enum(['success', 'denied', 'failure', 'error']);
 const AuditResourceTypeEnum = z.enum([
@@ -136,6 +141,32 @@ async function denyProjectFn(params: {
             operation: params.operation
         }
     });
+}
+
+async function requireProjectEdit(context: unknown, projectId: string, operation: string) {
+    const actor = actorFromAuthContext(context as Parameters<typeof actorFromAuthContext>[0]);
+    if (!actor) {
+        await denyProjectFn({
+            context,
+            operation,
+            reasonCode: 'MISSING_ACTOR',
+            projectId,
+            resourceType: 'project',
+            resourceId: projectId
+        });
+        throw new Error('Access denied');
+    }
+    if (!(await canEditProject(actor, projectId))) {
+        await denyProjectFn({
+            context,
+            operation,
+            reasonCode: 'PROJECT_EDIT_FORBIDDEN',
+            projectId,
+            resourceType: 'project',
+            resourceId: projectId
+        });
+        throw new Error('Access denied');
+    }
 }
 
 export const $listProjects = createServerFn({ method: 'GET' })
@@ -243,7 +274,8 @@ export const $getProject = createServerFn({ method: 'GET' })
         const allowed = await canViewProject(actor, data.id);
         if (!allowed) {
             const isPublicPublishedProject =
-                project.visibility === 'public' && Boolean(project.publishedCommitId);
+                project.visibility === 'public' &&
+                Boolean(getDefaultStage(project)?.publishedCommitId);
             if (!isPublicPublishedProject) {
                 await denyProjectFn({
                     context,
@@ -281,7 +313,8 @@ export const $getCommit = createServerFn({ method: 'GET' })
         if (!allowed) {
             const project = await getProject(commitProjectId);
             const isPublishedCommitOfPublicProject =
-                project?.visibility === 'public' && project.publishedCommitId === commit.id;
+                project?.visibility === 'public' &&
+                getDefaultStage(project)?.publishedCommitId === commit.id;
             if (!isPublishedCommitOfPublicProject) {
                 await denyProjectFn({
                     context,
@@ -340,6 +373,70 @@ export const $updateProject = createServerFn({ method: 'POST' })
             data,
             context.user.email,
             buildProjectFnAuditContext(context, '$updateProject')
+        );
+    });
+
+export const $getStageLayoutLimits = createServerFn({ method: 'GET' })
+    .middleware([authMiddleware])
+    .handler(() => getStageLayoutLimits());
+
+export const $createStage = createServerFn({ method: 'POST' })
+    .validator(z.object({ projectId: z.string(), name: z.string().min(1), layout: StageLayout }))
+    .middleware([authMiddleware])
+    .handler(async ({ context, data }) => {
+        await requireProjectEdit(context, data.projectId, '$createStage');
+        return createStage(
+            data.projectId,
+            { name: data.name, layout: data.layout },
+            context.user.email,
+            buildProjectFnAuditContext(context, '$createStage')
+        );
+    });
+
+export const $updateStage = createServerFn({ method: 'POST' })
+    .validator(
+        z.object({
+            projectId: z.string(),
+            stageId: z.string(),
+            name: z.string().min(1).optional(),
+            layout: StageLayout.optional()
+        })
+    )
+    .middleware([authMiddleware])
+    .handler(async ({ context, data }) => {
+        await requireProjectEdit(context, data.projectId, '$updateStage');
+        return updateStage(
+            data.projectId,
+            data.stageId,
+            { name: data.name, layout: data.layout },
+            context.user.email,
+            buildProjectFnAuditContext(context, '$updateStage')
+        );
+    });
+
+export const $setDefaultStage = createServerFn({ method: 'POST' })
+    .validator(z.object({ projectId: z.string(), stageId: z.string() }))
+    .middleware([authMiddleware])
+    .handler(async ({ context, data }) => {
+        await requireProjectEdit(context, data.projectId, '$setDefaultStage');
+        return setDefaultStage(
+            data.projectId,
+            data.stageId,
+            context.user.email,
+            buildProjectFnAuditContext(context, '$setDefaultStage')
+        );
+    });
+
+export const $archiveStage = createServerFn({ method: 'POST' })
+    .validator(z.object({ projectId: z.string(), stageId: z.string() }))
+    .middleware([freshAuthMiddleware])
+    .handler(async ({ context, data }) => {
+        await requireProjectEdit(context, data.projectId, '$archiveStage');
+        return archiveStage(
+            data.projectId,
+            data.stageId,
+            context.user.email,
+            buildProjectFnAuditContext(context, '$archiveStage')
         );
     });
 
@@ -464,7 +561,13 @@ export const $restoreProject = createServerFn({ method: 'POST' })
     });
 
 export const $publishCommit = createServerFn({ method: 'POST' })
-    .validator(z.object({ projectId: z.string(), commitId: z.string().nullable() }))
+    .validator(
+        z.object({
+            projectId: z.string(),
+            stageId: z.string(),
+            commitId: z.string().nullable()
+        })
+    )
     .middleware([freshAuthMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -504,6 +607,7 @@ export const $publishCommit = createServerFn({ method: 'POST' })
         }
         return publishCommit(
             data.projectId,
+            data.stageId,
             data.commitId,
             context.user.email,
             buildProjectFnAuditContext(context, '$publishCommit')
@@ -652,7 +756,7 @@ export const $getAuditsPage = createServerFn({ method: 'GET' })
     });
 
 export const $ensureMutableHead = createServerFn({ method: 'POST' })
-    .validator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string(), stageId: z.string().optional() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -681,13 +785,14 @@ export const $ensureMutableHead = createServerFn({ method: 'POST' })
         }
         return ensureMutableHead(
             data.projectId,
+            data.stageId,
             context.user.email,
             buildProjectFnAuditContext(context, '$ensureMutableHead')
         );
     });
 
 export const $getProjectCommits = createServerFn({ method: 'GET' })
-    .validator(z.object({ projectId: z.string() }))
+    .validator(z.object({ projectId: z.string(), stageId: z.string() }))
     .middleware([authMiddleware])
     .handler(async ({ context, data }) => {
         const actor = actorFromAuthContext(context);
@@ -714,7 +819,7 @@ export const $getProjectCommits = createServerFn({ method: 'GET' })
             });
             throw new Error('Access denied');
         }
-        return getProjectCommits(data.projectId);
+        return getProjectCommits(data.projectId, data.stageId);
     });
 
 export const $createBranchHead = createServerFn({ method: 'POST' })

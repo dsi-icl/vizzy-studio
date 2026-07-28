@@ -64,7 +64,7 @@ type TabKey = keyof typeof TAB_ORDER;
 const ALL_TABS: { key: TabKey; label: string; to: string; icon: any }[] = [
     { key: 'info', label: 'Project Info', to: '.', icon: FolderIcon },
     { key: 'permissions', label: 'Permissions', to: './permissions', icon: UsersIcon },
-    { key: 'commits', label: 'Commits', to: './commits', icon: GitBranchIcon },
+    { key: 'commits', label: 'Stages', to: './commits', icon: GitBranchIcon },
     { key: 'history', label: 'History', to: './history', icon: ClockIcon },
     { key: 'assets', label: 'Assets', to: './assets', icon: ImageIcon },
     { key: 'controller', label: 'Controller', to: './controller_editor', icon: CodeIcon }
@@ -82,8 +82,8 @@ const TAB_SUBHEADERS: Record<TabKey, { title: string; description?: string }> = 
         description: 'Manage who can view or edit this project.'
     },
     commits: {
-        title: 'Commit History',
-        description: 'Select a commit to publish it to the public gallery.'
+        title: 'Stages',
+        description: 'Manage stage layouts, histories, and published presentation revisions.'
     },
     history: {
         title: 'Audit Log',
@@ -132,6 +132,8 @@ function ProjectLayout() {
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
     const hasCustomRender = !!project.customRenderUrl;
+    const defaultStage =
+        project.stages.find(({ id }) => id === project.defaultStageId) ?? project.stages[0];
     const canPublish =
         user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
     const tabs = (
@@ -154,7 +156,12 @@ function ProjectLayout() {
     });
 
     const unpublishCustomRender = useMutation({
-        mutationFn: () => $publishCommit({ data: { projectId, commitId: null } }),
+        mutationFn: () => {
+            if (!defaultStage) throw new Error('Default stage not found');
+            return $publishCommit({
+                data: { projectId, stageId: defaultStage.id, commitId: null }
+            });
+        },
         onSuccess: () => {
             toast.success('Project unpublished');
             queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -182,9 +189,9 @@ function ProjectLayout() {
                             <ArrowLeftIcon />
                         </Button>
                         <h2 className="text-xl font-semibold">{project.name}</h2>
-                        {project.publishedCommitId && (
+                        {defaultStage?.publishedCommitId && (
                             <Badge variant="default" className="text-xs">
-                                Published
+                                Default stage published
                             </Badge>
                         )}
                         {!hasCustomRender && (
@@ -236,7 +243,7 @@ function ProjectLayout() {
                         )}
                         {hasCustomRender &&
                             canPublish &&
-                            (project.publishedCommitId ? (
+                            (defaultStage?.publishedCommitId ? (
                                 <Button
                                     variant="outline"
                                     size="sm"

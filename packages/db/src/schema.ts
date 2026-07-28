@@ -23,6 +23,17 @@ export function stageLayoutsEqual(left: StageLayout, right: StageLayout): boolea
     return stageLayoutKey(left) === stageLayoutKey(right);
 }
 
+export const ProjectStage = z.object({
+    id: z.string().min(1),
+    name: z.string().trim().min(1).max(100),
+    order: z.number().int().nonnegative(),
+    layout: StageLayout,
+    headCommitId: z.string().nullable(),
+    publishedCommitId: z.string().nullable(),
+    archivedAt: z.number().nullable().optional()
+});
+export type ProjectStage = z.infer<typeof ProjectStage>;
+
 export const CollaboratorRole = z.enum(['owner', 'editor', 'viewer']);
 export type CollaboratorRole = z.infer<typeof CollaboratorRole>;
 

@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
 
 import { buildMigrationWriteback } from './_migration';
 
@@ -20,7 +21,7 @@ describe('buildMigrationWriteback', () => {
             stages: []
         };
 
-        expect(buildMigrationWriteback(original, migrated, 2)).toEqual({
+        assert.deepEqual(buildMigrationWriteback(original, migrated, 2), {
             $set: {
                 name: 'Project',
                 defaultStageId: 'main',
@@ -39,7 +40,7 @@ describe('buildMigrationWriteback', () => {
         const original = { _id: id, _version: 0, name: 'Project' };
         const migrated = { ...original, createdAt: 1 };
 
-        expect(buildMigrationWriteback(original, migrated, 1)).toEqual({
+        assert.deepEqual(buildMigrationWriteback(original, migrated, 1), {
             $set: {
                 name: 'Project',
                 createdAt: 1,

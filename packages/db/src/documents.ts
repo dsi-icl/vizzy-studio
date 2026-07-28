@@ -1,7 +1,9 @@
 import '@tanstack/react-start/server-only';
 import type { Binary, ObjectId } from 'mongodb';
 
-import type { CollaboratorRole, ProjectVisibility } from './schema';
+import type { CollaboratorRole, ProjectStage, ProjectVisibility, StageLayout } from './schema';
+
+export type { ProjectStage, StageLayout };
 
 // JSON-compatible value type — safe for TanStack Start server function return values.
 export type JsonPrimitive = string | number | boolean | null;
@@ -57,8 +59,8 @@ export interface ProjectDocument {
     customRenderCompat: boolean;
     customRenderProxy: boolean;
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
-    headCommitId: string | null;
-    publishedCommitId: string | null;
+    defaultStageId: string;
+    stages: ProjectStage[];
     deletedAt?: number | null;
     deletedBy?: string | null;
     createdBy: string;
@@ -70,6 +72,7 @@ export interface CommitDocument {
     _id: ObjectId;
     id: string;
     projectId: string;
+    stageId: string;
     parentId: string | null;
     authorEmail: string | null;
     message: string;
@@ -118,7 +121,8 @@ export interface WallDocument {
     boundProjectId?: string | null;
     boundCommitId?: string | null;
     boundSlideId?: string | null;
-    boundSource?: 'live' | 'gallery' | null;
+    boundSource?: 'live' | 'gallery' | 'signage' | null;
+    layoutTemplate?: (StageLayout & { configuredAt: number; configuredBy: string }) | null;
     site?: string | null;
     notes?: string | null;
     createdAt: number;

@@ -4,12 +4,13 @@ import { ObjectId as OID } from 'mongodb';
 
 import type { CommitDocument } from '../documents';
 import { type MigrationMap, type PublicDoc, toEpoch, BaseCollection } from './_base';
+import { migrateCommitV2ToV3 } from './stageMigrations';
 
 type CommitInsertData = Omit<CommitDocument, '_id' | 'id' | 'createdAt' | 'updatedAt' | '_version'>;
 
 export class CommitsCollection extends BaseCollection<CommitDocument> {
     readonly collectionName = 'commits';
-    readonly currentVersion = 2;
+    readonly currentVersion = 3;
 
     protected readonly migrations: MigrationMap = {
         0: (doc) => ({
@@ -17,7 +18,8 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
             createdAt: toEpoch(doc.createdAt ?? Date.now()),
             ...(doc.updatedAt != null ? { updatedAt: toEpoch(doc.updatedAt) } : {})
         }),
-        1: (doc) => doc
+        1: (doc) => doc,
+        2: migrateCommitV2ToV3
     };
 
     constructor(db: Db) {
@@ -62,8 +64,31 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
         return this.find({ projectId: new OID(projectId) }, options);
     }
 
-    async findMutableHead(projectId: string | ObjectId): Promise<PublicDoc<CommitDocument> | null> {
-        return this.findOne({ projectId: new OID(projectId), isMutableHead: true });
+    async findByProjectStage(
+        projectId: string | ObjectId,
+        stageId: string,
+        options?: FindOptions
+    ): Promise<PublicDoc<CommitDocument>[]> {
+        const stageFilter =
+            stageId === 'main'
+                ? { $or: [{ stageId }, { stageId: { $exists: false } }] }
+                : { stageId };
+        return this.find({ projectId: new OID(projectId), ...stageFilter }, options);
+    }
+
+    async findMutableHead(
+        projectId: string | ObjectId,
+        stageId: string
+    ): Promise<PublicDoc<CommitDocument> | null> {
+        const stageFilter =
+            stageId === 'main'
+                ? { $or: [{ stageId }, { stageId: { $exists: false } }] }
+                : { stageId };
+        return this.findOne({
+            projectId: new OID(projectId),
+            isMutableHead: true,
+            ...stageFilter
+        });
     }
 
     /**

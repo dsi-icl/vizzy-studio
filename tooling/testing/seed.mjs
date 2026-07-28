@@ -153,12 +153,26 @@ async function seed() {
                 { email: actors.user_editor.email, role: 'owner' },
                 { email: actors.user_viewer.email, role: 'viewer' }
             ],
-            headCommitId: privateCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: privateCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: publicProjectId,
@@ -169,12 +183,26 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: publicCommitId,
-            publishedCommitId: publicCommitId,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: publicCommitId,
+                    publishedCommitId: publicCommitId
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         }
     ]);
 
@@ -182,6 +210,7 @@ async function seed() {
         {
             _id: privateCommitId,
             projectId: privateProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness private head',
@@ -189,11 +218,12 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         },
         {
             _id: publicCommitId,
             projectId: publicProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness public head',
@@ -201,7 +231,7 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         }
     ]);
 
@@ -219,7 +249,7 @@ async function seed() {
         notes: null,
         createdAt: now,
         updatedAt: now,
-        _version: 1
+        _version: 2
     });
 
     const deviceEntries = [
