@@ -11,7 +11,7 @@ type BindingStatus = {
     commitId?: string;
     slideId?: string;
     customRenderUrl?: string;
-    boundSource?: 'live' | 'gallery';
+    boundSource?: 'live' | 'gallery' | 'signage';
 };
 
 type BindingCallback = (status: BindingStatus) => void;

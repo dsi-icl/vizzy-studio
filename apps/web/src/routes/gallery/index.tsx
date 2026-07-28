@@ -50,7 +50,7 @@ type WallListEntry = {
     boundProjectId?: string | null;
     boundCommitId?: string | null;
     boundSlideId?: string | null;
-    boundSource?: 'live' | 'gallery' | null;
+    boundSource?: 'live' | 'gallery' | 'signage' | null;
 };
 
 function HomePage() {
@@ -128,7 +128,7 @@ function HomePage() {
         const handleLiveBindingStatus = (
             nextWallId: string,
             bound: boolean,
-            source?: 'live' | 'gallery',
+            source?: 'live' | 'gallery' | 'signage',
             projectId?: string
         ) => {
             if (!wallId || nextWallId !== wallId) return;
@@ -153,7 +153,7 @@ function HomePage() {
                       projectId?: string;
                       commitId?: string;
                       slideId?: string;
-                      source?: 'live' | 'gallery';
+                      source?: 'live' | 'gallery' | 'signage';
                   }
                 | {
                       wallId: string;
@@ -161,7 +161,7 @@ function HomePage() {
                       boundProjectId: string | null;
                       boundCommitId: string | null;
                       boundSlideId: string | null;
-                      boundSource: 'live' | 'gallery' | null;
+                      boundSource: 'live' | 'gallery' | 'signage' | null;
                   }
         ) => {
             queryClient.setQueryData<WallListEntry[]>(wallsQueryKey, (current) => {
@@ -519,8 +519,9 @@ function HomePage() {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
         if (!targetWall?.boundProjectId) return null;
-        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | null }).boundSource;
-        if (boundSource === 'live') return null;
+        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | 'signage' | null })
+            .boundSource;
+        if (boundSource !== 'gallery') return null;
         return targetWall.boundProjectId;
     }, [wallId, walls]);
 
@@ -528,8 +529,9 @@ function HomePage() {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
         if (!targetWall?.boundProjectId) return null;
-        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | null }).boundSource;
-        if (boundSource === 'live') return null;
+        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | 'signage' | null })
+            .boundSource;
+        if (boundSource !== 'gallery') return null;
         const withCommit = targetWall as {
             boundCommitId?: string | null;
             boundSlideId?: string | null;

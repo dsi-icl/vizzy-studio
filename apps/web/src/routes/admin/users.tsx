@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import {
     $adminImpersonateUser,
     $adminSetUserBanStatus,
+    $adminSetUserCanManageSignage,
     $adminSetUserRole,
     $adminSetUserTrustedPublisher
 } from '~/server/admin.fns';
@@ -102,6 +103,23 @@ function AdminUsers() {
         onError: (e: any) => toast.error(e.message)
     });
 
+    const signageAccessMutation = useMutation({
+        mutationFn: async ({
+            userId,
+            canManageSignage
+        }: {
+            userId: string;
+            canManageSignage: boolean;
+        }) => {
+            await $adminSetUserCanManageSignage({ data: { userId, canManageSignage } });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+            toast.success('Signage access updated');
+        },
+        onError: (e: any) => toast.error(e.message)
+    });
+
     const impersonateMutation = useMutation({
         mutationFn: async ({ userId }: { userId: string }) => {
             await $adminImpersonateUser({ data: { userId } });
@@ -165,6 +183,7 @@ function AdminUsers() {
                             <th className="px-4 py-3 text-left font-medium">Email</th>
                             <th className="px-4 py-3 text-left font-medium">Role</th>
                             <th className="px-4 py-3 text-left font-medium">Publishing</th>
+                            <th className="px-4 py-3 text-left font-medium">Signage</th>
                             <th className="px-4 py-3 text-left font-medium">Created</th>
                             <th className="px-4 py-3 text-left font-medium">Last seen</th>
                             <th className="px-4 py-3 text-left font-medium">Status</th>
@@ -175,6 +194,7 @@ function AdminUsers() {
                         {users.map((user: any) => {
                             const roleView = getRoleView(user.role);
                             const publishingView = getPublishingView(user.trustedPublisher);
+                            const signageAccess = user.canManageSignage === true;
                             const isCurrentUser =
                                 typeof user?.id === 'string' &&
                                 typeof currentUser?.id === 'string' &&
@@ -262,6 +282,31 @@ function AdminUsers() {
                                                             </span>
                                                         </SelectItem>
                                                     ))}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <Select
+                                            value={signageAccess ? 'manager' : 'none'}
+                                            onValueChange={(value) =>
+                                                signageAccessMutation.mutate({
+                                                    userId: user.id,
+                                                    canManageSignage: value === 'manager'
+                                                })
+                                            }
+                                            disabled={
+                                                !isAdminActor || signageAccessMutation.isPending
+                                            }
+                                        >
+                                            <SelectTrigger className="h-7 min-w-24 rounded-full border-0 bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                                {signageAccess ? 'Manager' : 'None'}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectGroup>
+                                                    <SelectLabel>Signage access</SelectLabel>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    <SelectItem value="manager">Manager</SelectItem>
                                                 </SelectGroup>
                                             </SelectContent>
                                         </Select>

@@ -25,6 +25,7 @@ import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
 export const BIND_OVERRIDE_TIMEOUT_MS = 20_000;
+const wallBindQueues = new Map<string, Promise<unknown>>();
 
 export interface PendingBindOverride {
     requestId: string;
@@ -236,15 +237,28 @@ export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
     });
 }
 
-export async function performLiveBind(
+export async function isWallTargetedBySignage(wallId: string): Promise<boolean> {
+    if (process.__SIGNAGE_IS_TARGET_WALL__?.(wallId)) return true;
+    return Boolean(await dbCol.signageSlideshows.findEnabledByTargetWall(wallId));
+}
+
+async function performLiveBindNow(
     wallId: string,
     projectId: string,
     commitId: string,
     requestedSlideId: string,
-    source: 'live' | 'gallery' = 'live'
+    source: 'live' | 'gallery' | 'signage' = 'live',
+    signageLease = false
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
     try {
         cancelWallUnbindGrace(wallId);
+        if (source !== 'signage' && (await isWallTargetedBySignage(wallId))) {
+            const editorLease =
+                source === 'live' &&
+                signageLease &&
+                process.__SIGNAGE_IS_WALL_SUPPRESSED__?.(wallId) === true;
+            if (!editorLease) return { ok: false, error: 'signage_owned' };
+        }
         const [resolvedSlideId, project, commit, wallExists] = await Promise.all([
             resolveBoundSlideId(projectId, commitId, requestedSlideId),
             dbCol.projects.findById(projectId),
@@ -275,11 +289,20 @@ export async function performLiveBind(
             stage.layout,
             stage.id
         );
-        bindWall(wallId, scopeId, source);
 
         if (scope.layers.size === 0) {
             await seedScopeFromDb(scopeId);
         }
+
+        // Persist authorization metadata before telling wall clients to request
+        // the newly bound project's assets.
+        await dbCol.walls.updateByWallId(wallId, {
+            boundProjectId: projectId,
+            boundCommitId: commitId,
+            boundSlideId: resolvedSlideId,
+            boundSource: source
+        });
+        bindWall(wallId, scopeId, source);
 
         notifyControllers(
             wallId,
@@ -300,13 +323,6 @@ export async function performLiveBind(
             );
         }
 
-        await dbCol.walls.updateByWallId(wallId, {
-            boundProjectId: projectId,
-            boundCommitId: commitId,
-            boundSlideId: resolvedSlideId,
-            boundSource: source
-        });
-
         broadcastWallBindingToEditors(wallId);
         broadcastWallBindingToGalleries(wallId);
         broadcastWallNodeCountToEditors(wallId);
@@ -321,5 +337,28 @@ export async function performLiveBind(
             err
         );
         return { ok: false, error: 'bind_failed' };
+    }
+}
+
+/** Serialize all binds for one wall so an older async bind cannot win a race. */
+export async function performLiveBind(
+    wallId: string,
+    projectId: string,
+    commitId: string,
+    requestedSlideId: string,
+    source: 'live' | 'gallery' | 'signage' = 'live',
+    signageLease = false
+): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
+    const previous = wallBindQueues.get(wallId) ?? Promise.resolve();
+    const next = previous
+        .catch(() => undefined)
+        .then(() =>
+            performLiveBindNow(wallId, projectId, commitId, requestedSlideId, source, signageLease)
+        );
+    wallBindQueues.set(wallId, next);
+    try {
+        return await next;
+    } finally {
+        if (wallBindQueues.get(wallId) === next) wallBindQueues.delete(wallId);
     }
 }

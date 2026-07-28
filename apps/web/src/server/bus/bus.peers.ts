@@ -16,6 +16,7 @@ import {
     registerPeer,
     scopeLabel,
     scopedState,
+    signageBlankWalls,
     seedScopeFromDb,
     sendJSON,
     setEditorScope,
@@ -300,7 +301,7 @@ export async function completeHelloRegistration(
         const boundScope = wallBindings.get(effectiveWallId);
 
         peer.send(
-            boundScope !== undefined
+            boundScope !== undefined && !signageBlankWalls.has(effectiveWallId)
                 ? getWallHydratePayload(boundScope, effectiveWallId)
                 : EMPTY_HYDRATE
         );
@@ -458,6 +459,10 @@ export function handleEditorScopeVacated(scopeId: number) {
         if (boundScopeId !== scopeId) continue;
         if (wallBindingSources.get(wallId) !== 'live') continue;
 
+        if (process.__SIGNAGE_IS_TARGET_WALL__?.(wallId)) {
+            process.__SIGNAGE_RESUME_WALL__?.(wallId);
+            continue;
+        }
         unbindWall(wallId);
         hydrateWallNodes(wallId);
         broadcastToControllersByWallRaw(

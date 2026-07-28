@@ -1259,32 +1259,6 @@ export function EditorSlate() {
                             ) : null}
                         </FastLayer>
                         <KonvaLayer>
-                            {/* {Array.from({ length: COLS * ROWS }).map((_, i) => {
-                            const col = i % COLS;
-                            const row = Math.floor(i / COLS);
-                            return (
-                                <Group key={`screen-${i}`}>
-                                    <Rect
-                                        x={col * SCREEN_W}
-                                        y={row * SCREEN_H}
-                                        width={SCREEN_W}
-                                        height={SCREEN_H}
-                                        stroke="rgba(255, 255, 255, 0.2)"
-                                        strokeWidth={10}
-                                        listening={false}
-                                    />
-                                    <Text
-                                        x={col * SCREEN_W + 50}
-                                        y={row * SCREEN_H + 50}
-                                        text={`Screen C:${col} R:${row}`}
-                                        fontSize={100}
-                                        fill="rgba(255, 255, 255, 0.3)"
-                                        listening={false}
-                                    />
-                                </Group>
-                            );
-                        })} */}
-
                             {/* oxlint-disable-next-line react-hooks-js/refs */}
                             {foregroundLayers.map((layer) => {
                                 const isHidden = !layer.config.visible;

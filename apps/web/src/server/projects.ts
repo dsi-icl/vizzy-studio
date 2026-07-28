@@ -145,6 +145,17 @@ export async function getStageLayoutLimits(): Promise<StageLayoutLimits> {
     };
 }
 
+export async function listWallLayoutTemplates() {
+    const walls = await dbCol.walls.find({ layoutTemplate: { $ne: null } }, { sort: { name: 1 } });
+    return walls
+        .filter((wall) => wall.layoutTemplate)
+        .map((wall) => ({
+            wallId: wall.wallId,
+            name: wall.name,
+            layout: wall.layoutTemplate!
+        }));
+}
+
 async function validateStageLayout(
     layoutInput: StageLayout,
     existingLayout?: StageLayout
@@ -738,7 +749,7 @@ export async function ensureMutableHead(
 
 /**
  * Create a new mutable branch head from any existing commit.
- * Does NOT change project.headCommitId — it's an independent branch.
+ * Does not change the owning stage's head pointer; it is an independent branch.
  * Returns the new branch head's commit ID.
  */
 export async function createBranchHead(

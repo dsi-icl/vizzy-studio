@@ -312,7 +312,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         commitId: z.string().optional(),
         slideId: z.string().optional(),
         customRenderUrl: z.string().nullish(),
-        boundSource: z.enum(['live', 'gallery']).optional()
+        boundSource: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({
         type: z.literal('wall_node_count'),
@@ -357,7 +357,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
                 projectId: z.string().optional(),
                 commitId: z.string().optional(),
                 slideId: z.string().optional(),
-                source: z.enum(['live', 'gallery']).optional()
+                source: z.enum(['live', 'gallery', 'signage']).optional()
             })
         ),
         publishedProjects: z.array(
@@ -407,7 +407,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
-        source: z.enum(['live', 'gallery']).optional()
+        source: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({
         type: z.literal('wall_unbound'),

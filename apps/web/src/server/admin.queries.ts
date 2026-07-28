@@ -32,6 +32,7 @@ export interface AdminAuditFilters {
         | 'config'
         | 'smtp'
         | 'scope'
+        | 'signage_slideshow'
         | 'unknown'
     >;
     operation?: string;
