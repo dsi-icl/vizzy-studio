@@ -33,7 +33,8 @@ export async function textHtmlToImage(
 ): Promise<HTMLImageElement> {
     const escaped = html
         // foreignObject needs well-formed XHTML
-        .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;');
+        .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;')
+        .replace(/<br\s*\/?>/gi, '<br/>');
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <foreignObject width="100%" height="100%">
