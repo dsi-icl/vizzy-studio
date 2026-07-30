@@ -168,7 +168,7 @@
     },
     "overrides": {
         "babel-plugin-react-compiler": "experimental",
-        "bson": "7.3.1",
+        "bson": "7.2.0",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
         "svgdom": "0.1.28",
