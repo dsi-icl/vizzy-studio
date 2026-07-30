@@ -65,11 +65,11 @@ services:
         networks:
             - vizzy_network
         environment:
-            NODE_ENV: production
+            NODE_ENV: test
             PORT: 3000
             VITE_BASE_URL: http://localhost:${WEB_HOST_PORT:-3870}
             SERVER_DATABASE_URL: mongodb://mongo:27017/vizzy?replicaSet=rs0&directConnection=true
-            SERVER_AUTH_SECRET: 00000000000000000000000000000000
+            SERVER_AUTH_SECRET: '00000000000000000000000000000000'
             SERVER_CONFIG_ENCRYPTION_KEY: local-dev-encryption-key
             ALLOWED_HOSTS: http://localhost:${WEB_HOST_PORT:-3870}
             TRUSTED_ORIGINS: http://localhost:${WEB_HOST_PORT:-3870}
