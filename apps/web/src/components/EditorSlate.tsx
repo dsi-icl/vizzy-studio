@@ -30,7 +30,7 @@ import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { EditorEngine } from '~/lib/editorEngine';
-import { getDOGridLines } from '~/lib/editorHelpers';
+import { getStageGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset } from '~/lib/mediaUtils';
@@ -85,7 +85,6 @@ export function EditorSlate() {
 
     const stageSlot = useRef<HTMLDivElement>(null);
     const stageWrapper = useRef<HTMLDivElement>(null);
-    const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
@@ -1220,11 +1219,7 @@ export function EditorSlate() {
                 onUpload={handleUpload}
                 // onEditText={setEditingTextLayerId}
             />
-            <SlatePreview
-                stageSlot={stageSlot}
-                stageInstance={stageInstance}
-                stageScaleFactor={stageScaleFactor}
-            />
+            <SlatePreview stageSlot={stageSlot} stageScaleFactor={stageScaleFactor} />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
                     ref={stageSlot}
@@ -1234,7 +1229,6 @@ export function EditorSlate() {
                     className="min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
                 >
                     <Stage
-                        ref={stageInstance}
                         width={columns * screenWidth * stageScaleFactor}
                         height={rows * screenHeight * stageScaleFactor}
                         onMouseDown={handleStageInteractionStart}
@@ -1471,8 +1465,7 @@ export function EditorSlate() {
                                       />
                                   ))
                                 : null}
-                            {showGrid &&
-                                getDOGridLines(columns * screenWidth, rows * screenHeight, 20)}
+                            {showGrid && getStageGridLines(stageLayout, 2)}
                             <Transformer
                                 ref={trRef}
                                 flipEnabled={false}

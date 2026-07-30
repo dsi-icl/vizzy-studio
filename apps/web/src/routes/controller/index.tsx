@@ -7,7 +7,6 @@ import {
 } from '@repo/ui/components/resizable';
 import { cn } from '@repo/ui/lib/utils';
 import { createFileRoute, useLocation } from '@tanstack/react-router';
-import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import QRCode from 'qrcode';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -123,7 +122,6 @@ function Controller() {
     const stageLastX = useRef(0);
 
     const stageSlot = useRef<HTMLDivElement>(null);
-    const stageInstance = useRef<Konva.Stage>(null);
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
@@ -913,7 +911,6 @@ function Controller() {
 
                                 <ViewerSlatePreview
                                     stageSlot={stageSlot}
-                                    stageInstance={stageInstance}
                                     stageScaleFactor={stageScaleFactor}
                                     layers={sortedLayers}
                                     layout={stageLayout}
@@ -923,7 +920,6 @@ function Controller() {
                                     className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-black"
                                 >
                                     <Stage
-                                        ref={stageInstance}
                                         width={columns * screenWidth * stageScaleFactor}
                                         height={rows * screenHeight * stageScaleFactor}
                                         onMouseDown={handleDrawStart}
