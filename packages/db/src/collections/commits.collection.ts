@@ -94,4 +94,65 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
             }
         );
     }
+
+    /**
+     * Persist the derived HTML projection for one text layer without replacing
+     * the surrounding slide/layer arrays. A lower Yjs revision can never
+     * overwrite a projection already written by a newer collaborator/worker.
+     */
+    async updateTextLayerProjection(input: {
+        commitId: string;
+        slideId: string;
+        layerId: number;
+        textHtml: string;
+        textRevision: number;
+        textStateHash: string;
+        textBindingVersion: string;
+    }): Promise<boolean> {
+        const result = await this.raw.updateOne(
+            {
+                _id: new OID(input.commitId),
+                'content.slides': {
+                    $elemMatch: {
+                        id: input.slideId,
+                        layers: {
+                            $elemMatch: {
+                                numericId: input.layerId,
+                                type: 'text',
+                                $or: [
+                                    { textRevision: { $exists: false } },
+                                    { textRevision: { $lte: input.textRevision } }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                $set: {
+                    'content.slides.$[slide].layers.$[layer].textHtml': input.textHtml,
+                    'content.slides.$[slide].layers.$[layer].textRevision': input.textRevision,
+                    'content.slides.$[slide].layers.$[layer].textStateHash': input.textStateHash,
+                    'content.slides.$[slide].layers.$[layer].textBindingVersion':
+                        input.textBindingVersion,
+                    updatedAt: Date.now(),
+                    _version: this.currentVersion
+                }
+            },
+            {
+                arrayFilters: [
+                    { 'slide.id': input.slideId },
+                    {
+                        'layer.numericId': input.layerId,
+                        'layer.type': 'text',
+                        $or: [
+                            { 'layer.textRevision': { $exists: false } },
+                            { 'layer.textRevision': { $lte: input.textRevision } }
+                        ]
+                    }
+                ]
+            }
+        );
+        return result.matchedCount === 1;
+    }
 }

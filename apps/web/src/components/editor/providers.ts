@@ -1,15 +1,20 @@
-import { Provider } from '@lexical/yjs';
+import type { Provider } from '@lexical/yjs';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 
 import { getWebSocketUrl } from '../../lib/runtimeUrl';
 
-export function createWebsocketProvider(id: string, yjsDocMap: Map<string, Y.Doc>): Provider {
+export type LexicalWebsocketProvider = WebsocketProvider & Provider;
+
+export function createWebsocketProvider(
+    id: string,
+    yjsDocMap: Map<string, Y.Doc>
+): LexicalWebsocketProvider {
     const doc = getDocFromMap(id, yjsDocMap);
 
     return new WebsocketProvider(getWebSocketUrl('/yjs'), id, doc, {
         connect: false
-    }) as unknown as Provider;
+    }) as unknown as LexicalWebsocketProvider;
 }
 
 function getDocFromMap(id: string, yjsDocMap: Map<string, Y.Doc>): Y.Doc {

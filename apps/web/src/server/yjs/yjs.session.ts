@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { type Message, type Peer } from 'crossws';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
@@ -9,6 +7,7 @@ import * as Y from 'yjs';
 
 import type { PeerMeta } from '~/lib/busState';
 import { logAuditDenied } from '~/server/audit';
+import { dbCol } from '~/server/collections';
 import { canEditProject } from '~/server/projectAuthz';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
 
@@ -16,16 +15,23 @@ import { applyHtmlToDoc, yDocToHtml } from './lexical';
 import {
     messageSync,
     messageAwareness,
+    hashBytes,
+    hashText,
+    INITIALIZATION_ORIGIN,
+    LEXICAL_YJS_BINDING_VERSION,
     MongoYDocPersistence,
+    PERSISTENCE_ORIGIN,
     SharedDoc,
     loadTextLayer,
     type DocScope,
     type Persistence,
     type TextLayer
 } from './yjs.doc';
+import { shouldRebuildYjsFromCommit } from './yjs.hydration';
+import { ReadyDocumentRegistry } from './yjs.lifecycle';
 
 const YJS_DEBUG = process.env.YJS_DEBUG === 'true';
-const YJS_OPEN_WAIT_TIMEOUT_MS = 5_000;
+const YJS_OPEN_WAIT_TIMEOUT_MS = 15_000;
 
 type EditorPeerMeta = Extract<PeerMeta, { specimen: 'editor' }>;
 
@@ -35,6 +41,7 @@ type YjsPeerState = {
     openPromise?: Promise<void>;
     doc?: SharedDoc;
     scope?: DocScope;
+    closed?: boolean;
 };
 
 type BridgePayload = {
@@ -43,6 +50,9 @@ type BridgePayload = {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textRevision: number;
+    textStateHash: string;
+    textBindingVersion: string;
     fallbackLayer?: TextLayer;
 };
 
@@ -52,8 +62,14 @@ function debugLog(...args: unknown[]) {
     if (YJS_DEBUG) console.log('[YJS]', ...args);
 }
 
-function sha1(input: string): string {
-    return createHash('sha1').update(input).digest('hex');
+function isSemanticallyEmptyHtml(html: string): boolean {
+    return (
+        html
+            .replace(/<br\s*\/?>/gi, '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;|&#160;/gi, '')
+            .trim().length === 0
+    );
 }
 
 export function getYjsPeerState(peer: Peer): YjsPeerState | null {
@@ -79,14 +95,17 @@ export async function waitForOpenCompletion(
     if (state.openReady) return true;
     if (!state.openPromise) return false;
 
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('open_timeout')), timeoutMs);
+        timeoutId = setTimeout(() => reject(new Error('open_timeout')), timeoutMs);
     });
 
     try {
         await Promise.race([state.openPromise, timeout]);
     } catch {
         return false;
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
     }
 
     return getYjsPeerState(peer)?.openReady === true;
@@ -122,8 +141,11 @@ export function parseScope(docName: string): DocScope {
 
 export class YCrossws {
     persistence: Persistence;
-    docs: Map<string, SharedDoc> = new Map();
-    initializing: Map<string, Promise<SharedDoc>> = new Map();
+    registry = new ReadyDocumentRegistry<SharedDoc>();
+    docs = this.registry.ready;
+    initializing = this.registry.initializing;
+    closing = this.registry.closing;
+    initializationWaiters: Map<string, number> = new Map();
     peers: Set<Peer> = new Set();
 
     constructor() {
@@ -185,6 +207,7 @@ export class YCrossws {
                 }
 
                 const latestAuthed = getYjsPeerState(peer) ?? existing;
+                if (latestAuthed.closed) throw new Error('peer_closed');
                 setYjsPeerState(peer, {
                     ...latestAuthed,
                     meta: {
@@ -199,6 +222,10 @@ export class YCrossws {
                 this.peers.add(peer);
 
                 const doc = await this.getDoc(peer);
+                if (getYjsPeerState(peer)?.closed) {
+                    await this.releasePeer(peer, doc);
+                    return;
+                }
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, messageSync);
                 syncProtocol.writeSyncStep1(encoder, doc);
@@ -223,6 +250,7 @@ export class YCrossws {
                     openPromise: undefined
                 });
             } catch (error) {
+                this.peers.delete(peer);
                 const latest = getYjsPeerState(peer) ?? existing;
                 setYjsPeerState(peer, {
                     ...latest,
@@ -247,6 +275,8 @@ export class YCrossws {
                 console.warn(`[YJS] Rejecting unauthenticated peer ${peer.id}`);
             } else if (message === 'forbidden') {
                 console.warn(`[YJS] Rejecting unauthorized peer ${peer.id}`);
+            } else if (message === 'peer_closed') {
+                debugLog(`Peer ${peer.id} closed during initialization`);
             } else {
                 console.error('[YJS] Failed to open peer:', error);
             }
@@ -304,24 +334,56 @@ export class YCrossws {
     async onClose(peer: Peer) {
         this.peers.delete(peer);
         const state = getYjsPeerState(peer);
+        if (state) {
+            setYjsPeerState(peer, { ...state, closed: true, openReady: false });
+        }
         const doc = state?.doc;
-        clearYjsPeerState(peer);
         if (!doc) return;
+        await this.releasePeer(peer, doc);
+    }
+
+    private async releasePeer(peer: Peer, doc: SharedDoc) {
         if (!doc.peerIds.has(peer)) return;
 
         const controlledIds = doc.peerIds.get(peer) || [];
         doc.peerIds.delete(peer);
         awarenessProtocol.removeAwarenessStates(doc.awareness, [...controlledIds], undefined);
 
-        if (doc.peerIds.size === 0) {
-            doc.stopSyncLoop();
-            await this.flushDoc(doc);
-            await this.persistence.writeState(doc.name, doc).catch((err) => {
-                console.error('[YJS] Failed to persist doc on close:', err);
-            });
-            doc.destroy();
-            this.docs.delete(doc.name);
-        }
+        await this.closeDocIfUnused(doc);
+    }
+
+    private async closeDocIfUnused(doc: SharedDoc) {
+        if (doc.peerIds.size > 0 || doc.lifecycle !== 'ready') return;
+
+        // Quarantine the document synchronously. A reconnect must wait for this
+        // close to finish and can never attach to a doc that is about to be destroyed.
+        doc.lifecycle = 'closing';
+        doc.stopSyncLoop();
+
+        await this.registry.close(doc.name, doc, async () => {
+            let safeToDestroy = false;
+            try {
+                await this.syncDoc(doc);
+                for (let attempt = 0; doc.dirty && attempt < 3; attempt += 1) {
+                    await this.flushDoc(doc);
+                }
+                if (doc.dirty) throw new Error(`Yjs document remained dirty: ${doc.name}`);
+                safeToDestroy = true;
+            } catch (error) {
+                console.error('[YJS] Failed to persist doc on close:', error);
+                // Keep the live CRDT in memory and retry in the background. This
+                // is preferable to acknowledging a close and losing edits during
+                // a transient database/projection outage.
+                doc.lifecycle = 'ready';
+                this.docs.set(doc.name, doc);
+                doc.startSyncLoop();
+            } finally {
+                if (safeToDestroy) {
+                    doc.lifecycle = 'destroyed';
+                    doc.destroy();
+                }
+            }
+        });
     }
 
     onDocUpdate(update: Uint8Array, _origin: unknown, doc: Y.Doc, _transaction: Y.Transaction) {
@@ -335,36 +397,43 @@ export class YCrossws {
     }
 
     async flushDoc(doc: SharedDoc): Promise<void> {
-        if (!doc.dirty) return;
+        if (!doc.dirty || doc.lifecycle === 'destroyed') return;
         if (doc.flushPromise) {
             await doc.flushPromise;
             return;
         }
 
         doc.flushPromise = (async () => {
-            doc.dirty = false;
-            await this.persistence.writeState(doc.name, doc);
+            const snapshot = Y.encodeStateAsUpdate(doc);
+            const stateHash = hashBytes(snapshot);
+            const html = await this.renderUpdate(snapshot, doc.name);
+            const result = await this.persistence.writeState(doc.name, snapshot, {
+                stateHash,
+                htmlHash: hashText(html),
+                sourceTextHash: doc.sourceTextHash,
+                bindingVersion: LEXICAL_YJS_BINDING_VERSION,
+                ...(doc.replacePersistenceRevision !== null
+                    ? { replaceRevision: doc.replacePersistenceRevision }
+                    : {})
+            });
+            doc.replacePersistenceRevision = null;
+            Y.applyUpdate(doc, result.update, PERSISTENCE_ORIGIN);
+            doc.persistenceRevision = result.revision;
+            doc.persistedStateHash = result.stateHash;
 
-            const html = await yDocToHtml(doc, doc.name);
-            const nextHash = sha1(html);
-            if (doc.lastHtmlHash === nextHash) return;
-            doc.lastHtmlHash = nextHash;
+            const persistedHtml = result.mergedConcurrentState
+                ? await this.renderUpdate(result.update, doc.name)
+                : html;
+            await this.projectSnapshot(doc, persistedHtml, result.revision, result.stateHash);
 
-            const payload: BridgePayload = {
-                projectId: doc.scope.projectId,
-                commitId: doc.scope.commitId,
-                slideId: doc.scope.slideId,
-                layerId: doc.scope.layerId,
-                textHtml: html,
-                fallbackLayer: doc.fallbackLayer ?? undefined
-            };
-
-            const sent = await process.__YJS_UPSERT_LAYER__?.(payload);
-            debugLog('flushDoc', doc.name, { sent, hash: nextHash });
+            // An update may have arrived while the immutable snapshot was being
+            // written. Never clear dirty unless the live doc is exactly persisted.
+            doc.dirty = hashBytes(Y.encodeStateAsUpdate(doc)) !== result.stateHash;
         })()
             .catch((error) => {
                 console.error('[YJS] flushDoc failed:', error);
                 doc.dirty = true;
+                throw error;
             })
             .finally(() => {
                 doc.flushPromise = null;
@@ -373,22 +442,171 @@ export class YCrossws {
         await doc.flushPromise;
     }
 
+    async syncDoc(doc: SharedDoc): Promise<void> {
+        if (doc.lifecycle === 'destroyed') return;
+        if (doc.syncPromise) {
+            await doc.syncPromise;
+            return;
+        }
+
+        doc.syncPromise = (async () => {
+            const persisted = await this.persistence.readState(doc.name);
+            let pulledRemoteState = false;
+            if (persisted && persisted.revision > doc.persistenceRevision) {
+                Y.applyUpdate(doc, persisted.update, PERSISTENCE_ORIGIN);
+                doc.persistenceRevision = persisted.revision;
+                doc.persistedStateHash = persisted.stateHash;
+                pulledRemoteState = true;
+            }
+
+            if (doc.dirty) {
+                await this.flushDoc(doc);
+            } else if (pulledRemoteState && persisted) {
+                const html = await this.renderUpdate(persisted.update, doc.name);
+                await this.projectSnapshot(doc, html, persisted.revision, persisted.stateHash);
+            } else {
+                await this.retryBridge(doc);
+            }
+        })()
+            .catch((error) => {
+                console.error('[YJS] syncDoc failed:', error);
+                throw error;
+            })
+            .finally(() => {
+                doc.syncPromise = null;
+                if (doc.lifecycle === 'ready' && doc.peerIds.size === 0) {
+                    queueMicrotask(() => void this.closeDocIfUnused(doc));
+                }
+            });
+        await doc.syncPromise;
+    }
+
+    private async renderUpdate(update: Uint8Array, docName: string): Promise<string> {
+        const snapshotDoc = new Y.Doc();
+        try {
+            Y.applyUpdate(snapshotDoc, update, PERSISTENCE_ORIGIN);
+            return await yDocToHtml(snapshotDoc, docName);
+        } finally {
+            snapshotDoc.destroy();
+        }
+    }
+
+    private async projectSnapshot(
+        doc: SharedDoc,
+        html: string,
+        revision: number,
+        stateHash: string
+    ): Promise<void> {
+        if (revision < doc.lastProjectedRevision) return;
+        const updated = await dbCol.commits.updateTextLayerProjection({
+            commitId: doc.scope.commitId,
+            slideId: doc.scope.slideId,
+            layerId: doc.scope.layerId,
+            textHtml: html,
+            textRevision: revision,
+            textStateHash: stateHash,
+            textBindingVersion: LEXICAL_YJS_BINDING_VERSION
+        });
+        if (!updated) {
+            const latest = await loadTextLayer(doc.scope);
+            if ((latest.textRevision ?? 0) > revision) return;
+            throw new Error(`Text layer projection target disappeared for ${doc.name}`);
+        }
+        doc.lastHtmlHash = hashText(html);
+        doc.lastProjectedRevision = revision;
+        doc.pendingBridgeProjection = { html, revision, stateHash };
+        await this.retryBridge(doc);
+    }
+
+    private async retryBridge(doc: SharedDoc): Promise<void> {
+        const projection = doc.pendingBridgeProjection;
+        if (!projection) return;
+        const payload: BridgePayload = {
+            projectId: doc.scope.projectId,
+            commitId: doc.scope.commitId,
+            slideId: doc.scope.slideId,
+            layerId: doc.scope.layerId,
+            textHtml: projection.html,
+            textRevision: projection.revision,
+            textStateHash: projection.stateHash,
+            textBindingVersion: LEXICAL_YJS_BINDING_VERSION,
+            fallbackLayer: doc.fallbackLayer ?? undefined
+        };
+        const bridge = process.__YJS_UPSERT_LAYER__;
+        if (!bridge) return;
+        const sent = await bridge(payload);
+        if (sent && doc.pendingBridgeProjection === projection) {
+            doc.pendingBridgeProjection = null;
+        }
+        debugLog('projectSnapshot', doc.name, {
+            sent,
+            revision: projection.revision,
+            hash: projection.stateHash
+        });
+    }
+
     private async createDoc(docName: string): Promise<SharedDoc> {
         const scope = parseScope(docName);
         const doc = new SharedDoc(docName, scope, this);
         doc.gc = true;
-        this.docs.set(docName, doc);
 
         try {
             const layer = await loadTextLayer(scope);
             doc.fallbackLayer = layer;
+            doc.sourceTextHash = hashText(layer.textHtml);
 
-            const hydrated = await this.persistence.bindState(docName, doc);
-            if (!hydrated) {
-                await applyHtmlToDoc(doc, layer.textHtml, docName);
+            const persisted = await this.persistence.readState(docName);
+            let persistedHtml: string | null = null;
+            if (persisted) persistedHtml = await this.renderUpdate(persisted.update, docName);
+
+            const layerRevision = layer.textRevision ?? 0;
+            const legacyState = Boolean(
+                persisted &&
+                (persisted.revision === 0 || !persisted.sourceTextHash || !persisted.bindingVersion)
+            );
+            const rebuildFromCommit = shouldRebuildYjsFromCommit({
+                hasPersistedState: Boolean(persisted),
+                persistedRevision: persisted?.revision ?? 0,
+                commitRevision: layerRevision,
+                persistedIsLegacy: legacyState,
+                persistedHtmlIsEmpty: isSemanticallyEmptyHtml(persistedHtml ?? ''),
+                commitHtmlIsEmpty: isSemanticallyEmptyHtml(layer.textHtml),
+                persistedSourceTextHash: persisted?.sourceTextHash,
+                commitTextHash: doc.sourceTextHash
+            });
+
+            if (rebuildFromCommit) {
+                await applyHtmlToDoc(doc, layer.textHtml, docName, INITIALIZATION_ORIGIN);
+                doc.persistenceRevision = persisted?.revision ?? 0;
+                doc.replacePersistenceRevision = persisted?.revision ?? null;
                 doc.dirty = true;
                 await this.flushDoc(doc);
+            } else if (persisted) {
+                Y.applyUpdate(doc, persisted.update, PERSISTENCE_ORIGIN);
+                doc.persistenceRevision = persisted.revision;
+                doc.persistedStateHash = persisted.stateHash;
+
+                if (legacyState || !persisted.htmlHash) {
+                    // Rewrite legacy snapshots once to stamp revision/hash metadata.
+                    doc.dirty = true;
+                    await this.flushDoc(doc);
+                } else if (
+                    layerRevision !== persisted.revision ||
+                    layer.textStateHash !== persisted.stateHash ||
+                    layer.textBindingVersion !== LEXICAL_YJS_BINDING_VERSION
+                ) {
+                    await this.projectSnapshot(
+                        doc,
+                        persistedHtml ?? '<p></p>',
+                        persisted.revision,
+                        persisted.stateHash
+                    );
+                } else {
+                    doc.lastHtmlHash = persisted.htmlHash;
+                    doc.lastProjectedRevision = persisted.revision;
+                }
             }
+            doc.lifecycle = 'ready';
             doc.startSyncLoop();
             return doc;
         } catch (error) {
@@ -405,26 +623,45 @@ export class YCrossws {
         if (!state || typeof email !== 'string' || email.length === 0) {
             throw new Error('Missing authenticated YJS peer state');
         }
-        if (state.doc) return state.doc;
+        if (state.closed) throw new Error('peer_closed');
+        if (state.doc?.lifecycle === 'ready') return state.doc;
 
         const docName = getDocName(peer);
         let doc = this.docs.get(docName);
+        let waitedForInitialization = false;
         if (!doc) {
-            let pending = this.initializing.get(docName);
-            if (!pending) {
-                pending = this.createDoc(docName);
-                this.initializing.set(docName, pending);
-            }
+            waitedForInitialization = true;
+            this.initializationWaiters.set(
+                docName,
+                (this.initializationWaiters.get(docName) ?? 0) + 1
+            );
             try {
-                doc = await pending;
-            } finally {
-                this.initializing.delete(docName);
+                doc = await this.registry.getOrCreate(docName, () => this.createDoc(docName));
+            } catch (error) {
+                const remaining = (this.initializationWaiters.get(docName) ?? 1) - 1;
+                if (remaining > 0) this.initializationWaiters.set(docName, remaining);
+                else this.initializationWaiters.delete(docName);
+                waitedForInitialization = false;
+                throw error;
             }
         }
 
-        if (!doc.peerIds.has(peer)) doc.peerIds.set(peer, new Set());
-        setYjsPeerState(peer, { ...state, doc });
-        return doc;
+        try {
+            if (getYjsPeerState(peer)?.closed) throw new Error('peer_closed');
+            if (!doc.peerIds.has(peer)) doc.peerIds.set(peer, new Set());
+            setYjsPeerState(peer, { ...(getYjsPeerState(peer) ?? state), doc });
+            return doc;
+        } finally {
+            if (waitedForInitialization) {
+                const remaining = (this.initializationWaiters.get(docName) ?? 1) - 1;
+                if (remaining > 0) {
+                    this.initializationWaiters.set(docName, remaining);
+                } else {
+                    this.initializationWaiters.delete(docName);
+                    if (doc.peerIds.size === 0) void this.closeDocIfUnused(doc);
+                }
+            }
+        }
     }
 
     async recomputePeerAuthContexts(input: { email?: string } = {}) {

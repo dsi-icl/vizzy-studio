@@ -12,10 +12,14 @@ import TextEditorToolbar from './TextEditorToolbar';
 
 export function TextEditor({
     layerId,
-    onMeasuredHeight
+    onMeasuredHeight,
+    hydrationState,
+    onRetryHydration
 }: {
     layerId: number;
     onMeasuredHeight?: (height: number) => void;
+    hydrationState: 'connecting' | 'synced' | 'error';
+    onRetryHydration: () => void;
 }) {
     const rootRef = useRef<HTMLDivElement | null>(null);
     const layerMetrics = useEditorStore(
@@ -91,9 +95,16 @@ export function TextEditor({
 
     return (
         <div ref={rootRef} className="flex flex-col gap-4">
-            <TextEditorToolbar />
             <div
-                className="overflow-auto rounded-lg border border-border bg-black"
+                className={
+                    hydrationState === 'synced' ? undefined : 'pointer-events-none opacity-50'
+                }
+                aria-disabled={hydrationState !== 'synced'}
+            >
+                <TextEditorToolbar />
+            </div>
+            <div
+                className="relative overflow-auto rounded-lg border border-border bg-black"
                 style={{
                     width: `${viewportWidth}px`,
                     height: `${viewportHeight}px`
@@ -118,8 +129,26 @@ export function TextEditor({
                         }
                         ErrorBoundary={LexicalErrorBoundary}
                     />
-                    <AutoFocusPlugin />
+                    {hydrationState === 'synced' ? <AutoFocusPlugin /> : null}
                 </div>
+                {hydrationState !== 'synced' ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-white">
+                        {hydrationState === 'error' ? (
+                            <div className="flex flex-col items-center gap-3">
+                                <span>Unable to synchronize this text document.</span>
+                                <button
+                                    type="button"
+                                    className="rounded border border-white/40 px-3 py-1 hover:bg-white/10"
+                                    onClick={onRetryHydration}
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        ) : (
+                            <span>Synchronizing text…</span>
+                        )}
+                    </div>
+                ) : null}
             </div>
         </div>
     );
