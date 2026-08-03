@@ -70,7 +70,7 @@ const ALL_TABS: { key: TabKey; label: string; to: string; icon: any }[] = [
     { key: 'controller', label: 'Controller', to: './controller_editor', icon: CodeIcon }
 ];
 
-const CUSTOM_RENDER_HIDDEN_TABS: ReadonlySet<TabKey> = new Set(['commits', 'assets']);
+const CUSTOM_RENDER_HIDDEN_TABS: ReadonlySet<TabKey> = new Set(['commits']);
 
 const TAB_SUBHEADERS: Record<TabKey, { title: string; description?: string }> = {
     info: {
