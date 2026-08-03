@@ -74,7 +74,15 @@ const LayerSchema = z.discriminatedUnion('type', [
         })
         .extend(LayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
-    z.object({ type: z.literal('text'), textHtml: z.string() }).extend(LayerBaseSchema.shape),
+    z
+        .object({
+            type: z.literal('text'),
+            textHtml: z.string(),
+            textRevision: z.number().int().nonnegative().optional(),
+            textStateHash: z.string().optional(),
+            textBindingVersion: z.string().optional()
+        })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('map'),

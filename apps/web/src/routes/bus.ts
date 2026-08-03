@@ -519,19 +519,41 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textRevision: number;
+    textStateHash: string;
+    textBindingVersion: string;
     fallbackLayer?: Extract<Layer, { type: 'text' }>;
 }) => {
     try {
-        const { projectId, commitId, slideId, layerId, textHtml, fallbackLayer } = payload;
+        const {
+            projectId,
+            commitId,
+            slideId,
+            layerId,
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion,
+            fallbackLayer
+        } = payload;
         const scopeId = internScope(projectId, commitId, slideId);
         const scope = getOrCreateScope(scopeId, projectId, commitId, slideId);
 
         const existing = scope.layers.get(layerId);
+        if (existing?.type === 'text' && (existing.textRevision ?? 0) > textRevision) {
+            return true;
+        }
+        const yjsProjection = {
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion
+        };
         const nextLayer =
             existing?.type === 'text'
-                ? { ...existing, textHtml }
+                ? { ...existing, ...yjsProjection }
                 : fallbackLayer
-                  ? { ...fallbackLayer, textHtml }
+                  ? { ...fallbackLayer, ...yjsProjection }
                   : null;
 
         if (!nextLayer || nextLayer.type !== 'text') {
