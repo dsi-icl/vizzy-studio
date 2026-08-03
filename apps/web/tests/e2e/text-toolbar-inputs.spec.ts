@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 
 import { expect, test } from 'playwright/test';
 
+import { actorStorageState, waitForFonts } from '../support/harness';
+
 interface SeedManifest {
     fixtures: {
         privateProjectId: string;
@@ -12,6 +14,7 @@ interface SeedManifest {
 }
 
 const TOOLBAR_SELECTION_HIGHLIGHT = 'lexical-toolbar-selection';
+const screenshotStyle = resolve(process.cwd(), 'apps/web/tests/visual.css');
 
 async function hasToolbarSelectionHighlight(page: import('playwright/test').Page) {
     return page.evaluate((name) => CSS.highlights?.has(name) ?? false, TOOLBAR_SELECTION_HIGHLIGHT);
@@ -23,16 +26,20 @@ function readManifest(): SeedManifest {
     ) as SeedManifest;
 }
 
-test.use({ storageState: 'apps/web/tests/.auth/user_admin.json' });
+test.use({ storageState: actorStorageState('user_admin') });
 
-test('colour and size inputs keep focus until an explicit valid commit', async ({ page }) => {
+test('colour and size inputs keep focus until an explicit valid commit @visual', async ({
+    page
+}) => {
     const { privateProjectId, privateCommitId, privateSlideId } = readManifest().fixtures;
     await page.goto(`/quarry/editor/${privateProjectId}/${privateCommitId}/${privateSlideId}`);
 
+    await expect(page.getByText('Loading slide...')).toBeHidden();
+    await expect(page.getByText('Harness focus text', { exact: true })).toBeVisible();
     await page.getByText('Harness focus text', { exact: true }).click();
     await page.getByRole('button', { name: 'Edit text' }).click();
 
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('dialog', { name: 'Edit Text Layer' });
     await expect(dialog.getByText('Edit Text Layer')).toBeVisible();
     const editor = dialog.locator('[contenteditable="true"]');
     await expect(editor).toContainText('Harness focus text');
@@ -48,6 +55,13 @@ test('colour and size inputs keep focus until an explicit valid commit', async (
     await expect(colourInput).toHaveValue('#abcdef');
     await expect(editor).toContainText('Harness focus text');
     await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
+    await waitForFonts(page);
+    const dialogBox = await dialog.boundingBox();
+    if (!dialogBox) throw new Error('Text editor dialog was not measurable');
+    await expect(page).toHaveScreenshot('text-colour-input-selection.png', {
+        clip: dialogBox,
+        stylePath: screenshotStyle
+    });
 
     await colourInput.press('Enter');
     await expect(colourInput).toBeHidden();
@@ -68,9 +82,13 @@ test('colour and size inputs keep focus until an explicit valid commit', async (
     await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(false);
 
     await sizeInput.dblclick();
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
+    await expect(page).toHaveScreenshot('text-size-input-selection.png', {
+        clip: dialogBox,
+        stylePath: screenshotStyle
+    });
     await sizeInput.pressSequentially('72');
     await expect(sizeInput).toHaveValue('72');
-    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
     await sizeInput.press('Enter');
     await expect(editor).toBeFocused();
     await expect(sizeInput).toHaveValue('72');
