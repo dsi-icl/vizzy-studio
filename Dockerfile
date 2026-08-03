@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM oven/bun:1.3.13 AS build
+FROM oven/bun:1.3.14 AS build
 ARG BUILD_SOURCEMAPS=false
 ARG VITE_GIT_SHA=
 ARG APP_COMMIT_SHA=
