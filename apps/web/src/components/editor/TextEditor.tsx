@@ -2,6 +2,7 @@ import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { CircleNotchIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -9,6 +10,7 @@ import { useEditorStore } from '~/lib/editorStore';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 
 import TextEditorToolbar from './TextEditorToolbar';
+import type { TextHydrationState } from './textHydrationState';
 
 export function TextEditor({
     layerId,
@@ -18,7 +20,7 @@ export function TextEditor({
 }: {
     layerId: number;
     onMeasuredHeight?: (height: number) => void;
-    hydrationState: 'connecting' | 'synced' | 'error';
+    hydrationState: TextHydrationState;
     onRetryHydration: () => void;
 }) {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -132,20 +134,30 @@ export function TextEditor({
                     {hydrationState === 'synced' ? <AutoFocusPlugin /> : null}
                 </div>
                 {hydrationState !== 'synced' ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-white">
+                    <div
+                        className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm text-white"
+                        aria-live="polite"
+                        aria-busy={hydrationState === 'connecting'}
+                    >
                         {hydrationState === 'error' ? (
                             <div className="flex flex-col items-center gap-3">
-                                <span>Unable to synchronize this text document.</span>
+                                <span>We couldn't load this text.</span>
                                 <button
                                     type="button"
                                     className="rounded border border-white/40 px-3 py-1 hover:bg-white/10"
                                     onClick={onRetryHydration}
                                 >
-                                    Retry
+                                    Try again
                                 </button>
                             </div>
                         ) : (
-                            <span>Synchronizing text…</span>
+                            <div className="flex items-center gap-2">
+                                <CircleNotchIcon
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                />
+                                <span>Loading text…</span>
+                            </div>
                         )}
                     </div>
                 ) : null}

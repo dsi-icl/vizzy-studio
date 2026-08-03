@@ -10,6 +10,12 @@ import { useEditorStore } from '~/lib/editorStore';
 
 import { createWebsocketProvider, type LexicalWebsocketProvider } from './providers';
 import { TextEditor } from './TextEditor';
+import {
+    TEXT_HYDRATION_TIMEOUT_MS,
+    transitionTextHydrationState,
+    type TextHydrationEvent,
+    type TextHydrationState
+} from './textHydrationState';
 import theme from './theme';
 
 const editorConfig = {
@@ -51,8 +57,6 @@ export function CollaborativeEditor({
     );
 }
 
-type HydrationState = 'connecting' | 'synced' | 'error';
-
 function HydrationGatePlugin({ ready }: { ready: boolean }) {
     const [editor] = useLexicalComposerContext();
 
@@ -80,32 +84,39 @@ function AuthenticatedCollaborativeEditor({
     const textEditScope = useEditorStore(
         (s) => `${s.projectId}_${s.commitId}_${s.activeSlideId}_${layerId}`
     );
-    const [hydrationState, setHydrationState] = useState<HydrationState>('connecting');
+    const [hydrationState, setHydrationState] = useState<TextHydrationState>('connecting');
     const [userColor] = useState(() => getDeterministicCursorColor(`${userEmail}:${layerId}`));
     const latestHeightRef = useRef<number>(layer?.type === 'text' ? layer.config.height : 400);
 
-    const providerFactory = useCallback((id: string, yjsDocMap: Map<string, Y.Doc>) => {
-        providerRef.current?.destroy();
-        const provider = createWebsocketProvider(id, yjsDocMap);
-        providerRef.current = provider;
-        queueMicrotask(() => setHydrationState('connecting'));
-        provider.on('sync', (synced: boolean) => {
-            setHydrationState(synced ? 'synced' : 'connecting');
-        });
-        provider.on('status', ({ status }: { status: string }) => {
-            if (status !== 'connected') setHydrationState('connecting');
-        });
-        provider.on('connection-error', () => setHydrationState('error'));
-        return provider;
+    const transitionHydration = useCallback((event: TextHydrationEvent) => {
+        setHydrationState((state) => transitionTextHydrationState(state, event));
     }, []);
+
+    const providerFactory = useCallback(
+        (id: string, yjsDocMap: Map<string, Y.Doc>) => {
+            providerRef.current?.destroy();
+            const provider = createWebsocketProvider(id, yjsDocMap);
+            providerRef.current = provider;
+            queueMicrotask(() => transitionHydration('attempt'));
+            provider.on('sync', (synced: boolean) => {
+                transitionHydration(synced ? 'synced' : 'interrupted');
+            });
+            provider.on('status', ({ status }: { status: string }) => {
+                if (status !== 'connected') transitionHydration('interrupted');
+            });
+            provider.on('connection-error', () => transitionHydration('interrupted'));
+            return provider;
+        },
+        [transitionHydration]
+    );
 
     const retryHydration = useCallback(() => {
         const provider = providerRef.current;
         if (!provider) return;
-        setHydrationState('connecting');
+        transitionHydration('attempt');
         provider.disconnect();
         provider.connect();
-    }, []);
+    }, [transitionHydration]);
 
     useEffect(() => {
         if (destroyTimerRef.current) {
@@ -126,9 +137,9 @@ function AuthenticatedCollaborativeEditor({
 
     useEffect(() => {
         if (hydrationState !== 'connecting') return;
-        const timeout = setTimeout(() => setHydrationState('error'), 15_000);
+        const timeout = setTimeout(() => transitionHydration('timeout'), TEXT_HYDRATION_TIMEOUT_MS);
         return () => clearTimeout(timeout);
-    }, [hydrationState, textEditScope]);
+    }, [hydrationState, textEditScope, transitionHydration]);
 
     return (
         <div ref={containerRef}>
