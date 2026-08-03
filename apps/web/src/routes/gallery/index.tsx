@@ -540,8 +540,12 @@ function HomePage() {
     };
 
     const filteredProjects = useMemo(() => {
-        if (!activeTag) return projectsData;
-        return projectsData.filter((p) => p.tags.includes(activeTag));
+        const list = activeTag
+            ? projectsData.filter((p) => p.tags.includes(activeTag))
+            : projectsData;
+        return [...list].sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+        );
     }, [activeTag, projectsData]);
 
     const autoOpenProjectId = useMemo(() => {
