@@ -21,7 +21,7 @@ jobs:
             TURBO_TELEMETRY_DISABLED: '1'
             VITE_BASE_URL: http://localhost:3670
             SERVER_DATABASE_URL: mongodb://127.0.0.1:27017/vizzy?directConnection=true
-            SERVER_AUTH_SECRET: 00000000000000000000000000000000
+            SERVER_AUTH_SECRET: '00000000000000000000000000000000'
             SERVER_CONFIG_ENCRYPTION_KEY: ci-test-config-key
         steps:
             - name: Checkout
@@ -60,7 +60,7 @@ jobs:
             TEST_BASE_URL: http://localhost:3870
             VITE_BASE_URL: http://localhost:3870
             SERVER_DATABASE_URL: mongodb://127.0.0.1:37017/vizzy?replicaSet=rs0&directConnection=true
-            SERVER_AUTH_SECRET: 00000000000000000000000000000000
+            SERVER_AUTH_SECRET: '00000000000000000000000000000000'
             SERVER_CONFIG_ENCRYPTION_KEY: ci-test-config-key
             ALLOWED_HOSTS: http://localhost:3870
             TRUSTED_ORIGINS: http://localhost:3870
