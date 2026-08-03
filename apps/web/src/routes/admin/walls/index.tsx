@@ -77,15 +77,18 @@ function AdminWalls() {
                             </div>
                         )}
                     </form.Field>
-                    <Button
-                        disabled={
-                            createWallMutation.isPending ||
-                            form.getFieldValue('wallId').trim().length === 0
-                        }
-                        onClick={() => form.handleSubmit()}
-                    >
-                        Add Wall
-                    </Button>
+                    <form.Subscribe selector={(state) => state.values.wallId}>
+                        {(wallId) => (
+                            <Button
+                                disabled={
+                                    createWallMutation.isPending || wallId.trim().length === 0
+                                }
+                                onClick={() => form.handleSubmit()}
+                            >
+                                Add Wall
+                            </Button>
+                        )}
+                    </form.Subscribe>
                 </div>
             </div>
             {walls.length === 0 ? (
