@@ -11,6 +11,12 @@ interface SeedManifest {
     };
 }
 
+const TOOLBAR_SELECTION_HIGHLIGHT = 'lexical-toolbar-selection';
+
+async function hasToolbarSelectionHighlight(page: import('playwright/test').Page) {
+    return page.evaluate((name) => CSS.highlights?.has(name) ?? false, TOOLBAR_SELECTION_HIGHLIGHT);
+}
+
 function readManifest(): SeedManifest {
     return JSON.parse(
         readFileSync(resolve(process.cwd(), 'apps/web/tests/.fixtures/seed-manifest.json'), 'utf8')
@@ -41,25 +47,38 @@ test('colour and size inputs keep focus until an explicit valid commit', async (
     await expect(colourInput).toBeFocused();
     await expect(colourInput).toHaveValue('#abcdef');
     await expect(editor).toContainText('Harness focus text');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
 
     await colourInput.press('Enter');
     await expect(colourInput).toBeHidden();
     await expect(editor).toBeFocused();
     await expect(editor).toContainText('Harness focus text');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(false);
 
     const sizeInput = dialog.getByRole('spinbutton', { name: 'Font Size (virtual px)' });
     await sizeInput.fill('48');
     await expect(sizeInput).toBeFocused();
     await expect(editor).toContainText('Harness focus text');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
 
     await sizeInput.press('Tab');
     await expect(editor).toBeFocused();
     await expect(sizeInput).toHaveValue('48');
     await expect(editor).toContainText('Harness focus text');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(false);
+
+    await sizeInput.dblclick();
+    await sizeInput.pressSequentially('72');
+    await expect(sizeInput).toHaveValue('72');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
+    await sizeInput.press('Enter');
+    await expect(editor).toBeFocused();
+    await expect(sizeInput).toHaveValue('72');
 
     await sizeInput.fill('9');
     await sizeInput.press('Tab');
     await expect(sizeInput).toBeFocused();
     await expect(sizeInput).toHaveAttribute('aria-invalid', 'true');
     await expect(editor).toContainText('Harness focus text');
+    await expect.poll(() => hasToolbarSelectionHighlight(page)).toBe(true);
 });

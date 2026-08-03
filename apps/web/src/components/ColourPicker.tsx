@@ -17,6 +17,8 @@ interface ColorPickerProps extends PropsWithChildren {
     onChange: (value: string) => void;
     onTextCommit?: (value: string) => void;
     onTextCancel?: () => void;
+    onTextInputFocus?: () => void;
+    onTextInputBlur?: () => void;
     liveTextChange?: boolean;
 }
 
@@ -29,6 +31,8 @@ export function ColorPicker({
     onChange,
     onTextCommit,
     onTextCancel,
+    onTextInputFocus,
+    onTextInputBlur,
     liveTextChange = true
 }: ColorPickerProps) {
     const [hasEyeDropper, setHasEyeDropper] = useState(false);
@@ -150,6 +154,7 @@ export function ColorPicker({
                         pendingCommitKeyRef.current = null;
                         setIsTyping(true);
                         setIsInputInvalid(false);
+                        onTextInputFocus?.();
                     }}
                     onBlur={() => {
                         clearTypingLiveCommit();
@@ -159,6 +164,7 @@ export function ColorPicker({
                         if (!normalizeHexColor(inputValue)) {
                             setInputValue(localValue);
                         }
+                        onTextInputBlur?.();
                     }}
                     onKeyDown={(e) => {
                         if (isExplicitCommitKey(e.key)) {
@@ -238,6 +244,8 @@ export function ColorPickerPopover({
     value,
     onChange,
     onTextCommit,
+    onTextInputFocus,
+    onTextInputBlur,
     liveTextChange,
     tip,
     variant,
@@ -279,6 +287,8 @@ export function ColorPickerPopover({
                     value={value}
                     onChange={onChange}
                     liveTextChange={liveTextChange}
+                    onTextInputFocus={onTextInputFocus}
+                    onTextInputBlur={onTextInputBlur}
                     onTextCommit={(committedValue) => {
                         pendingTextCommitRef.current = committedValue;
                         setOpen(false);
