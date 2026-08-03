@@ -120,13 +120,11 @@ function SignageEditor({
             ...current,
             entries: [
                 ...current.entries,
-                ...slides.map(
-                    ({ id }): SignageSlideEntry => ({
-                        id: crypto.randomUUID(),
-                        projectId,
-                        slideId: id
-                    })
-                )
+                ...slides.map(({ id }): SignageSlideEntry => ({
+                    id: crypto.randomUUID(),
+                    projectId,
+                    slideId: id
+                }))
             ]
         }));
     };
