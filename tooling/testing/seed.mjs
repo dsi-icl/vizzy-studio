@@ -85,12 +85,20 @@ async function createActor(testHelpers, input) {
         })
     );
     const login = await testHelpers.login({ userId: user.id });
+    // The seed process runs in test mode so Better Auth exposes its helpers, while
+    // the harness server intentionally runs in production mode. Mirror the
+    // production cookie name/attributes without changing the signed token.
+    const cookies = login.cookies.map((cookie) => ({
+        ...cookie,
+        name: cookie.name.startsWith('__Secure-') ? cookie.name : `__Secure-${cookie.name}`,
+        secure: true
+    }));
     return {
         id: user.id,
         email: user.email,
         role: user.role ?? input.role,
-        cookieHeader: toCookieHeader(login.cookies),
-        cookies: login.cookies
+        cookieHeader: toCookieHeader(cookies),
+        cookies
     };
 }
 
@@ -185,7 +193,33 @@ async function seed() {
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness private head',
-            content: { slides: [{ id: 'slide-private-1', order: 0, name: 'Slide 1', layers: [] }] },
+            content: {
+                slides: [
+                    {
+                        id: 'slide-private-1',
+                        order: 0,
+                        name: 'Slide 1',
+                        layers: [
+                            {
+                                numericId: 1,
+                                type: 'text',
+                                config: {
+                                    cx: 960,
+                                    cy: 540,
+                                    width: 960,
+                                    height: 240,
+                                    rotation: 0,
+                                    scaleX: 1,
+                                    scaleY: 1,
+                                    zIndex: 1,
+                                    visible: true
+                                },
+                                textHtml: '<p>Harness focus text</p>'
+                            }
+                        ]
+                    }
+                ]
+            },
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,

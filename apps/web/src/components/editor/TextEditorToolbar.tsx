@@ -43,6 +43,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useFonts } from '~/hooks/useFonts';
 import { useEditorStore } from '~/lib/editorStore';
+import { isExplicitCommitKey, parseBoundedNumber } from '~/lib/explicitInputCommit';
 import { emToVirtualPx, TEXT_BASE_FONT_SIZE_PX, virtualPxToEm } from '~/lib/textRenderConfig';
 
 import { ColorPickerPopover } from '../ColourPicker';
@@ -97,6 +98,10 @@ export default function TextEditorToolbar() {
     const [fontSizeInput, setFontSizeInput] = useState(String(TEXT_BASE_FONT_SIZE_PX));
     const [fontSizeMixed, setFontSizeMixed] = useState(false);
     const [isFontSizeInteracting, setIsFontSizeInteracting] = useState(false);
+    const [isFontSizeInputEditing, setIsFontSizeInputEditing] = useState(false);
+    const [isFontSizeInputInvalid, setIsFontSizeInputInvalid] = useState(false);
+    const pendingFontSizeCommitKeyRef = useRef<'Enter' | 'Tab' | null>(null);
+    const fontSizeCommitInProgressRef = useRef(false);
     const [fontFamilyOptionId, setFontFamilyOptionId] = useState(DEFAULT_FONT_OPTION_ID);
     const [fontFamilyMixed, setFontFamilyMixed] = useState(false);
     const projectId = useEditorStore((s) => s.projectId);
@@ -144,7 +149,7 @@ export default function TextEditorToolbar() {
             setColor(_color);
             setBgColor(_bgColor);
 
-            if (!isFontSizeInteracting) {
+            if (!isFontSizeInteracting && !isFontSizeInputEditing) {
                 const fontSizeValue = $getSelectionStyleValueForProperty(
                     selection,
                     'font-size',
@@ -190,7 +195,7 @@ export default function TextEditorToolbar() {
                 }
             }
         }
-    }, [activeScaleX, activeScaleY, isFontSizeInteracting, projectFonts]);
+    }, [activeScaleX, activeScaleY, isFontSizeInputEditing, isFontSizeInteracting, projectFonts]);
 
     useEffect(() => {
         return mergeRegister(
@@ -226,24 +231,31 @@ export default function TextEditorToolbar() {
         );
     }, [editor, $updateToolbar]);
 
-    const applyStyle = (property: string, value: string) => {
-        editor.focus(() => {
+    const applyStyle = (
+        property: string,
+        value: string,
+        options?: { restoreEditorFocus?: boolean }
+    ) => {
+        const updateStyle = () => {
             editor.update(() => {
                 const selection = $getSelection();
                 if ($isRangeSelection(selection)) {
                     $patchStyleText(selection, { [property]: value });
                 }
             });
-        });
+        };
+
+        if (options?.restoreEditorFocus === false) updateStyle();
+        else editor.focus(updateStyle);
     };
 
     const applyColor = (color: string) => {
-        applyStyle('color', color);
+        applyStyle('color', color, { restoreEditorFocus: false });
         setColor(color);
     };
 
     const applyBgColor = (color: string) => {
-        applyStyle('background-color', color);
+        applyStyle('background-color', color, { restoreEditorFocus: false });
         setBgColor(color);
     };
 
@@ -401,6 +413,8 @@ export default function TextEditorToolbar() {
                 variant={'ghost'}
                 value={color}
                 onChange={applyColor}
+                onTextCommit={() => editor.focus()}
+                liveTextChange={false}
             >
                 <TextAUnderlineIcon size={32} style={{ color }} weight="fill" />
             </ColorPickerPopover>
@@ -409,6 +423,8 @@ export default function TextEditorToolbar() {
                 variant={'ghost'}
                 value={bgColor}
                 onChange={applyBgColor}
+                onTextCommit={() => editor.focus()}
+                liveTextChange={false}
             >
                 <HighlighterIcon size={32} style={{ color: bgColor }} weight="fill" />
             </ColorPickerPopover>
@@ -426,10 +442,68 @@ export default function TextEditorToolbar() {
                     max={FONT_SIZE_MAX}
                     value={fontSizeMixed ? '' : fontSizeInput}
                     placeholder={fontSizeMixed ? 'Mixed' : undefined}
-                    disabled
-                    className="pointer-events-none h-7 w-18 rounded border border-border bg-background px-2 text-xs select-none"
-                    onPointerDownCapture={() => {
-                        editor.focus();
+                    aria-invalid={isFontSizeInputInvalid || undefined}
+                    className="h-7 w-18 rounded border border-border bg-background px-2 text-xs"
+                    onFocus={() => {
+                        setIsFontSizeInputEditing(true);
+                        setIsFontSizeInputInvalid(false);
+                    }}
+                    onChange={(e) => {
+                        setFontSizeMixed(false);
+                        setFontSizeInput(e.currentTarget.value);
+                        setIsFontSizeInputInvalid(false);
+                    }}
+                    onBlur={() => {
+                        pendingFontSizeCommitKeyRef.current = null;
+                        setIsFontSizeInputEditing(false);
+                        setIsFontSizeInputInvalid(false);
+                        if (fontSizeCommitInProgressRef.current) {
+                            fontSizeCommitInProgressRef.current = false;
+                        } else {
+                            setFontSizeInput(String(fontSizePx));
+                        }
+                    }}
+                    onKeyDown={(e) => {
+                        if (isExplicitCommitKey(e.key)) {
+                            const parsed = parseBoundedNumber(
+                                e.currentTarget.value,
+                                FONT_SIZE_MIN,
+                                FONT_SIZE_MAX
+                            );
+                            e.preventDefault();
+                            if (parsed === null) {
+                                pendingFontSizeCommitKeyRef.current = null;
+                                setIsFontSizeInputInvalid(true);
+                                return;
+                            }
+
+                            if (!e.repeat) pendingFontSizeCommitKeyRef.current = e.key;
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            pendingFontSizeCommitKeyRef.current = null;
+                            setFontSizeInput(String(fontSizePx));
+                            setIsFontSizeInputInvalid(false);
+                            e.currentTarget.blur();
+                        }
+                    }}
+                    onKeyUp={(e) => {
+                        if (
+                            !isExplicitCommitKey(e.key) ||
+                            pendingFontSizeCommitKeyRef.current !== e.key
+                        ) {
+                            return;
+                        }
+
+                        pendingFontSizeCommitKeyRef.current = null;
+                        const parsed = parseBoundedNumber(
+                            e.currentTarget.value,
+                            FONT_SIZE_MIN,
+                            FONT_SIZE_MAX
+                        );
+                        if (parsed !== null) {
+                            fontSizeCommitInProgressRef.current = true;
+                            applyFontSizePx(parsed);
+                        }
                     }}
                     aria-label="Font Size (virtual px)"
                 />
