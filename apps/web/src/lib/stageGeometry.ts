@@ -46,19 +46,25 @@ export function touchToStagePoint(stage: Konva.Stage, touch: Touch): { x: number
 
 // ── Line / AABB (used by wall renderer) ──────────────────────────────────────
 
-export function getLineBounds(line: number[]) {
+export function getLineBounds(line: number[] | number[][]) {
     let minX = Infinity,
         minY = Infinity,
         maxX = -Infinity,
         maxY = -Infinity;
 
-    for (let i = 0; i < line.length; i += 2) {
-        const x = line[i];
-        const y = line[i + 1];
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+    const hasMultiplePaths = Array.isArray(line[0]);
+    const pathCount = hasMultiplePaths ? line.length : 1;
+
+    for (let pathIndex = 0; pathIndex < pathCount; pathIndex += 1) {
+        const path = hasMultiplePaths ? (line[pathIndex] as number[]) : (line as number[]);
+        for (let i = 0; i < path.length; i += 2) {
+            const x = path[i];
+            const y = path[i + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
     }
 
     if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;

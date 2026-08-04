@@ -53,6 +53,9 @@ const OptionalSizesSchema = z
     }, z.array(z.number()))
     .optional();
 
+const LinePointsSchema = z.array(z.number());
+const LinePathsSchema = z.array(LinePointsSchema);
+
 const LayerSchema = z.discriminatedUnion('type', [
     z
         .object({
@@ -101,8 +104,7 @@ const LayerSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('line'),
-            line: z.array(z.number()),
-            segments: z.array(z.array(z.number())).optional(),
+            line: z.union([LinePointsSchema, LinePathsSchema]),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number()
@@ -135,6 +137,13 @@ const LayerSchema = z.discriminatedUnion('type', [
 ]);
 
 export type Layer = z.infer<typeof LayerSchema>;
+
+type LineLayer = Extract<Layer, { type: 'line' }>;
+
+export function getLinePaths(layer: LineLayer): number[][] {
+    if (layer.line.length === 0) return [];
+    return Array.isArray(layer.line[0]) ? (layer.line as number[][]) : [layer.line as number[]];
+}
 
 // ── Hello schema (exported separately for handshake-only validation) ─────────
 

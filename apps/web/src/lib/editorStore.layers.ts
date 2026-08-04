@@ -3,7 +3,7 @@ import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { eraseLineSegments } from './lineEraser';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
-import type { Layer, LayerWithEditorState } from './types';
+import { getLinePaths, type Layer, type LayerWithEditorState } from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -623,25 +623,24 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             if (!layer || layer.type !== 'line') return;
 
-            const originalSegments = layer.segments ?? [layer.line];
+            const originalSegments = getLinePaths(layer);
             const nextSegments = eraseLineSegments(
                 originalSegments,
                 eraserPath,
-                state.eraserWidth / 2
+                state.eraserWidth / 2 + layer.strokeWidth / 2
             );
 
-            const didErase =
-                nextSegments.length !== originalSegments.length ||
-                nextSegments.some(
-                    (segment, index) => segment.length !== originalSegments[index]?.length
-                );
+            if (nextSegments === originalSegments) return;
 
-            if (!didErase) return;
+            if (nextSegments.length === 0) {
+                set({ isErasing: false });
+                get().removeLayer(numericId);
+                return;
+            }
 
             const updatedLayer = {
                 ...layer,
-                line: nextSegments[0] ?? [],
-                segments: nextSegments
+                line: nextSegments
             };
 
             set((s) => {

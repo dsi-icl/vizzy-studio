@@ -134,7 +134,6 @@ export class EditorEngine {
                     offset += 30;
                 }
             }
-
             return;
         }
 

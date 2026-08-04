@@ -13,7 +13,7 @@ import { signedFetch } from '~/lib/signedFetch';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import type { LayerWithWallComponentState } from '~/lib/types';
+import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 
 const HYDRATE_FADE_MS = 1000;
@@ -336,8 +336,8 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const segments = layer.segments ?? [layer.line];
-                              const bounds = getLineBounds(segments.flat());
+                              const segments = getLinePaths(layer);
+                              const bounds = getLineBounds(segments);
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -682,8 +682,8 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const segments = layer.segments ?? [layer.line];
-                const bounds = getLineBounds(segments.flat());
+                const segments = getLinePaths(layer);
+                const bounds = getLineBounds(segments);
                 if (!bounds) return null;
                 return (
                     <div

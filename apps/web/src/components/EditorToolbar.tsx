@@ -156,6 +156,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     const isShape = activeLayer?.type === 'shape';
     const isLine = activeLayer?.type === 'line';
     const isWeb = activeLayer?.type === 'web';
+    const canErase = selectedLayerIds.length === 1 && isLine;
 
     // Save popover state
     const [commitMessage, setCommitMessage] = useState('');
@@ -252,9 +253,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         <PencilSimpleIcon />
                     </TipButton>
                     <TipButton
-                        tip="Eraser"
+                        tip={canErase ? 'Eraser' : 'Select a line to erase'}
                         onClick={toggleErasing}
                         variant={isErasing ? 'outline' : 'ghost'}
+                        disabled={!canErase}
+                        className="disabled:pointer-events-auto"
                     >
                         <EraserIcon />
                     </TipButton>
