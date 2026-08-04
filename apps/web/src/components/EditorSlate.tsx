@@ -64,10 +64,11 @@ function appendPathPoint(path: number[], x: number, y: number): number[] {
     return path.concat([x, y]);
 }
 
-function pushPathPoint(path: number[], x: number, y: number): void {
-    if (path.length / 2 >= LINE_PATH_MAX_POINTS) return;
-    if (path[path.length - 2] === x && path[path.length - 1] === y) return;
+function pushPathPoint(path: number[], x: number, y: number): boolean {
+    if (path.length / 2 >= LINE_PATH_MAX_POINTS) return true;
+    if (path[path.length - 2] === x && path[path.length - 1] === y) return false;
     path.push(x, y);
+    return path.length / 2 >= LINE_PATH_MAX_POINTS;
 }
 
 export function EditorSlate() {
@@ -104,7 +105,9 @@ export function EditorSlate() {
     const stageWrapper = useRef<HTMLDivElement>(null);
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
+    const currentLineRef = useRef<number[]>([]);
     const eraserPathRef = useRef<number[]>([]);
+    const eraserContinuationPointRef = useRef<{ x: number; y: number } | null>(null);
     const eraserPointRef = useRef<{ x: number; y: number } | null>(null);
     const eraserPreviewLineRef = useRef<Konva.Line>(null);
     const eraserPreviewCircleRef = useRef<Konva.Circle>(null);
@@ -163,6 +166,19 @@ export function EditorSlate() {
         },
         []
     );
+
+    const addCurrentLineLayer = () => {
+        const line = currentLineRef.current;
+        if (line.length > 4) addLineLayer(line);
+        currentLineRef.current = [];
+        setCurrentLine([]);
+    };
+
+    const eraseWithCurrentPath = () => {
+        const path = eraserPathRef.current;
+        if (path.length >= 2) eraseSelectedLineLayer(path);
+        eraserPathRef.current = [];
+    };
 
     const autoScrollStageDuringDrag = useCallback((evt: Event) => {
         const slot = stageSlot.current;
@@ -1082,11 +1098,13 @@ export function EditorSlate() {
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches?.length === 2;
         if (isDrawing && isTwoFingerTouch) {
+            currentLineRef.current = [];
             setCurrentLine([]);
         }
         if (isErasing) {
             if (e.evt instanceof TouchEvent && e.evt.touches.length === 2) {
                 eraserPathRef.current = [];
+                eraserContinuationPointRef.current = null;
                 const stage = e.target.getStage();
                 if (!stage) return;
                 const t1 = e.evt.touches[0];
@@ -1113,6 +1131,7 @@ export function EditorSlate() {
             };
             eraserPointRef.current = eraserPoint;
             eraserPathRef.current = [eraserPoint.x, eraserPoint.y];
+            eraserContinuationPointRef.current = null;
             scheduleEraserPreview();
             return;
         }
@@ -1163,21 +1182,36 @@ export function EditorSlate() {
                 const stage = e.target.getStage();
                 const point = stage?.getPointerPosition();
                 if (!point) return;
-                eraserPointRef.current = {
+                const nextEraserPoint = {
                     x: point.x / stageScaleFactor,
                     y: point.y / stageScaleFactor
                 };
+                eraserPointRef.current = nextEraserPoint;
                 if (!(e.evt instanceof MouseEvent) || e.evt.buttons === 1) {
-                    pushPathPoint(
+                    const continuationPoint = eraserContinuationPointRef.current;
+                    if (eraserPathRef.current.length === 0 && continuationPoint) {
+                        pushPathPoint(
+                            eraserPathRef.current,
+                            continuationPoint.x,
+                            continuationPoint.y
+                        );
+                        eraserContinuationPointRef.current = null;
+                    }
+                    const reachedCap = pushPathPoint(
                         eraserPathRef.current,
-                        point.x / stageScaleFactor,
-                        point.y / stageScaleFactor
+                        nextEraserPoint.x,
+                        nextEraserPoint.y
                     );
+                    if (reachedCap) {
+                        eraserContinuationPointRef.current = nextEraserPoint;
+                        eraseWithCurrentPath();
+                    }
                 }
                 scheduleEraserPreview();
                 return;
             } else {
                 eraserPathRef.current = [];
+                eraserContinuationPointRef.current = null;
                 if (!(e.evt instanceof TouchEvent)) return;
                 const stage = e.target.getStage();
                 if (!stage) return;
@@ -1210,11 +1244,24 @@ export function EditorSlate() {
                 const stage = e.target.getStage();
                 const point = stage?.getPointerPosition();
                 if (!point) return;
-                setCurrentLine((line) =>
-                    appendPathPoint(line, point.x / stageScaleFactor, point.y / stageScaleFactor)
+                const nextLine = appendPathPoint(
+                    currentLineRef.current,
+                    point.x / stageScaleFactor,
+                    point.y / stageScaleFactor
                 );
+                currentLineRef.current = nextLine;
+
+                if (nextLine.length / 2 >= LINE_PATH_MAX_POINTS) {
+                    const continuationPoint = nextLine.slice(-4);
+                    addCurrentLineLayer();
+                    currentLineRef.current = continuationPoint;
+                    setCurrentLine(continuationPoint);
+                } else {
+                    setCurrentLine(nextLine);
+                }
                 return;
             } else {
+                currentLineRef.current = [];
                 setCurrentLine([]);
             }
         }
@@ -1307,21 +1354,14 @@ export function EditorSlate() {
                     parseInt(currentSelectedIds[0])
                 );
         }
-        const eraserPath = eraserPathRef.current;
-        if (eraserPath.length >= 2) {
-            eraseSelectedLineLayer(eraserPath);
-        }
-        eraserPathRef.current = [];
+        eraseWithCurrentPath();
+        eraserContinuationPointRef.current = null;
         if (e.evt instanceof TouchEvent || e.type === 'mouseleave') {
             eraserPointRef.current = null;
         }
         scheduleEraserPreview();
 
-        // Without enough point this is probably a missfire
-        if (currentLine.length > 4) {
-            addLineLayer(currentLine);
-        }
-        setCurrentLine([]);
+        addCurrentLineLayer();
         lastDist.current = null;
         lastAngle.current = null;
         lastCenter.current = null;
