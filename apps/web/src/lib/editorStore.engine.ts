@@ -78,24 +78,6 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
         }
     });
 
-    const unsubLineSegmentsUpdate = engine.subscribeToLineSegmentsUpdate(
-        ({ numericId, line, segments }) => {
-            store.setState((state) => {
-                const layer = state.layers.get(numericId);
-                if (!layer || layer.type !== 'line') return state;
-
-                const newLayers = new Map(state.layers);
-                newLayers.set(numericId, {
-                    ...layer,
-                    line,
-                    segments
-                });
-
-                return { layers: newLayers };
-            });
-        }
-    );
-
     const unsubStatus = engine.onConnectionStatusChange((status) => {
         store.setState({ connectionStatus: status });
     });
@@ -127,6 +109,5 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
         unsubJson();
         unsubStatus();
         unsubSave();
-        unsubLineSegmentsUpdate();
     };
 }

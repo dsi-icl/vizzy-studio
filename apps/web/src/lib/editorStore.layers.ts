@@ -651,11 +651,11 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             });
 
             const engine = EditorEngine.getInstance();
-            engine.broadcastBinaryLineSegmentsUpdate(
-                updatedLayer.numericId,
-                updatedLayer.line,
-                updatedLayer.segments ?? []
-            );
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:erase_line_layer',
+                layer: updatedLayer
+            });
 
             get().markDirty();
         },

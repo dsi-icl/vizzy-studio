@@ -4,11 +4,6 @@ import { throttle } from '@tanstack/pacer';
 import { toast } from 'sonner';
 
 import { BusClient } from './busClient';
-import {
-    LINE_SEGMENTS_UPDATE_OPCODE,
-    decodeLineSegmentsUpdate,
-    encodeLineSegmentsUpdate
-} from './lineSegmentsBinary';
 import { type ConnectionStatus } from './reconnectingWs';
 import { GSMessageSchema, type GSMessage, type Layer } from './types';
 
@@ -24,11 +19,6 @@ type BinaryMessageCallback = (
     scaleY: number,
     rotation: number
 ) => void;
-type LineSegmentsUpdateCallback = (data: {
-    numericId: number;
-    line: number[];
-    segments: number[][];
-}) => void;
 type PlaybackCallback = (
     id: number,
     playback: Extract<Layer, { type: 'video' }>['playback']
@@ -42,7 +32,6 @@ export class EditorEngine {
     private bus: BusClient;
     private messageCallbacks = new Set<ServerMessageCallback>();
     private binaryCallbacks = new Set<BinaryMessageCallback>();
-    private lineSegmentsUpdateCallbacks = new Set<LineSegmentsUpdateCallback>();
     private playbackCallbacks = new Set<PlaybackCallback>();
     private playbackStates = new Map<number, Extract<Layer, { type: 'video' }>['playback']>();
     private saveCallbacks = new Set<SaveResponseCallback>();
@@ -146,13 +135,6 @@ export class EditorEngine {
                 }
             }
 
-            if (opcode === LINE_SEGMENTS_UPDATE_OPCODE) {
-                const update = decodeLineSegmentsUpdate(event.data);
-                if (update) {
-                    this.lineSegmentsUpdateCallbacks.forEach((cb) => cb(update));
-                }
-                return;
-            }
             return;
         }
 
@@ -291,13 +273,6 @@ export class EditorEngine {
         this.binaryCallbacks.add(cb);
         return () => {
             this.binaryCallbacks.delete(cb);
-        };
-    }
-
-    public subscribeToLineSegmentsUpdate(cb: LineSegmentsUpdateCallback) {
-        this.lineSegmentsUpdateCallbacks.add(cb);
-        return () => {
-            this.lineSegmentsUpdateCallbacks.delete(cb);
         };
     }
 
@@ -471,15 +446,6 @@ export class EditorEngine {
         },
         { wait: 16 }
     );
-
-    public broadcastBinaryLineSegmentsUpdate = (
-        numericId: number,
-        line: number[],
-        segments: number[][]
-    ) => {
-        const buffer = encodeLineSegmentsUpdate({ numericId, line, segments });
-        this.bus.sendRaw(buffer);
-    };
 }
 
 // --- VITE HMR DEFENSE STRATEGY ---
