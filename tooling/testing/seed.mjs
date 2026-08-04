@@ -157,17 +157,30 @@ function layerConfig(cx, cy, width, height, zIndex, extra = {}) {
     };
 }
 
-function createMainStage(headCommitId, publishedCommitId = null) {
+const DEFAULT_HARNESS_STAGE_LAYOUT = {
+    columns: 16,
+    rows: 4,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+const MULTI_WALL_STAGE_LAYOUT = {
+    columns: 2,
+    rows: 2,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+function createMainStage(
+    headCommitId,
+    publishedCommitId = null,
+    layout = DEFAULT_HARNESS_STAGE_LAYOUT
+) {
     return {
         id: 'main',
         name: 'Main',
         order: 0,
-        layout: {
-            columns: 16,
-            rows: 4,
-            screenWidth: 1920,
-            screenHeight: 1080
-        },
+        layout: { ...layout },
         headCommitId,
         publishedCommitId
     };
@@ -651,7 +664,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [createMainStage(multiWallCommitId)],
+            stages: [createMainStage(multiWallCommitId, null, MULTI_WALL_STAGE_LAYOUT)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -1071,19 +1084,13 @@ async function seed() {
         }
     ]);
 
-    const singlePanelLayout = {
-        columns: 1,
-        rows: 1,
-        screenWidth: 1280,
-        screenHeight: 720,
+    const defaultStageLayout = {
+        ...DEFAULT_HARNESS_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
     const multiPanelLayout = {
-        columns: 2,
-        rows: 2,
-        screenWidth: 640,
-        screenHeight: 360,
+        ...MULTI_WALL_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
@@ -1132,7 +1139,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Gallery',
             notes: 'Wall reserved for gallery and controller convergence tests',
             createdAt: now,
@@ -1149,7 +1156,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Controller',
             notes: 'Wall reserved for deterministic controller rendering tests',
             createdAt: now,
@@ -1166,7 +1173,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Ownership',
             notes: 'Wall reserved for editor ownership and handoff tests',
             createdAt: now,
@@ -1183,7 +1190,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Media',
             notes: 'Wall reserved for deterministic media readiness tests',
             createdAt: now,

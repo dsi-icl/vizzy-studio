@@ -1,4 +1,8 @@
-import { z } from 'zod';
+import { config, z } from 'zod';
+
+// This schema is consumed by browser bundles as well as the database layer.
+// Keep Zod from probing eval/new Function under the application's CSP.
+config({ jitless: true });
 
 export const DEFAULT_STAGE_LAYOUT = {
     columns: 16,
