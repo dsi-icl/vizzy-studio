@@ -98,7 +98,7 @@ export interface EditorState {
     stopTextEditing: () => void;
     setErasing: (isErasing: boolean) => void;
     setEraserWidth: (width: number) => void;
-    eraseSelectedLineLayer: (eraserPath: number[]) => void;
+    commitLineErase: (numericId: number, line: number[][]) => void;
 }
 
 /** Helpers threaded from editorStore.ts into each slice factory. */

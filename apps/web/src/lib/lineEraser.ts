@@ -1,17 +1,42 @@
+import { getLineBounds } from '~/lib/stageGeometry';
+
 type Point = { x: number; y: number };
 type Interval = { start: number; end: number };
-type Segment = { start: Point; end: Point };
+type BoundedSegment = {
+    start: Point;
+    end: Point;
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+};
 type SegmentBuckets = Map<string, number[]>;
+type WorkBudget = { remaining: number };
+type LinePathOutput = { paths: number[][]; pointCount: number };
 
 export const LINE_PATH_MAX_POINTS = 16_384;
+export const ERASER_BATCH_MAX_POINTS = 1_024;
 
 const MIN_BUCKET_SIZE = 32;
 const MAX_OUTPUT_PATHS = 512;
+// A cut can add up to two boundary points to the original path data.
 const MAX_OUTPUT_POINTS = LINE_PATH_MAX_POINTS + MAX_OUTPUT_PATHS * 2;
-const MAX_BUCKET_STEPS_PER_SEGMENT = 4_096;
-const MAX_BUCKET_REFERENCES = 1_000_000;
-const MAX_INTERSECTION_CHECKS = 100_000;
+// Spatial sampling and candidate checks share one bounded workload.
+const MAX_ERASER_WORK = 250_000;
 const EPSILON = 1e-6;
+
+export function appendEraserPoint(path: number[], x: number, y: number): number[] | null {
+    if (path[path.length - 2] === x && path[path.length - 1] === y) return null;
+
+    path.push(x, y);
+    if (path.length / 2 < ERASER_BATCH_MAX_POINTS) return null;
+
+    const batch = path.slice();
+    path.length = 2;
+    path[0] = x;
+    path[1] = y;
+    return batch;
+}
 
 function toPoints(values: number[]): Point[] {
     const points: Point[] = [];
@@ -38,13 +63,36 @@ function bucketKey(x: number, y: number): string {
     return `${x}:${y}`;
 }
 
-function getSegmentBucketKeys(start: Point, end: Point, bucketSize: number): Set<string> | null {
+function consumeWork(budget: WorkBudget): boolean {
+    if (budget.remaining === 0) return false;
+    budget.remaining -= 1;
+    return true;
+}
+
+function createBoundedSegment(start: Point, end: Point): BoundedSegment {
+    return {
+        start,
+        end,
+        minX: Math.min(start.x, end.x),
+        maxX: Math.max(start.x, end.x),
+        minY: Math.min(start.y, end.y),
+        maxY: Math.max(start.y, end.y)
+    };
+}
+
+function getSegmentBucketKeys(
+    start: Point,
+    end: Point,
+    bucketSize: number,
+    budget: WorkBudget
+): Set<string> | null {
     const distance = Math.hypot(end.x - start.x, end.y - start.y);
     const steps = Math.max(1, Math.ceil(distance / bucketSize));
-    if (!Number.isSafeInteger(steps) || steps > MAX_BUCKET_STEPS_PER_SEGMENT) return null;
+    if (!Number.isSafeInteger(steps)) return null;
 
     const keys = new Set<string>();
     for (let step = 0; step <= steps; step += 1) {
+        if (!consumeWork(budget)) return null;
         const t = step / steps;
         const bucketX = Math.floor((start.x + (end.x - start.x) * t) / bucketSize);
         const bucketY = Math.floor((start.y + (end.y - start.y) * t) / bucketSize);
@@ -58,43 +106,56 @@ function getSegmentBucketKeys(start: Point, end: Point, bucketSize: number): Set
     return keys;
 }
 
-function buildSegmentBuckets(segments: Segment[], bucketSize: number): SegmentBuckets | null {
+function buildSegmentBuckets(
+    segments: BoundedSegment[],
+    bucketSize: number,
+    budget: WorkBudget
+): SegmentBuckets | null {
     const buckets: SegmentBuckets = new Map();
-    let referenceCount = 0;
 
     for (let index = 0; index < segments.length; index += 1) {
-        const keys = getSegmentBucketKeys(segments[index].start, segments[index].end, bucketSize);
+        const keys = getSegmentBucketKeys(
+            segments[index].start,
+            segments[index].end,
+            bucketSize,
+            budget
+        );
         if (!keys) return null;
 
         for (const key of keys) {
             const bucket = buckets.get(key);
             if (bucket) bucket.push(index);
             else buckets.set(key, [index]);
-            referenceCount += 1;
-            if (referenceCount > MAX_BUCKET_REFERENCES) return null;
         }
     }
 
     return buckets;
 }
 
-function getNearbySegmentIndexes(
+function visitNearbySegmentIndexes(
     start: Point,
     end: Point,
     bucketSize: number,
-    buckets: SegmentBuckets
-): Set<number> | null {
-    const keys = getSegmentBucketKeys(start, end, bucketSize);
-    if (!keys) return null;
+    buckets: SegmentBuckets,
+    budget: WorkBudget,
+    visit: (index: number) => boolean
+): boolean {
+    const keys = getSegmentBucketKeys(start, end, bucketSize, budget);
+    if (!keys) return false;
 
-    const indexes = new Set<number>();
+    const visited = new Set<number>();
     for (const key of keys) {
         const bucket = buckets.get(key);
         if (!bucket) continue;
-        for (const index of bucket) indexes.add(index);
+        for (const index of bucket) {
+            if (!consumeWork(budget)) return false;
+            if (visited.has(index)) continue;
+            visited.add(index);
+            if (!visit(index)) return true;
+        }
     }
 
-    return indexes;
+    return true;
 }
 
 function getCircleCutInterval(
@@ -144,7 +205,7 @@ function restrictInterval(
 function getCapsuleCutInterval(
     lineStart: Point,
     lineEnd: Point,
-    eraserSegment: Segment,
+    eraserSegment: BoundedSegment,
     radius: number,
     radiusSquared: number
 ): Interval | null {
@@ -245,7 +306,7 @@ function appendPoint(points: Point[], point: Point): void {
     points.push(point);
 }
 
-function flushRun(runs: number[][], points: Point[], outputPointCount: { value: number }): boolean {
+function flushRun(output: LinePathOutput, points: Point[]): boolean {
     const values = fromPoints(points);
     points.length = 0;
 
@@ -253,91 +314,124 @@ function flushRun(runs: number[][], points: Point[], outputPointCount: { value: 
 
     const pointCount = values.length / 2;
     if (
-        runs.length >= MAX_OUTPUT_PATHS ||
-        outputPointCount.value + pointCount > MAX_OUTPUT_POINTS
+        output.paths.length >= MAX_OUTPUT_PATHS ||
+        output.pointCount + pointCount > MAX_OUTPUT_POINTS
     ) {
         return false;
     }
 
-    runs.push(values);
-    outputPointCount.value += pointCount;
+    output.paths.push(values);
+    output.pointCount += pointCount;
     return true;
 }
 
-export function eraseLineSegments(
-    segments: number[][],
+function measureLinePaths(paths: number[][]) {
+    if (paths.length > MAX_OUTPUT_PATHS) return null;
+
+    let pointCount = 0;
+    for (const path of paths) {
+        if (path.length % 2 !== 0) return null;
+        pointCount += path.length / 2;
+        if (pointCount > MAX_OUTPUT_POINTS || !path.every(Number.isFinite)) return null;
+    }
+
+    return getLineBounds(paths);
+}
+
+export function eraseLinePaths(
+    paths: number[][],
     eraserPath: number[],
-    radius: number
+    effectiveRadius: number
 ): number[][] {
-    if (!Number.isFinite(radius) || radius <= 0 || eraserPath.length % 2 !== 0) {
-        return segments;
+    if (!Number.isFinite(effectiveRadius) || effectiveRadius <= 0 || eraserPath.length % 2 !== 0) {
+        return paths;
     }
 
     const eraserPointCount = eraserPath.length / 2;
-    if (eraserPointCount === 0 || eraserPointCount > LINE_PATH_MAX_POINTS) return segments;
-    if (!eraserPath.every(Number.isFinite)) return segments;
+    if (eraserPointCount === 0 || eraserPointCount > ERASER_BATCH_MAX_POINTS) return paths;
+    if (!eraserPath.every(Number.isFinite)) return paths;
 
-    if (segments.length > MAX_OUTPUT_PATHS) return segments;
-
-    let linePointCount = 0;
-    for (const segment of segments) {
-        if (segment.length % 2 !== 0) return segments;
-        linePointCount += segment.length / 2;
-        if (linePointCount > MAX_OUTPUT_POINTS) return segments;
-        if (!segment.every(Number.isFinite)) return segments;
-    }
+    const lineBounds = measureLinePaths(paths);
+    if (!lineBounds) return paths;
 
     const eraserPoints = toPoints(eraserPath);
-    const eraserSegments: Segment[] = [];
+    const eraserSegments: BoundedSegment[] = [];
     if (eraserPoints.length === 1) {
-        eraserSegments.push({ start: eraserPoints[0], end: eraserPoints[0] });
+        eraserSegments.push(createBoundedSegment(eraserPoints[0], eraserPoints[0]));
     } else {
         for (let i = 0; i < eraserPoints.length - 1; i += 1) {
-            eraserSegments.push({ start: eraserPoints[i], end: eraserPoints[i + 1] });
+            eraserSegments.push(createBoundedSegment(eraserPoints[i], eraserPoints[i + 1]));
         }
     }
 
-    const bucketSize = Math.max(MIN_BUCKET_SIZE, radius);
-    const buckets = buildSegmentBuckets(eraserSegments, bucketSize);
-    if (!buckets) return segments;
+    const nearbyEraserSegments = eraserSegments.filter(
+        (segment) =>
+            segment.maxX + effectiveRadius >= lineBounds.minX &&
+            segment.minX - effectiveRadius <= lineBounds.maxX &&
+            segment.maxY + effectiveRadius >= lineBounds.minY &&
+            segment.minY - effectiveRadius <= lineBounds.maxY
+    );
+    if (nearbyEraserSegments.length === 0) return paths;
 
-    const radiusSquared = radius * radius;
-    const nextSegments: number[][] = [];
-    const outputPointCount = { value: 0 };
-    let intersectionChecks = 0;
+    const workBudget = { remaining: MAX_ERASER_WORK };
+    const bucketSize = Math.max(MIN_BUCKET_SIZE, effectiveRadius);
+    const buckets = buildSegmentBuckets(nearbyEraserSegments, bucketSize, workBudget);
+    if (!buckets) return paths;
+
+    const radiusSquared = effectiveRadius * effectiveRadius;
+    const output: LinePathOutput = { paths: [], pointCount: 0 };
     let didErase = false;
 
-    for (const segment of segments) {
-        const points = toPoints(segment);
+    for (const path of paths) {
+        const points = toPoints(path);
         let currentRun: Point[] = [];
 
         for (let i = 0; i < points.length - 1; i += 1) {
             const start = points[i];
             const end = points[i + 1];
-            const nearbySegmentIndexes = getNearbySegmentIndexes(start, end, bucketSize, buckets);
-            if (!nearbySegmentIndexes) return segments;
-
+            const edgeMinX = Math.min(start.x, end.x);
+            const edgeMaxX = Math.max(start.x, end.x);
+            const edgeMinY = Math.min(start.y, end.y);
+            const edgeMaxY = Math.max(start.y, end.y);
             const cuts: Interval[] = [];
-            for (const index of nearbySegmentIndexes) {
-                intersectionChecks += 1;
-                if (intersectionChecks > MAX_INTERSECTION_CHECKS) return segments;
+            const completedWithinBudget = visitNearbySegmentIndexes(
+                start,
+                end,
+                bucketSize,
+                buckets,
+                workBudget,
+                (index) => {
+                    const eraserSegment = nearbyEraserSegments[index];
+                    if (
+                        edgeMaxX < eraserSegment.minX - effectiveRadius ||
+                        edgeMinX > eraserSegment.maxX + effectiveRadius ||
+                        edgeMaxY < eraserSegment.minY - effectiveRadius ||
+                        edgeMinY > eraserSegment.maxY + effectiveRadius
+                    ) {
+                        return true;
+                    }
 
-                const cut = getCapsuleCutInterval(
-                    start,
-                    end,
-                    eraserSegments[index],
-                    radius,
-                    radiusSquared
-                );
-                if (cut) cuts.push(cut);
-            }
+                    const cut = getCapsuleCutInterval(
+                        start,
+                        end,
+                        eraserSegment,
+                        effectiveRadius,
+                        radiusSquared
+                    );
+                    if (!cut) return true;
+
+                    cuts.push(cut);
+                    return cut.start > EPSILON || cut.end < 1 - EPSILON;
+                }
+            );
+            if (!completedWithinBudget) return paths;
 
             const mergedCuts = mergeIntervals(cuts);
             if (mergedCuts.length > 0) didErase = true;
 
             const visibleIntervals = getVisibleIntervals(mergedCuts);
             if (visibleIntervals.length === 0) {
-                if (!flushRun(nextSegments, currentRun, outputPointCount)) return segments;
+                if (!flushRun(output, currentRun)) return paths;
                 continue;
             }
 
@@ -347,22 +441,19 @@ export function eraseLineSegments(
                 const continuesPreviousRun = visible.start <= EPSILON && currentRun.length > 0;
 
                 if (!continuesPreviousRun) {
-                    if (!flushRun(nextSegments, currentRun, outputPointCount)) return segments;
+                    if (!flushRun(output, currentRun)) return paths;
                     appendPoint(currentRun, visibleStart);
                 }
                 appendPoint(currentRun, visibleEnd);
 
-                if (
-                    visible.end < 1 - EPSILON &&
-                    !flushRun(nextSegments, currentRun, outputPointCount)
-                ) {
-                    return segments;
+                if (visible.end < 1 - EPSILON && !flushRun(output, currentRun)) {
+                    return paths;
                 }
             }
         }
 
-        if (!flushRun(nextSegments, currentRun, outputPointCount)) return segments;
+        if (!flushRun(output, currentRun)) return paths;
     }
 
-    return didErase ? nextSegments : segments;
+    return didErase ? output.paths : paths;
 }
