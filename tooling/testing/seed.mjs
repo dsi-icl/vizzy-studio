@@ -135,6 +135,17 @@ function layerConfig(cx, cy, width, height, zIndex, extra = {}) {
     };
 }
 
+function createToolbarTextLayers() {
+    return [
+        {
+            numericId: 1,
+            type: 'text',
+            config: layerConfig(960, 540, 960, 240, 1),
+            textHtml: '<p>Harness focus text</p>'
+        }
+    ];
+}
+
 function createRenderingLayers() {
     return [
         {
@@ -709,24 +720,19 @@ async function seed() {
                         id: 'slide-private-1',
                         order: 0,
                         name: 'Slide 1',
-                        layers: [
-                            {
-                                numericId: 1,
-                                type: 'text',
-                                config: {
-                                    cx: 960,
-                                    cy: 540,
-                                    width: 960,
-                                    height: 240,
-                                    rotation: 0,
-                                    scaleX: 1,
-                                    scaleY: 1,
-                                    zIndex: 1,
-                                    visible: true
-                                },
-                                textHtml: '<p>Harness focus text</p>'
-                            }
-                        ]
+                        layers: createToolbarTextLayers()
+                    },
+                    {
+                        id: 'slide-toolbar-primary',
+                        order: 1,
+                        name: 'Toolbar inputs primary',
+                        layers: createToolbarTextLayers()
+                    },
+                    {
+                        id: 'slide-toolbar-retry',
+                        order: 2,
+                        name: 'Toolbar inputs retry',
+                        layers: createToolbarTextLayers()
                     }
                 ]
             },
@@ -1239,6 +1245,9 @@ async function seed() {
             privateProjectId: privateProjectId.toHexString(),
             privateCommitId: privateCommitId.toHexString(),
             privateSlideId: 'slide-private-1',
+            toolbarProjectId: privateProjectId.toHexString(),
+            toolbarCommitId: privateCommitId.toHexString(),
+            toolbarSlideIds: ['slide-toolbar-primary', 'slide-toolbar-retry'],
             publicProjectId: publicProjectId.toHexString(),
             publicCommitId: publicCommitId.toHexString(),
             publicSlideId: 'slide-public-1',

@@ -27,6 +27,9 @@ export interface HarnessManifest {
         privateProjectId: string;
         privateCommitId: string;
         privateSlideId: string;
+        toolbarProjectId: string;
+        toolbarCommitId: string;
+        toolbarSlideIds: [string, string];
         publicProjectId: string;
         publicCommitId: string;
         publicSlideId: string;
