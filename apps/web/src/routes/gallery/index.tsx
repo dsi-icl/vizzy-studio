@@ -482,7 +482,7 @@ function HomePage() {
             }
         }
         return Array.from(tags).sort((a, b) =>
-            a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+            a.localeCompare(b, 'en-GB', { sensitivity: 'base', numeric: true })
         );
     }, [projectsData]);
 
@@ -512,7 +512,7 @@ function HomePage() {
             ? projectsData.filter((p) => p.tags.includes(activeTag))
             : projectsData;
         return [...list].sort((a, b) =>
-            a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+            a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base', numeric: true })
         );
     }, [activeTag, projectsData]);
 
