@@ -24,3 +24,4 @@ tests/.auth
 tests/.fixtures/seed-manifest.json
 test-results
 playwright-report
+blob-report
