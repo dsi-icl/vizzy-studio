@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import * as encoding from 'lib0/encoding';
 import { Binary } from 'mongodb';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -6,9 +8,14 @@ import * as Y from 'yjs';
 import type { Layer } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
+import { mergeYjsSnapshots } from './yjs.state';
+
 export const messageSync = 0;
 export const messageAwareness = 1;
 export const SYNC_INTERVAL_MS = 1000;
+export const LEXICAL_YJS_BINDING_VERSION = 'lexical-yjs-v1';
+export const PERSISTENCE_ORIGIN = Symbol.for('vizzy/yjs/persistence');
+export const INITIALIZATION_ORIGIN = Symbol.for('vizzy/yjs/initialization');
 
 export type TextLayer = Extract<Layer, { type: 'text' }>;
 
@@ -19,6 +26,33 @@ export type DocScope = {
     layerId: number;
 };
 
+export type PersistedDocState = {
+    update: Uint8Array;
+    revision: number;
+    stateHash: string;
+    htmlHash?: string;
+    sourceTextHash?: string;
+    bindingVersion?: string;
+    updatedAt: number;
+};
+
+export type PersistedWriteResult = PersistedDocState & { mergedConcurrentState: boolean };
+
+export type SnapshotMetadata = {
+    stateHash: string;
+    htmlHash: string;
+    sourceTextHash: string;
+    bindingVersion: string;
+    /** Replace only the corrupt/obsolete revision observed during hydration. */
+    replaceRevision?: number;
+};
+
+export type PendingBridgeProjection = {
+    html: string;
+    revision: number;
+    stateHash: string;
+};
+
 type AwarenessChanges = {
     added: number[];
     updated: number[];
@@ -26,9 +60,12 @@ type AwarenessChanges = {
 };
 
 export interface Persistence {
-    bindState: (scope: string, doc: SharedDoc) => Promise<boolean>;
-    writeState: (scope: string, doc: SharedDoc) => Promise<void>;
-    provider: unknown;
+    readState: (scope: string) => Promise<PersistedDocState | null>;
+    writeState: (
+        scope: string,
+        update: Uint8Array,
+        metadata: SnapshotMetadata
+    ) => Promise<PersistedWriteResult>;
 }
 
 /**
@@ -44,6 +81,15 @@ export interface YcRef {
         transaction: Y.Transaction
     ) => void;
     flushDoc: (doc: SharedDoc) => Promise<void>;
+    syncDoc: (doc: SharedDoc) => Promise<void>;
+}
+
+export function hashBytes(input: Uint8Array): string {
+    return createHash('sha256').update(input).digest('hex');
+}
+
+export function hashText(input: string): string {
+    return createHash('sha256').update(input).digest('hex');
 }
 
 export function binaryToUint8Array(data: unknown): Uint8Array | null {
@@ -86,8 +132,8 @@ export async function loadTextLayer(scope: DocScope): Promise<TextLayer> {
 }
 
 export class MongoYDocPersistence implements Persistence {
-    provider: unknown = null;
     private indexReady: Promise<void>;
+    private indexError: unknown = null;
 
     constructor() {
         this.indexReady = dbCol.ydocs
@@ -98,23 +144,81 @@ export class MongoYDocPersistence implements Persistence {
             })
             .catch((err) => {
                 console.error('[YJS] Failed to ensure ydocs.scope unique index:', err);
+                this.indexError = err;
             });
     }
 
-    async bindState(scope: string, doc: SharedDoc): Promise<boolean> {
+    private async ensureReady(): Promise<void> {
         await this.indexReady;
-        const data = await dbCol.ydocs.findDataByScope(scope);
-        if (!data) return false;
-        const update = binaryToUint8Array(data);
-        if (!update || update.byteLength === 0) return false;
-        Y.applyUpdate(doc, update);
-        return true;
+        if (this.indexError) {
+            throw new Error('Yjs persistence requires the unique scope index', {
+                cause: this.indexError
+            });
+        }
     }
 
-    async writeState(scope: string, doc: SharedDoc): Promise<void> {
-        await this.indexReady;
-        const update = Y.encodeStateAsUpdate(doc);
-        await dbCol.ydocs.upsertByScope(scope, new Binary(Buffer.from(update)));
+    async readState(scope: string): Promise<PersistedDocState | null> {
+        await this.ensureReady();
+        const state = await dbCol.ydocs.findStateByScope(scope);
+        if (!state) return null;
+        const update = binaryToUint8Array(state.data);
+        if (!update || update.byteLength === 0) return null;
+        return {
+            update,
+            revision: state.revision,
+            stateHash: state.stateHash ?? hashBytes(update),
+            ...(state.htmlHash ? { htmlHash: state.htmlHash } : {}),
+            ...(state.sourceTextHash ? { sourceTextHash: state.sourceTextHash } : {}),
+            ...(state.bindingVersion ? { bindingVersion: state.bindingVersion } : {}),
+            updatedAt: state.updatedAt
+        };
+    }
+
+    async writeState(
+        scope: string,
+        update: Uint8Array,
+        metadata: SnapshotMetadata
+    ): Promise<PersistedWriteResult> {
+        await this.ensureReady();
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+            const current = await this.readState(scope);
+            const replaceObservedState =
+                metadata.replaceRevision !== undefined &&
+                current?.revision === metadata.replaceRevision;
+            const mergedUpdate = mergeYjsSnapshots(
+                current?.update ?? null,
+                update,
+                replaceObservedState
+            );
+            const mergedStateHash = hashBytes(mergedUpdate);
+            const mergedConcurrentState = mergedStateHash !== metadata.stateHash;
+            const revision = (current?.revision ?? 0) + 1;
+            const nextState = {
+                data: new Binary(Buffer.from(mergedUpdate)),
+                revision,
+                stateHash: mergedStateHash,
+                ...(mergedConcurrentState ? {} : { htmlHash: metadata.htmlHash }),
+                sourceTextHash: replaceObservedState
+                    ? metadata.sourceTextHash
+                    : (current?.sourceTextHash ?? metadata.sourceTextHash),
+                bindingVersion: metadata.bindingVersion
+            };
+            const written = current
+                ? await dbCol.ydocs.replaceStateAtRevision(scope, current.revision, nextState)
+                : await dbCol.ydocs.insertStateIfAbsent(scope, nextState);
+            if (!written) continue;
+            return {
+                update: mergedUpdate,
+                revision,
+                stateHash: mergedStateHash,
+                ...(mergedConcurrentState ? {} : { htmlHash: metadata.htmlHash }),
+                sourceTextHash: nextState.sourceTextHash,
+                bindingVersion: metadata.bindingVersion,
+                updatedAt: Date.now(),
+                mergedConcurrentState
+            };
+        }
+        throw new Error(`Yjs persistence CAS retries exhausted for ${scope}`);
     }
 }
 
@@ -127,8 +231,16 @@ export class SharedDoc extends Y.Doc {
     dirty = false;
     syncTimer: ReturnType<typeof setInterval> | null = null;
     flushPromise: Promise<void> | null = null;
+    syncPromise: Promise<void> | null = null;
     lastHtmlHash: string | null = null;
     fallbackLayer: TextLayer | null = null;
+    persistenceRevision = 0;
+    persistedStateHash: string | null = null;
+    sourceTextHash = '';
+    lastProjectedRevision = 0;
+    pendingBridgeProjection: PendingBridgeProjection | null = null;
+    replacePersistenceRevision: number | null = null;
+    lifecycle: 'initializing' | 'ready' | 'closing' | 'destroyed' = 'initializing';
 
     constructor(name: string, scope: DocScope, yc: YcRef) {
         super();
@@ -139,15 +251,19 @@ export class SharedDoc extends Y.Doc {
         this.awareness.setLocalState(null);
         this.awareness.on('update', this.onAwarenessUpdate.bind(this));
         this.on('update', yc.onDocUpdate.bind(yc));
-        this.on('update', () => {
-            this.dirty = true;
+        this.on('update', (_update: Uint8Array, origin: unknown) => {
+            if (origin !== PERSISTENCE_ORIGIN && origin !== INITIALIZATION_ORIGIN) {
+                this.dirty = true;
+            }
         });
     }
 
     startSyncLoop() {
         if (this.syncTimer) return;
         this.syncTimer = setInterval(() => {
-            void this.yc.flushDoc(this);
+            void this.yc.syncDoc(this).catch((error) => {
+                console.error(`[YJS] Background sync failed for ${this.name}:`, error);
+            });
         }, SYNC_INTERVAL_MS);
     }
 

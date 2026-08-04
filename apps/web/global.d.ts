@@ -6,6 +6,7 @@ import type { GalleryEngine } from '~/lib/galleryEngine';
 import type { GalleryStateCreator } from '~/lib/galleryStore';
 import type { GSMessage, Layer, ScopeKey, ScopeState } from '~/lib/types';
 import type { WallEngine } from '~/lib/wallEngine';
+import type { YCrossws } from '~/server/yjs/yjs.session';
 
 export {};
 
@@ -49,8 +50,12 @@ declare global {
                 slideId: string;
                 layerId: number;
                 textHtml: string;
+                textRevision: number;
+                textStateHash: string;
+                textBindingVersion: string;
                 fallbackLayer?: Extract<Layer, { type: 'text' }>;
             }) => boolean | Promise<boolean>;
+            __YJS_SERVER__?: YCrossws;
             __VSYNC_INTERVAL__?: ReturnType<typeof setInterval>;
             __AUTO_SAVE_INTERVAL__?: ReturnType<typeof setInterval>;
             __REAPER_INTERVAL__?: ReturnType<typeof setInterval>;

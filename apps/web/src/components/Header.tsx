@@ -162,7 +162,7 @@ function HeaderAuthSection() {
 
     if (!user) {
         return (
-            <Link to="/login">
+            <Link to="/login" aria-label="Log in">
                 <Button variant="outline" className={actionButtonClass}>
                     <UserIcon className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all" />
                     <span className={actionLabelClass}>Log in</span>
@@ -173,13 +173,13 @@ function HeaderAuthSection() {
 
     return (
         <>
-            <Link to="/gallery">
+            <Link to="/gallery" aria-label="Gallery">
                 <Button variant="outline" className={actionButtonClass}>
                     <KanbanIcon className="h-[1.2rem] w-[1.2rem]" />
                     <span className={actionLabelClass}>Gallery</span>
                 </Button>
             </Link>
-            <Link to="/quarry">
+            <Link to="/quarry" aria-label="Projects">
                 <Button variant="outline" className={actionButtonClass}>
                     <BookOpenUserIcon className="h-[1.2rem] w-[1.2rem]" />
                     <span className={actionLabelClass}>Projects</span>
@@ -194,6 +194,7 @@ function HeaderAuthSection() {
                             ? '/admin'
                             : '/admin/signage'
                     }
+                    aria-label="Administration"
                 >
                     <Button variant="outline" title="Administration" className={actionButtonClass}>
                         <CastleTurretIcon className="h-[1.2rem] w-[1.2rem]" />

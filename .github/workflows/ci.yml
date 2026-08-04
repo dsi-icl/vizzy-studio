@@ -46,6 +46,9 @@ jobs:
             - name: Format check
               run: bun run format:check
 
+            - name: Run unit suite
+              run: bun run test:unit
+
             - name: Build web app
               run: bun run build --filter=@repo/web
 
@@ -83,7 +86,7 @@ jobs:
               uses: actions/cache@v4
               with:
                   path: ~/.cache/ms-playwright
-                  key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lockb') }}
+                  key: ${{ runner.os }}-playwright-${{ hashFiles('**/bun.lock') }}
                   restore-keys: |
                       ${{ runner.os }}-playwright-
 
@@ -92,10 +95,10 @@ jobs:
 
             - name: Install Playwright browsers
               if: steps.playwright-cache.outputs.cache-hit != 'true'
-              run: npx playwright install chromium
+              run: bunx playwright install chromium firefox webkit
 
             - name: Install Playwright system dependencies
-              run: npx playwright install-deps chromium
+              run: bunx playwright install-deps chromium firefox webkit
               # run: |
               #   sudo apt-get update
               #   sudo apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1
