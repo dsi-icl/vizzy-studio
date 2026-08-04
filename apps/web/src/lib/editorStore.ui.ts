@@ -137,10 +137,10 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
 
         setEraserWidth: (eraserWidth: number) => set({ eraserWidth }),
 
-        toggleErasing: () =>
+        setErasing: (isErasing: boolean) =>
             set((s) => ({
-                isErasing: !s.isErasing,
-                isDrawing: false
+                isErasing,
+                isDrawing: isErasing ? false : s.isDrawing
             })),
 
         toggleSnapping: () => set((s) => ({ isSnapping: !s.isSnapping })),

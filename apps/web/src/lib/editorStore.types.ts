@@ -96,7 +96,7 @@ export interface EditorState {
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;
     stopTextEditing: () => void;
-    toggleErasing: () => void;
+    setErasing: (isErasing: boolean) => void;
     setEraserWidth: (width: number) => void;
     eraseSelectedLineLayer: (eraserPath: number[]) => void;
 }
