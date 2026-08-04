@@ -1,7 +1,6 @@
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { makeUniqueLayerName } from './mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
 import type { Layer, LayerWithEditorState } from './types';
 
@@ -11,12 +10,6 @@ type SliceSet = (
 type SliceGet = () => EditorState;
 
 export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHelpers) {
-    const getUniqueLayerName = (baseName: string) =>
-        makeUniqueLayerName(
-            baseName,
-            Array.from(get().layers.values()).map((layer) => layer.name)
-        );
-
     return {
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
@@ -334,7 +327,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const newLayer: LayerWithEditorState = {
                 numericId,
-                name: getUniqueLayerName('Text'),
                 type: 'text',
                 config: {
                     cx: insertionCenter.x,
@@ -377,7 +369,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const newLayer: LayerWithEditorState = {
                 numericId,
-                name: getUniqueLayerName('Map'),
                 type: 'map',
                 config: {
                     cx: insertionCenter.x,
@@ -426,7 +417,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const newLayer: LayerWithEditorState = {
                 numericId,
-                name: getUniqueLayerName('Web'),
                 type: 'web',
                 config: {
                     cx: insertionCenter.x,
@@ -479,7 +469,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const newLayer: LayerWithEditorState = {
                 numericId,
-                name: getUniqueLayerName('Shape Layer'),
                 type: 'shape',
                 shape,
                 config: {
@@ -593,7 +582,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const newLayer: LayerWithEditorState = {
                 numericId,
-                name: getUniqueLayerName('Line'),
                 type: 'line',
                 config: {
                     cx,

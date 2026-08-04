@@ -21,27 +21,31 @@ export function sortAssetsFontsLast<T extends { name: string; mimeType?: string 
     return [...media, ...fonts];
 }
 
-export function stripFileExtension(name: string): string {
+function stripFileExtension(name: string): string {
     const trimmed = name.trim();
     const dot = trimmed.lastIndexOf('.');
     if (dot <= 0) return trimmed;
     return trimmed.slice(0, dot);
 }
 
-export function makeUniqueLayerName(baseName: string, existingNames: Iterable<string | undefined>) {
-    const trimmedBase = baseName.trim() || 'Untitled';
-    const usedNames = new Set(
-        Array.from(existingNames)
-            .map((name) => name?.trim())
-            .filter((name): name is string => Boolean(name))
-    );
+export function makeUniqueMediaLayerName(
+    filename: string,
+    existingLayers: Iterable<{ type: string; name?: string }>
+): string {
+    const baseName = stripFileExtension(filename) || 'Untitled';
+    const existingMediaNames = Array.from(existingLayers).flatMap((layer) => {
+        if (layer.type === 'image') return [layer.name?.trim() || 'Image'];
+        if (layer.type === 'video') return [layer.name?.trim() || 'Video'];
+        return [];
+    });
+    const usedNames = new Set(existingMediaNames.map((name) => name.toLowerCase()));
 
-    if (!usedNames.has(trimmedBase)) return trimmedBase;
+    if (!usedNames.has(baseName.toLowerCase())) return baseName;
 
     let suffix = 1;
-    while (usedNames.has(`${trimmedBase} ${suffix}`)) {
+    while (usedNames.has(`${baseName} ${suffix}`.toLowerCase())) {
         suffix += 1;
     }
 
-    return `${trimmedBase} ${suffix}`;
+    return `${baseName} ${suffix}`;
 }

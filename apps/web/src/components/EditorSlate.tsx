@@ -33,7 +33,7 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset, stripFileExtension, makeUniqueLayerName } from '~/lib/mediaUtils';
+import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -248,8 +248,14 @@ export function EditorSlate() {
                 anchorServerTime: engine.getServerTime()
             };
 
+            const layerName = makeUniqueMediaLayerName(
+                asset.name,
+                useEditorStore.getState().layers.values()
+            );
+
             const layerBase = {
                 numericId,
+                name: layerName,
                 url: `/api/assets/${asset.url}`,
                 config,
                 isUploading: false,
@@ -602,10 +608,7 @@ export function EditorSlate() {
 
         // 2. OPTIMISTIC UPDATE — mount immediately
 
-        const layerName = makeUniqueLayerName(
-            stripFileExtension(file.name),
-            Array.from(layersRef.current.values()).map((layer) => layer.name)
-        );
+        const layerName = makeUniqueMediaLayerName(file.name, store.layers.values());
 
         const optimisticLayer = {
             numericId,
@@ -662,7 +665,6 @@ export function EditorSlate() {
                 type: file.type,
                 data: file,
                 meta: {
-                    filename: file.name,
                     numericId: numericId.toString(),
                     duration: duration.toString(),
                     projectId: currentProjectId,
@@ -704,7 +706,7 @@ export function EditorSlate() {
                 layer: {
                     numericId,
                     type: finalizedLayer.type,
-                    name: finalizedLayer.name,
+                    name: layerName,
                     playback: defaultPlayback,
                     url: assetUrl,
                     config: freshestLayer.config
