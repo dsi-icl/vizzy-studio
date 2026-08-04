@@ -5,7 +5,7 @@ import { test, type Page } from 'playwright/test';
 
 import type { EditorEngine } from '../../src/lib/editorEngine';
 import type { EditorStateCreator } from '../../src/lib/editorStore';
-import type { GSMessage, LayerWithEditorState } from '../../src/lib/types';
+import type { GSMessage, Layer, LayerWithEditorState } from '../../src/lib/types';
 import type { WallEngine } from '../../src/lib/wallEngine';
 
 interface SeedManifest {
@@ -137,10 +137,10 @@ async function waitForServerLine(
                     rejectPromise(new Error('Timed out waiting for server hydrate'));
                 }, 10_000);
 
-                unsubscribe = engine.subscribeToJson((message) => {
+                unsubscribe = engine.subscribeToJson((message: GSMessage) => {
                     if (message.type !== 'hydrate') return;
                     const layer = message.layers.find(
-                        (candidate) => candidate.numericId === expectedId
+                        (candidate: Layer) => candidate.numericId === expectedId
                     );
                     if (
                         layer?.type !== 'line' ||
@@ -207,7 +207,7 @@ async function prepareWall(page: Page, manifest: SeedManifest): Promise<void> {
                 }
 
                 wallWindow.__LINE_ERASER_MESSAGES__ = [];
-                engine.subscribeToLayoutUpdates((message) => {
+                engine.subscribeToLayoutUpdates((message: GSMessage) => {
                     wallWindow.__LINE_ERASER_MESSAGES__?.push(message);
                 });
                 engine.onReady(resolvePromise);
