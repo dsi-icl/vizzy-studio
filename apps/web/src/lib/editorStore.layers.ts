@@ -1,6 +1,10 @@
 import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
-import { computeSendToBackUpdates } from './editorLayerOrder';
+import {
+    computeBackgroundFloorUpdates,
+    computeBringToFrontUpdates,
+    computeSendToBackUpdates
+} from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
@@ -12,7 +16,37 @@ type SliceSet = (
 ) => void;
 type SliceGet = () => EditorState;
 
+const toNumericIds = (selectedLayerIds: string[]) =>
+    selectedLayerIds.map((id) => Number.parseInt(id, 10)).filter((id) => Number.isFinite(id));
+
 export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHelpers) {
+    /**
+     * Commit a batch of re-stacked layers. Broadcasts directly rather than through
+     * helpers.sendLayerUpdate, which is throttled and would collapse a batch into a
+     * single message.
+     */
+    const applyLayerUpdates = (updatedLayers: LayerWithEditorState[], origin: string) => {
+        if (!updatedLayers.length) return;
+
+        set((s) => {
+            const newLayers = new Map(s.layers);
+            for (const layer of updatedLayers) newLayers.set(layer.numericId, layer);
+            return { layers: newLayers };
+        });
+
+        const highestZIndex = updatedLayers.reduce(
+            (max, l) => Math.max(max, l.config.zIndex),
+            Number.NEGATIVE_INFINITY
+        );
+        if (highestZIndex >= helpers.peekNextZIndex()) helpers.setNextZIndex(highestZIndex + 1);
+
+        const engine = EditorEngine.getInstance();
+        for (const layer of updatedLayers) {
+            engine.sendJSON({ type: 'upsert_layer', origin, layer });
+        }
+        get().markDirty();
+    };
+
     return {
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
@@ -269,48 +303,22 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
         bringToFront: () => {
             const s = get();
-            if (!s.selectedLayerIds.length) return;
-            const numericId = parseInt(s.selectedLayerIds[0]);
-            const layer = s.layers.get(numericId);
-            if (!layer) return;
-
-            const nextZIndex = helpers.peekNextZIndex();
-            const alreadyOnTop = layer.config.zIndex === nextZIndex;
-            const newZIndex = alreadyOnTop ? layer.config.zIndex : nextZIndex;
-            if (!alreadyOnTop) helpers.setNextZIndex(nextZIndex + 1);
-            const updatedConfig = { ...layer.config, zIndex: newZIndex };
-            const updatedLayer = { ...layer, config: updatedConfig };
-
-            const newLayers = new Map(s.layers);
-            newLayers.set(numericId, updatedLayer);
-            set({ layers: newLayers });
-
-            helpers.sendLayerUpdate(updatedLayer, 'editor:bring_to_front');
-            get().markDirty();
+            applyLayerUpdates(
+                computeBringToFrontUpdates(
+                    s.layers.values(),
+                    toNumericIds(s.selectedLayerIds),
+                    helpers.peekNextZIndex()
+                ),
+                'editor:bring_to_front'
+            );
         },
 
         sendToBack: () => {
             const s = get();
-            if (!s.selectedLayerIds.length) return;
-            const numericId = parseInt(s.selectedLayerIds[0]);
-            const updatedLayers = computeSendToBackUpdates(s.layers.values(), numericId);
-            if (!updatedLayers.length) return;
-
-            const newLayers = new Map(s.layers);
-            for (const layer of updatedLayers) newLayers.set(layer.numericId, layer);
-            set({ layers: newLayers });
-
-            // Direct send: the shared sendLayerUpdate is throttled and would collapse
-            // a restack into a single broadcast.
-            const engine = EditorEngine.getInstance();
-            for (const layer of updatedLayers) {
-                engine.sendJSON({
-                    type: 'upsert_layer',
-                    origin: 'editor:send_to_back',
-                    layer
-                });
-            }
-            get().markDirty();
+            applyLayerUpdates(
+                computeSendToBackUpdates(s.layers.values(), toNumericIds(s.selectedLayerIds)),
+                'editor:send_to_back'
+            );
         },
 
         alignSelectedLayers: (
@@ -622,18 +630,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 speedFactor: 1
             };
 
-            set((s) => {
-                const newLayers = new Map(s.layers);
-                newLayers.set(numericId, newLayer);
-                return { layers: newLayers };
-            });
-            const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_background_layer',
-                layer: newLayer
-            });
-            get().markDirty();
+            // Nothing may share or sit below the new floor — a deck reordered while
+            // it had no background leaves its bottom layer at zIndex 0.
+            const liftedLayers = computeBackgroundFloorUpdates(
+                layers.values(),
+                newLayer.config.zIndex
+            );
+            applyLayerUpdates([...liftedLayers, newLayer], 'editor:add_background_layer');
         },
 
         addLineLayer: (line: Array<number>) => {

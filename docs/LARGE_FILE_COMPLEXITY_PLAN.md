@@ -234,6 +234,9 @@ apps/web/src/lib/editorStore.layers.ts   — createLayerSlice(set, get, helpers)
                                            deleteSelectedLayer, bringToFront, sendToBack,
                                            addTextLayer/Map/Web/Shape/Line, clearStage, reboot,
                                            reorderLayers (~510 lines, largest sibling)
+apps/web/src/lib/editorLayerOrder.ts     — pure z-index maths for the layer slice: computeSendToBack/
+                                           BringToFront/BackgroundFloorUpdates, keeping the background
+                                           at the floor of the stack
 apps/web/src/lib/editorStore.slides.ts   — createSlideSlice(set, get, helpers): addSlide, copySlide,
                                            deleteSlide, renameSlide, reorderSlides, toggleSlideSelection
 apps/web/src/lib/editorStore.ui.ts       — createUiSlice(set, get, helpers): all pure setters, markDirty,
