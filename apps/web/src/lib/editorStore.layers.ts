@@ -277,11 +277,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             const engine = EditorEngine.getInstance();
             for (const layer of pastedLayers) {
-                engine.sendJSON({
-                    type: 'upsert_layer',
-                    origin: 'editor:paste_layers',
-                    layer
-                });
+                engine.createLayer('editor:paste_layers', layer);
             }
             get().markDirty();
             return selectedLayerIds;
@@ -442,11 +438,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_text_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_text_layer', newLayer);
             get().markDirty();
         },
 
@@ -490,11 +482,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_map_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_map_layer', newLayer);
             get().markDirty();
         },
 
@@ -534,11 +522,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_web_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_web_layer', newLayer);
             get().markDirty();
         },
 
@@ -589,11 +573,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_shape_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_shape_layer', newLayer);
             get().markDirty();
         },
 
@@ -695,11 +675,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_line_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_line_layer', newLayer);
             get().markDirty();
         },
 

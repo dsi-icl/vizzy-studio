@@ -28,8 +28,15 @@ type BindOverrideResultCallback = (
     data: Extract<GSMessage, { type: 'bind_override_result' }>
 ) => void;
 
+/** How long to wait for the server to confirm a layer reached the commit. */
+const LAYER_CREATE_ACK_TIMEOUT_MS = 15_000;
+
 export class EditorEngine {
     private bus: BusClient;
+    private pendingLayerCreates = new Map<
+        string,
+        { numericId: number; timer: ReturnType<typeof setTimeout> }
+    >();
     private messageCallbacks = new Set<ServerMessageCallback>();
     private binaryCallbacks = new Set<BinaryMessageCallback>();
     private playbackCallbacks = new Set<PlaybackCallback>();
@@ -174,6 +181,11 @@ export class EditorEngine {
                 return;
             }
 
+            if (data.type === 'layer_create_response') {
+                this.settleLayerCreate(data);
+                return;
+            }
+
             if (data.type === 'hydrate') {
                 this.bufferedHydration = data;
                 data.layers.forEach((l) => {
@@ -188,6 +200,40 @@ export class EditorEngine {
 
             this.messageCallbacks.forEach((cb) => cb(data));
         }
+    }
+
+    /**
+     * Resolve a pending layer creation. A failed write means the layer exists
+     * only in this browser, so we tell the user and reload the slide rather
+     * than let them keep editing something that was never saved.
+     */
+    private settleLayerCreate(
+        response: Extract<GSMessage, { type: 'layer_create_response' }>
+    ): void {
+        const pending = this.pendingLayerCreates.get(response.createRequestId);
+        if (pending) {
+            clearTimeout(pending.timer);
+            this.pendingLayerCreates.delete(response.createRequestId);
+        }
+        if (response.success) return;
+
+        toast.error(
+            response.error ??
+                `Layer ${response.numericId} was not saved. Reloading the slide to avoid losing work.`
+        );
+        this.sendJSON({ type: 'rehydrate_please' });
+    }
+
+    /** Track a layer creation until the server confirms it reached the commit. */
+    private trackLayerCreate(createRequestId: string, numericId: number): void {
+        const timer = setTimeout(() => {
+            this.pendingLayerCreates.delete(createRequestId);
+            toast.error(
+                `Layer ${numericId} was not confirmed as saved. Reloading the slide to avoid losing work.`
+            );
+            this.sendJSON({ type: 'rehydrate_please' });
+        }, LAYER_CREATE_ACK_TIMEOUT_MS);
+        this.pendingLayerCreates.set(createRequestId, { numericId, timer });
     }
 
     public static getInstance(): EditorEngine {
@@ -406,6 +452,22 @@ export class EditorEngine {
         const rand = Math.random().toString(36).slice(2, 10);
         return `bind_${Date.now()}_${rand}`;
     }
+
+    /**
+     * Send an upsert for a newly created layer and wait for the server to
+     * confirm it reached the commit. Use this instead of sendJSON whenever a
+     * layer is created, so a failed write cannot pass silently.
+     */
+    public createLayer = (origin: string, layer: Layer): void => {
+        const createRequestId = `create_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        this.trackLayerCreate(createRequestId, layer.numericId);
+        this.sendJSON({
+            type: 'upsert_layer',
+            origin,
+            layer,
+            createRequestId
+        } as GSMessage);
+    };
 
     public sendJSON = (data: GSMessage) => {
         // Protocol discipline:

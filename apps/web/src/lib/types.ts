@@ -268,7 +268,21 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('upsert_layer'),
         origin: z.string().regex(/^(editor|controller|yjs):[a-z0-9_]+$/),
-        layer: LayerSchema
+        layer: LayerSchema,
+        /** Set when creating a layer, to correlate the persistence acknowledgement. */
+        createRequestId: z.string().optional()
+    }),
+    z.object({
+        /**
+         * Sent back to the originating editor once a newly created layer has
+         * been written to the commit, so a failed write surfaces instead of
+         * leaving a layer that looks saved but is not.
+         */
+        type: z.literal('layer_create_response'),
+        createRequestId: z.string(),
+        numericId: z.number(),
+        success: z.boolean(),
+        error: z.string().optional()
     }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
     z.object({

@@ -334,13 +334,18 @@ async function writeScope(
  *
  * Fire-and-forget: the caller is a message handler and must not block on I/O.
  */
-export function persistScopeNow(scopeId: ScopeId, reason: string): void {
+export function persistScopeNow(
+    scopeId: ScopeId,
+    reason: string,
+    onSettled?: (result: { success: boolean; error?: string }) => void
+): void {
     void saveScope(scopeId, reason, true).then((result) => {
         if (!result.success) {
             console.error(
                 `[Bus] Immediate persist failed for ${scopeLabel(scopeId)}: ${result.error}`
             );
         }
+        onSettled?.(result);
     });
 }
 

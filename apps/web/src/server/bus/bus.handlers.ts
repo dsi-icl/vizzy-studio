@@ -212,7 +212,20 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                 // Anything reading it from the commit — the Yjs text session
                 // does — would fail for that whole window, so make it durable
                 // now. Updates to an existing layer can wait for the tick.
-                if (isNewLayer) persistScopeNow(scopeId, 'Layer added');
+                if (isNewLayer) {
+                    const createRequestId = data.createRequestId;
+                    const numericId = layer.numericId;
+                    persistScopeNow(scopeId, 'Layer added', (result) => {
+                        if (!createRequestId) return;
+                        sendJSON(entry.peer, {
+                            type: 'layer_create_response',
+                            createRequestId,
+                            numericId,
+                            success: result.success,
+                            error: result.error
+                        });
+                    });
+                }
             }
         }
         // recomputeLayerNodes(layer.numericId, layer, scopeId);
