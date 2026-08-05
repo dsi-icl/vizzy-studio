@@ -1057,6 +1057,19 @@ export function EditorSlate() {
             );
     };
 
+    // Composite layers (video) put the layer id on a wrapping Group, so the event
+    // target is an inner node with no id of its own. Walk up to the nearest
+    // ancestor that maps to a layer.
+    const resolveLayerIdFromTarget = (target: Konva.Node) => {
+        let node: Konva.Node | null = target;
+        while (node && node !== node.getStage()) {
+            const id = node.id();
+            if (id && layers.has(parseInt(id))) return id;
+            node = node.getParent();
+        }
+        return null;
+    };
+
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches?.length === 2;
@@ -1073,13 +1086,8 @@ export function EditorSlate() {
                 deselectAllLayers();
             } else if (!clickedOnEmpty) {
                 const hasModifier = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
-                const targetId = e.target.id();
-                if (
-                    !hasModifier &&
-                    targetId &&
-                    layers.has(parseInt(targetId)) &&
-                    !currentSelectedIds.includes(targetId)
-                ) {
+                const targetId = resolveLayerIdFromTarget(e.target);
+                if (!hasModifier && targetId && !currentSelectedIds.includes(targetId)) {
                     if (currentSelectedIds.length) flushNodeState(currentSelectedIds[0]);
                     toggleLayerSelection(targetId, false, false);
                 }
