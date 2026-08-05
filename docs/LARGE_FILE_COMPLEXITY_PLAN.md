@@ -429,21 +429,21 @@ apps/web/src/routes/yjs/
 
 ## Priority and milestone order
 
-| #   | Action                                                   | Files                         | Status   | Reason                                                                                               |
-| --- | -------------------------------------------------------- | ----------------------------- | -------- | ---------------------------------------------------------------------------------------------------- | --- | --- | --- |
-| 0a  | Extract`lib/stageConstants.ts`                           | wall, controller, EditorSlate | ✅ Done  | 5-minute win; unblocks later splits                                                                  |
-| 0b  | Extract`lib/stageGeometry.ts`                            | EditorSlate, wall             | ✅ Done  | Shared pure utils; enables EditorSlate reduction                                                     |
-| 0c  | Replace`generateSlideId()` with `crypto.randomUUID()`    | editorStore                   | ✅ Done  | Consistency with server side                                                                         |
-| 1   | Extract`WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip  | Controller now uses Konva — HTML renderer no longer shared                                           |
-| 2   | Extract`yjs/lexical.ts`                                  | yjs                           | ✅ Done  | Most self-contained extraction in the codebase                                                       |
-| 3   | Split`bus.ts` → flat `bus.*.ts` siblings                 | bus                           | ✅ Done  | Highest risk file; split into 6 files (authz/crypto/binding/peers/handlers/ts)                       |
-| 4   | Split`busState.ts` → flat `busState.*.ts` siblings       | busState                      | ✅ Done  | 8 siblings + barrel; strict dep order: state→persistence→binding→scopes→peers→broadcast→video→assets |
-| 5   | Full`yjs/$.ts` split                                     | yjs                           | ✅ Done  | Split into `$.ts` (36), `yjs.doc.ts` (178), `yjs.session.ts` (471)                                   |     |     |     |
-| 6   | Split`editorStore.ts` → flat `editorStore.*.ts` siblings | editorStore                   | ✅ Done  | 6 siblings: types/project/layers/slides/ui/engine + slimmed assembly (~120 lines)                    |
-| 7   | Extract`EditorToolbar` sub-panels                        | EditorToolbar                 | **Next** | Independent UI panels; low risk                                                                      |
-| 8   | Extract`useWallAnimationLoop` + `useWallHydration`       | wall                          |          | Self-contained hooks                                                                                 |
-| 9   | Extract`useControllerDrawing` + `useControllerSession`   | controller                    |          | After wall hooks done                                                                                |
-| 10  | Reduce`EditorSlate.tsx` with extracted utils             | EditorSlate                   |          | After stageGeometry + editorUpload extracted                                                         |
+| #   | Action                                                    | Files                         | Status   | Reason                                                                                               |
+| --- | --------------------------------------------------------- | ----------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| 0a  | Extract `lib/stageConstants.ts`                           | wall, controller, EditorSlate | ✅ Done  | 5-minute win; unblocks later splits                                                                  |
+| 0b  | Extract `lib/stageGeometry.ts`                            | EditorSlate, wall             | ✅ Done  | Shared pure utils; enables EditorSlate reduction                                                     |
+| 0c  | Replace `generateSlideId()` with `crypto.randomUUID()`    | editorStore                   | ✅ Done  | Consistency with server side                                                                         |
+| 1   | Extract `WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip   | Controller now uses Konva — HTML renderer no longer shared                                           |
+| 2   | Extract `yjs/lexical.ts`                                  | yjs                           | ✅ Done  | Most self-contained extraction in the codebase                                                       |
+| 3   | Split `bus.ts` → flat `bus.*.ts` siblings                 | bus                           | ✅ Done  | Highest risk file; split into 6 files (authz/crypto/binding/peers/handlers/ts)                       |
+| 4   | Split `busState.ts` → flat `busState.*.ts` siblings       | busState                      | ✅ Done  | 8 siblings + barrel; strict dep order: state→persistence→binding→scopes→peers→broadcast→video→assets |
+| 5   | Full `yjs/$.ts` split                                     | yjs                           | ✅ Done  | Split into `$.ts` (36), `yjs.doc.ts` (178), `yjs.session.ts` (471)                                   |
+| 6   | Split `editorStore.ts` → flat `editorStore.*.ts` siblings | editorStore                   | ✅ Done  | 6 siblings: types/project/layers/slides/ui/engine + slimmed assembly (~120 lines)                    |
+| 7   | Extract `EditorToolbar` sub-panels                        | EditorToolbar                 | **Next** | Independent UI panels; low risk                                                                      |
+| 8   | Extract `useWallAnimationLoop` + `useWallHydration`       | wall                          |          | Self-contained hooks                                                                                 |
+| 9   | Extract `useControllerDrawing` + `useControllerSession`   | controller                    |          | After wall hooks done                                                                                |
+| 10  | Reduce `EditorSlate.tsx` with extracted utils             | EditorSlate                   |          | After stageGeometry + editorUpload extracted                                                         |
 
 ---
 
