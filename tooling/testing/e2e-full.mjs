@@ -23,8 +23,9 @@ let exitCode = 0;
 try {
     run('Starting test stack', 'test:harness:up');
     run('Preparing fixtures (health check + seed)', 'test:harness:prepare');
+    run('Running integration suite', 'test:integration');
     run('Running end-to-end suite', 'test:e2e');
-    console.log('\n[e2e:full] ✅ end-to-end suite passed');
+    console.log('\n[e2e:full] ✅ integration and end-to-end suites passed');
 } catch (error) {
     exitCode = error?.code ?? 1;
     console.error(`\n${error?.message ?? error}`);

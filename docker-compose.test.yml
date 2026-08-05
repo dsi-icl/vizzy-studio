@@ -1,6 +1,28 @@
 name: vizzy-studio-test
 
 services:
+    external-site:
+        image: oven/bun:1.3.13
+        command: ['bun', 'run', '/fixture/server.mjs']
+        networks:
+            external_fixture_network:
+                ipv4_address: 203.0.113.10
+        ports:
+            - '${EXTERNAL_SITE_HOST_PORT:-3970}:8080'
+        volumes:
+            - ./tooling/testing/external-site:/fixture:ro
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'bun',
+                    '-e',
+                    "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+                ]
+            interval: 2s
+            timeout: 2s
+            retries: 20
+
     mongo:
         image: mongo:8-noble
         command: ['mongod', '--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
@@ -58,12 +80,15 @@ services:
             context: .
             dockerfile: Dockerfile
         depends_on:
+            external-site:
+                condition: service_healthy
             mongo:
                 condition: service_started
             mongo-init:
                 condition: service_completed_successfully
         networks:
             - vizzy_network
+            - external_fixture_network
         environment:
             NODE_ENV: production
             PORT: 3000
@@ -71,13 +96,18 @@ services:
             SERVER_DATABASE_URL: mongodb://mongo:27017/vizzy?replicaSet=rs0&directConnection=true
             SERVER_AUTH_SECRET: 00000000000000000000000000000000
             SERVER_CONFIG_ENCRYPTION_KEY: local-dev-encryption-key
-            ALLOWED_HOSTS: http://localhost:${WEB_HOST_PORT:-3870}
-            TRUSTED_ORIGINS: http://localhost:${WEB_HOST_PORT:-3870}
+            ALLOWED_HOSTS: ${ALLOWED_HOSTS:-http://localhost:${WEB_HOST_PORT:-3870}}
+            TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:${WEB_HOST_PORT:-3870}}
+            WEB_SCREENSHOT_ALLOWLIST: ${WEB_SCREENSHOT_ALLOWLIST:-external-site}
             APP_DATA_DIR: /app/data
         ports:
             - '${WEB_HOST_PORT:-3870}:3000'
         volumes:
             - app_data:/app/data
+        # Captured/uploaded assets are test-run state. Keep the Playwright browser
+        # cache persistent in app_data while discarding generated media on teardown.
+        tmpfs:
+            - /app/data/assets
         healthcheck:
             test: ['CMD-SHELL', 'curl -fsS http://localhost:3000/ >/dev/null || exit 1']
             interval: 10s
@@ -89,6 +119,13 @@ networks:
         driver: bridge
         driver_opts:
             com.docker.network.driver.mtu: '1450'
+    # TEST-NET-3 is non-routable documentation space. It gives the capture fixture
+    # a deterministic non-private address without weakening production SSRF checks.
+    external_fixture_network:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 203.0.113.0/24
 
 volumes:
     mongo_data:

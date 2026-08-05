@@ -270,6 +270,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     <Popover open={savePopoverOpen} onOpenChange={setSavePopoverOpen}>
                         <PopoverTrigger nativeButton={false} render={<div />}>
                             <TipButton
+                                aria-label="Save project"
                                 tip={
                                     saveStatus === 'dirty'
                                         ? 'Unsaved changes — click to save'

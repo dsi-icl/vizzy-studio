@@ -121,6 +121,7 @@ export function WebLayerPanel({ activeLayer, projectId }: WebLayerPanelProps) {
             />
             <TipButton
                 tip={activeLayer.proxy ? 'Disable Proxy' : 'Enable Proxy'}
+                aria-label={activeLayer.proxy ? 'Disable proxy' : 'Enable proxy'}
                 variant={activeLayer.proxy ? 'outline' : 'ghost'}
                 onClick={handleWebProxyToggle}
             >
@@ -128,6 +129,7 @@ export function WebLayerPanel({ activeLayer, projectId }: WebLayerPanelProps) {
             </TipButton>
             <TipButton
                 tip={activeLayer.url ? 'Capture screenshot' : 'Set a URL first'}
+                aria-label="Capture screenshot"
                 onClick={captureScreenshot}
                 disabled={!activeLayer.url || isCapturing}
             >
