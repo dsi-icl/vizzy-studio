@@ -38,6 +38,11 @@ export function createPastedLayers(
         if (pasted.type === 'line') {
             pasted.line = pasted.line.map((coordinate) => coordinate + offset);
         } else if (pasted.type === 'text') {
+            // Nothing to reset. textHtml/textState/textFormat are *content* and
+            // must carry over, so the copy seeds from structured state instead
+            // of re-deriving from HTML. Fields identifying the source's Yjs
+            // document are a different matter and must not be carried — strip
+            // those here, never the content.
         } else if (pasted.type === 'video') {
             pasted.playback = {
                 status: 'paused',
