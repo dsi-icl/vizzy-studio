@@ -1,5 +1,6 @@
 import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
+import { computeSendToBackUpdates } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
@@ -292,22 +293,23 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const s = get();
             if (!s.selectedLayerIds.length) return;
             const numericId = parseInt(s.selectedLayerIds[0]);
-            const layer = s.layers.get(numericId);
-            if (!layer) return;
-
-            const minZIndex = Array.from(s.layers.values()).reduce(
-                (min, l) => Math.min(min, l.config.zIndex),
-                Infinity
-            );
-            const newZIndex = layer.config.zIndex === minZIndex ? minZIndex : minZIndex - 1;
-            const updatedConfig = { ...layer.config, zIndex: newZIndex };
-            const updatedLayer = { ...layer, config: updatedConfig };
+            const updatedLayers = computeSendToBackUpdates(s.layers.values(), numericId);
+            if (!updatedLayers.length) return;
 
             const newLayers = new Map(s.layers);
-            newLayers.set(numericId, updatedLayer);
+            for (const layer of updatedLayers) newLayers.set(layer.numericId, layer);
             set({ layers: newLayers });
 
-            helpers.sendLayerUpdate(updatedLayer, 'editor:send_to_back');
+            // Direct send: the shared sendLayerUpdate is throttled and would collapse
+            // a restack into a single broadcast.
+            const engine = EditorEngine.getInstance();
+            for (const layer of updatedLayers) {
+                engine.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'editor:send_to_back',
+                    layer
+                });
+            }
             get().markDirty();
         },
 
