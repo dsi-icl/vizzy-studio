@@ -7,9 +7,10 @@ import { nitro } from 'nitro/vite';
 import { defineConfig, loadEnv } from 'vite';
 import mkcert from 'vite-plugin-mkcert';
 
-import { thirdPartyNoticesPlugin } from './plugins/thirdPartyNotices';
-import { ttfPlugin } from './plugins/ttf';
-import { resolveBuildMetadata } from './tools/buildMetadata';
+import { nitroAssetRoutesPlugin } from './plugins/nitroAssetRoutes.ts';
+import { thirdPartyNoticesPlugin } from './plugins/thirdPartyNotices.ts';
+import { ttfPlugin } from './plugins/ttf.ts';
+import { resolveBuildMetadata } from './tools/buildMetadata.ts';
 
 const shouldEnableSourceMaps = ['1', 'true', 'yes', 'on'].includes(
     String(process.env.BUILD_SOURCEMAPS ?? '').toLowerCase()
@@ -49,6 +50,7 @@ export default defineConfig(({ mode }) => {
             }
         },
         plugins: [
+            nitroAssetRoutesPlugin(),
             isHttps
                 ? mkcert({
                       keyFileName: 'vizzy-studio-dev-key.pem',

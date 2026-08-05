@@ -169,7 +169,6 @@ export const auth = betterAuth({
 
     // https://www.better-auth.com/docs/integrations/tanstack#usage-tips
     plugins: [
-        tanstackStartCookies(),
         admin({
             ac: adminAc,
             roles: {
@@ -190,7 +189,8 @@ export const auth = betterAuth({
                     fallbackLog: `OTP to ${email} : ${otp} (${type})`
                 });
             }
-        })
+        }),
+        tanstackStartCookies()
     ],
 
     // https://www.better-auth.com/docs/concepts/session-management#session-caching
