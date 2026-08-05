@@ -162,6 +162,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     newState.strokeDash = selectedLayer.strokeDash;
                     newState.strokeWidth = selectedLayer.strokeWidth;
                     newState.shapeFill = selectedLayer.fill;
+                    if (selectedLayer.shape === 'rectangle') {
+                        newState.rectangleCornerRadius = selectedLayer.cornerRadius ?? 0;
+                    }
                 }
                 set(newState);
             }
@@ -485,7 +488,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 fill: 'transparent',
                 strokeColor,
                 strokeDash,
-                strokeWidth
+                strokeWidth,
+                cornerRadius: shape === 'rectangle' ? get().rectangleCornerRadius : 0
             };
 
             set((s) => {

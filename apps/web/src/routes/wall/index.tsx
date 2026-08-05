@@ -735,6 +735,8 @@ function WallApp() {
                                     y={0}
                                     width={layer.config.width}
                                     height={layer.config.height}
+                                    rx={layer.cornerRadius}
+                                    ry={layer.cornerRadius}
                                     fill={layer.fill}
                                     stroke={layer.strokeColor}
                                     strokeDasharray={layer.strokeDash.join(' ')}

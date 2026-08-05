@@ -122,7 +122,8 @@ const LayerSchema = z.discriminatedUnion('type', [
             fill: z.string(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
-            strokeWidth: z.number()
+            strokeWidth: z.number(),
+            cornerRadius: z.number().nonnegative().default(0)
         })
         .extend(LayerBaseSchema.shape),
     z
