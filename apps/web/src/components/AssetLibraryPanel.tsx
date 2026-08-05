@@ -139,11 +139,7 @@ export function AssetLibraryPanel({
         store.upsertLayer(layer);
         store.toggleLayerSelection(numericId.toString(), false, false);
 
-        engine.sendJSON({
-            type: 'upsert_layer',
-            origin: 'editor:asset_library',
-            layer
-        });
+        void engine.createLayer(layer, 'editor:asset_library');
         store.markDirty();
     }, []);
 

@@ -50,6 +50,12 @@ declare global {
                 textBindingVersion: string;
                 fallbackLayer?: Extract<Layer, { type: 'text' }>;
             }) => boolean | Promise<boolean>;
+            __YJS_WAIT_FOR_LAYER_PERSISTENCE__?: (payload: {
+                projectId: string;
+                commitId: string;
+                slideId: string;
+                layerId: number;
+            }) => Promise<boolean>;
             __YJS_SERVER__?: YCrossws;
             __VSYNC_INTERVAL__?: ReturnType<typeof setInterval>;
             __AUTO_SAVE_INTERVAL__?: ReturnType<typeof setInterval>;
