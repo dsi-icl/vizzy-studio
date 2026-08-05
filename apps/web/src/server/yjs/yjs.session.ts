@@ -386,8 +386,14 @@ export class YCrossws {
             const hydrated = await this.persistence.bindState(docName, doc);
             if (!hydrated) {
                 await applyHtmlToDoc(doc, layer.textHtml, docName);
-                doc.dirty = true;
-                await this.flushDoc(doc);
+                // Seeding from stored HTML is a read, not an edit. Persist the
+                // snapshot so later opens use the faithful CRDT state, but leave
+                // the layer alone — the importer narrows markup it cannot model
+                // (a heading becomes a paragraph), and a read must never write
+                // that narrowing back. The first real edit upgrades the record.
+                doc.lastHtmlHash = sha1(layer.textHtml);
+                doc.dirty = false;
+                await this.persistence.writeState(docName, doc);
             }
             doc.startSyncLoop();
             return doc;

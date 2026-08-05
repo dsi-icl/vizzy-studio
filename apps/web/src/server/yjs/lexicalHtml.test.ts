@@ -192,6 +192,25 @@ describe('HTML import preserves text formats', () => {
 });
 
 describe('HTML import structural handling', () => {
+    // Seeding a Yjs doc from stored HTML re-exports it and compares hashes to
+    // decide whether to write the layer back. If the re-export is identical,
+    // opening a layer stays a pure read.
+    test('re-importing our own exported HTML reproduces it exactly', () => {
+        const cases = [
+            [{ text: 'Plain' }],
+            [{ text: 'Red big', style: 'color: #ef4444; font-size: 2em;' }],
+            [{ text: 'Bold', formats: ['bold'] }],
+            [
+                { text: 'Red big', style: 'color: #ef4444; font-size: 2em;' },
+                { text: ' green bold', style: 'color: #22c55e;', formats: ['bold'] }
+            ]
+        ];
+        for (const runs of cases) {
+            const html = authored(runs);
+            expect(importExport(html)).toBe(html);
+        }
+    });
+
     test('is idempotent across repeated cycles', () => {
         const html = authored([{ text: 'Stable', style: 'color: #3b82f6; font-size: 1.5em;' }]);
         const once = importExport(html);
