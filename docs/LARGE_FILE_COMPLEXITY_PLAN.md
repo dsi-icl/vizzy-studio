@@ -82,7 +82,7 @@ be replaced for consistency.
 | --------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1–106     | Imports + setup                    | All busState imports, Zod schemas, binary opcodes                                                                                            |
 | 107–200   | Playback dedup                     | `lastPlaybackCommandAt` map, temporal conflict avoidance for video commands                                                                  |
-| 201–449   | Auth + rate limiting               | Permission cache, `isWsMessageAuthorized`, strike-based WS rate limits, handshake rate limits                                                |
+| 201–449   | Auth + rate limiting               | Permission cache,`isWsMessageAuthorized`, strike-based WS rate limits, handshake rate limits                                                 |
 | 450–741   | Wall binding orchestration         | `performLiveBind`, bind override lifecycle, wall/gallery broadcast helpers, gallery state snapshot                                           |
 | 742–797   | ECDSA device verification          | `verifyDeviceSignature`, `base64UrlToBytes`, `asArrayBuffer`                                                                                 |
 | 799–1127  | Peer registration                  | `registerEditorPeer`, `completeHelloRegistration` (routes by device kind), device enrollment                                                 |
@@ -91,7 +91,7 @@ be replaced for consistency.
 | 1463–1851 | Message handlers (control)         | `bind_wall`, `request_bind_wall`, `bind_override_decision`, `unbind_wall`, `video_play/pause/seek`, `hello`, `hello_auth`, `switch_scope`    |
 | 1884–2020 | Binary + WS lifecycle              | `handleBinary` (clock ping-pong, spatial move relay), `onopen`, `onclose`                                                                    |
 | 2020–2200 | Close fallthrough                  | Wall node grace period, scope cleanup scheduling, DB persist on last editor                                                                  |
-| 2200–2418 | Background loops + process bridges | JSON/binary router, VSYNC loop, AUTO_SAVE loop, REAPER loop, all `process.__XXX__` bridges                                                   |
+| 2200–2418 | Background loops + process bridges | JSON/binary router, VSYNC loop, AUTO_SAVE loop, REAPER loop, all`process.__XXX__` bridges                                                    |
 
 **Key couplings:**
 
@@ -256,14 +256,14 @@ apps/web/src/lib/editorStore.ts          — assembly: _nextId/_nextZIndex, sing
 
 | Lines     | Group                    | What it does                                                                                                          |
 | --------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| 1–70      | Imports + geometry utils | Constants, `snapToGrid`, `getDistance`, `getAngle`, `normalizeRotationToQuadrant`, `touchToStagePoint`                |
+| 1–70      | Imports + geometry utils | Constants,`snapToGrid`, `getDistance`, `getAngle`, `normalizeRotationToQuadrant`, `touchToStagePoint`                 |
 | 72–244    | Stage setup              | Engine instance, layer shadow ref, store subscriptions, insertion viewport sync, ResizeObserver, HMR rehydrate signal |
 | 246–330   | Binary fast-path         | `subscribeToBinary` for position/rotation — direct Konva node mutation, no React re-render                            |
-| 332–450   | Upload (Uppy TUS)        | Uppy config, token fetch, scrub insecure resume entries, `onSuccess` → `upsertLayer`                                  |
+| 332–450   | Upload (Uppy TUS)        | Uppy config, token fetch, scrub insecure resume entries,`onSuccess` → `upsertLayer`                                   |
 | 452–550   | Mouse/touch drag         | `dragStart`/`dragEnd`/`dragMove` — selection box + layer drag + grid snap + auto-scroll                               |
 | 552–680   | Drawing mode             | Draw event listeners, point accumulation, live line preview, save on finish                                           |
 | 682–800   | Konva layer render loop  | Map store layers → Konva nodes (`KonvaStaticImage`, `KonvaTextLayer`, `KonvaVideo`, `MapWrapper`)                     |
-| 802–1050  | Transform + text edit    | Transformer attach/detach, `onTransform` binary broadcast, double-click text edit, keyboard shortcuts                 |
+| 802–1050  | Transform + text edit    | Transformer attach/detach,`onTransform` binary broadcast, double-click text edit, keyboard shortcuts                  |
 | 1100–1331 | Viewport + render output | Stage zoom/pan, fit-to-viewport, full JSX (Stage → Group → layers → Transformer → toolbar overlay)                    |
 
 **Key coupling:**
@@ -300,8 +300,8 @@ benefit from mechanical separation.
 
 | Lines   | Group                    | What it does                                                                                                |
 | ------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| 64–210  | State subscriptions      | 8 separate `useEditorStore` calls (project header, layer, tool state, actions)                              |
-| 211–282 | Web layer controls       | Local `webUrl` state, throttled URL/proxy/filter broadcasts, screenshot capture                             |
+| 64–210  | State subscriptions      | 8 separate`useEditorStore` calls (project header, layer, tool state, actions)                               |
+| 211–282 | Web layer controls       | Local`webUrl` state, throttled URL/proxy/filter broadcasts, screenshot capture                              |
 | 284–380 | Wall binding UI          | Pending bind state, override result listener, wall picker popover, disconnect                               |
 | 382–511 | Title + content buttons  | Close/back button, add content buttons (image/shape/text/map/web/draw), project name + save status          |
 | 512–642 | Layer tools              | Ordering (front/back), filter presets grid + sliders, text edit button                                      |
@@ -371,7 +371,7 @@ Shared `WallLayerRenderer.tsx` used by both wall and controller (see below).
 | 120–380  | Session state           | Binding signal timeout, hydrate handler with slide binding, layer upsert/delete             |
 | 382–583  | Drawing handlers        | `addLineLayer`, `getStagePoint`, `handleDrawStart/Move/End`                                 |
 | 587–720  | HTML layer renderer     | Near-identical to wall's layer renderer (see cross-cutting §C)                              |
-| 722–849  | Touch/pinch + slide nav | Two-finger scroll for stage panning, `handleTouchMove`                                      |
+| 722–849  | Touch/pinch + slide nav | Two-finger scroll for stage panning,`handleTouchMove`                                       |
 | 852–1102 | UI overlay + JSX        | Toolbar, binding signal badge, slide navigator, drawing toolbar, Konva Stage                |
 
 **Drawing state (`startLine`/`appendLinePoint`/`consumeCurrentLine`) is a reusable hook.**
@@ -394,10 +394,10 @@ Shared `WallLayerRenderer.tsx` replaces the duplicated HTML layer renderer block
 
 | Lines   | Group                  | What it does                                                                                                                                                                                                  |
 | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1–49    | Imports + constants    | crossws, Y.js, lib0, `messageSync`/`messageAwareness`/`SYNC_INTERVAL_MS`, type aliases                                                                                                                        |
+| 1–49    | Imports + constants    | crossws, Y.js, lib0,`messageSync`/`messageAwareness`/`SYNC_INTERVAL_MS`, type aliases                                                                                                                         |
 | 50–154  | Peer state utils       | `YjsPeerState`, `getYjsPeerState`/`set`/`clear`, `waitForOpenCompletion`, `getDocName`, `parseScope`, `binaryToUint8Array`                                                                                    |
 | 155–209 | `MongoYDocPersistence` | `Persistence` interface, `bindState` (load binary from MongoDB), `writeState` (upsert binary)                                                                                                                 |
-| 210–273 | `SharedDoc` class      | Y.Doc subclass, awareness, peer tracking, sync loop timer, `onAwarenessUpdate`                                                                                                                                |
+| 210–273 | `SharedDoc` class      | Y.Doc subclass, awareness, peer tracking, sync loop timer,`onAwarenessUpdate`                                                                                                                                 |
 | 274–634 | `YCrossws` class       | `onOpen` (auth + scope + sync_step1), `onMessage` (sync/awareness relay), `onClose` (cleanup + flush), `onDocUpdate`, `flushDoc` (HTML delta + bus bridge), `createDoc`/`getDoc`, `recomputePeerAuthContexts` |
 | 635–669 | Route + process bridge | `YCrossws` singleton, `defineHooks`, `process.__YJS_RECOMPUTE_AUTH_CONTEXT__`, `Route` export                                                                                                                 |
 
@@ -429,21 +429,21 @@ apps/web/src/routes/yjs/
 
 ## Priority and milestone order
 
-| #   | Action                                                    | Files                         | Status   | Reason                                                                                               |
-| --- | --------------------------------------------------------- | ----------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| 0a  | Extract `lib/stageConstants.ts`                           | wall, controller, EditorSlate | ✅ Done  | 5-minute win; unblocks later splits                                                                  |
-| 0b  | Extract `lib/stageGeometry.ts`                            | EditorSlate, wall             | ✅ Done  | Shared pure utils; enables EditorSlate reduction                                                     |
-| 0c  | Replace `generateSlideId()` with `crypto.randomUUID()`    | editorStore                   | ✅ Done  | Consistency with server side                                                                         |
-| 1   | Extract `WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip  | Controller now uses Konva — HTML renderer no longer shared                                           |
-| 2   | Extract `yjs/lexical.ts`                                  | yjs                           | ✅ Done  | Most self-contained extraction in the codebase                                                       |
-| 3   | Split `bus.ts` → flat `bus.*.ts` siblings                 | bus                           | ✅ Done  | Highest risk file; split into 6 files (authz/crypto/binding/peers/handlers/ts)                       |
-| 4   | Split `busState.ts` → flat `busState.*.ts` siblings       | busState                      | ✅ Done  | 8 siblings + barrel; strict dep order: state→persistence→binding→scopes→peers→broadcast→video→assets |
-| 5   | Full `yjs/$.ts` split                                     | yjs                           | ✅ Done  | Split into `$.ts` (36), `yjs.doc.ts` (178), `yjs.session.ts` (471)                                   |
-| 6   | Split `editorStore.ts` → flat `editorStore.*.ts` siblings | editorStore                   | ✅ Done  | 6 siblings: types/project/layers/slides/ui/engine + slimmed assembly (~120 lines)                    |
-| 7   | Extract `EditorToolbar` sub-panels                        | EditorToolbar                 | **Next** | Independent UI panels; low risk                                                                      |
-| 8   | Extract `useWallAnimationLoop` + `useWallHydration`       | wall                          |          | Self-contained hooks                                                                                 |
-| 9   | Extract `useControllerDrawing` + `useControllerSession`   | controller                    |          | After wall hooks done                                                                                |
-| 10  | Reduce `EditorSlate.tsx` with extracted utils             | EditorSlate                   |          | After stageGeometry + editorUpload extracted                                                         |
+| #   | Action                                                   | Files                         | Status   | Reason                                                                                               |
+| --- | -------------------------------------------------------- | ----------------------------- | -------- | ---------------------------------------------------------------------------------------------------- | --- | --- | --- |
+| 0a  | Extract`lib/stageConstants.ts`                           | wall, controller, EditorSlate | ✅ Done  | 5-minute win; unblocks later splits                                                                  |
+| 0b  | Extract`lib/stageGeometry.ts`                            | EditorSlate, wall             | ✅ Done  | Shared pure utils; enables EditorSlate reduction                                                     |
+| 0c  | Replace`generateSlideId()` with `crypto.randomUUID()`    | editorStore                   | ✅ Done  | Consistency with server side                                                                         |
+| 1   | Extract`WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip  | Controller now uses Konva — HTML renderer no longer shared                                           |
+| 2   | Extract`yjs/lexical.ts`                                  | yjs                           | ✅ Done  | Most self-contained extraction in the codebase                                                       |
+| 3   | Split`bus.ts` → flat `bus.*.ts` siblings                 | bus                           | ✅ Done  | Highest risk file; split into 6 files (authz/crypto/binding/peers/handlers/ts)                       |
+| 4   | Split`busState.ts` → flat `busState.*.ts` siblings       | busState                      | ✅ Done  | 8 siblings + barrel; strict dep order: state→persistence→binding→scopes→peers→broadcast→video→assets |
+| 5   | Full`yjs/$.ts` split                                     | yjs                           | ✅ Done  | Split into `$.ts` (36), `yjs.doc.ts` (178), `yjs.session.ts` (471)                                   |     |     |     |
+| 6   | Split`editorStore.ts` → flat `editorStore.*.ts` siblings | editorStore                   | ✅ Done  | 6 siblings: types/project/layers/slides/ui/engine + slimmed assembly (~120 lines)                    |
+| 7   | Extract`EditorToolbar` sub-panels                        | EditorToolbar                 | **Next** | Independent UI panels; low risk                                                                      |
+| 8   | Extract`useWallAnimationLoop` + `useWallHydration`       | wall                          |          | Self-contained hooks                                                                                 |
+| 9   | Extract`useControllerDrawing` + `useControllerSession`   | controller                    |          | After wall hooks done                                                                                |
+| 10  | Reduce`EditorSlate.tsx` with extracted utils             | EditorSlate                   |          | After stageGeometry + editorUpload extracted                                                         |
 
 ---
 
