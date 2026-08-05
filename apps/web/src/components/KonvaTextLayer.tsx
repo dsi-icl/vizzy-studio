@@ -33,18 +33,23 @@ export function KonvaTextLayer({
     const renderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
+        let cancelled = false;
         // Debounce re-renders while typing
         if (renderTimer.current) clearTimeout(renderTimer.current);
         renderTimer.current = setTimeout(() => {
             textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
                 .then((rendered) => {
+                    if (cancelled) return;
                     setImg(rendered);
                     imageRef.current?.getLayer()?.batchDraw();
                 })
-                .catch(() => setImg(null));
+                .catch(() => {
+                    if (!cancelled) setImg(null);
+                });
         }, 100);
 
         return () => {
+            cancelled = true;
             if (renderTimer.current) clearTimeout(renderTimer.current);
         };
     }, [layer.textHtml, layer.config.width, layer.config.height]);

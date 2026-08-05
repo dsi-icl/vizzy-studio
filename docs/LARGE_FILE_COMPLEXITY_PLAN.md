@@ -434,7 +434,7 @@ apps/web/src/routes/yjs/
 | 0a  | Extract `lib/stageConstants.ts`                           | wall, controller, EditorSlate | ✅ Done  | 5-minute win; unblocks later splits                                                                  |
 | 0b  | Extract `lib/stageGeometry.ts`                            | EditorSlate, wall             | ✅ Done  | Shared pure utils; enables EditorSlate reduction                                                     |
 | 0c  | Replace `generateSlideId()` with `crypto.randomUUID()`    | editorStore                   | ✅ Done  | Consistency with server side                                                                         |
-| 1   | Extract `WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip   | Controller now uses Konva — HTML renderer no longer shared                                           |
+| 1   | Extract `WallLayerRenderer.tsx`                           | wall, controller              | ⏭ Skip  | Controller now uses Konva — HTML renderer no longer shared                                           |
 | 2   | Extract `yjs/lexical.ts`                                  | yjs                           | ✅ Done  | Most self-contained extraction in the codebase                                                       |
 | 3   | Split `bus.ts` → flat `bus.*.ts` siblings                 | bus                           | ✅ Done  | Highest risk file; split into 6 files (authz/crypto/binding/peers/handlers/ts)                       |
 | 4   | Split `busState.ts` → flat `busState.*.ts` siblings       | busState                      | ✅ Done  | 8 siblings + barrel; strict dep order: state→persistence→binding→scopes→peers→broadcast→video→assets |

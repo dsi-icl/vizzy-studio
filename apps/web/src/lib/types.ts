@@ -43,6 +43,10 @@ const LayerPlaybackStateSchema = z.object({
 
 const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
 
+const MediaLayerBaseSchema = LayerBaseSchema.extend({
+    name: z.string().optional()
+});
+
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
 const OptionalSizesSchema = z
@@ -53,7 +57,48 @@ const OptionalSizesSchema = z
     }, z.array(z.number()))
     .optional();
 
-const LayerSchema = z.discriminatedUnion('type', [
+const LinePointsSchema = z.array(z.number());
+const LinePathsSchema = z.array(LinePointsSchema);
+
+/** Convert the branch's earlier nested `line` experiment into the additive wire format. */
+export function normalizeLegacyLineLayer<T>(value: T): T {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+
+    const record = value as Record<string, unknown>;
+    const legacyLine = record.line;
+    if (
+        record.type !== 'line' ||
+        !Array.isArray(legacyLine) ||
+        legacyLine.length === 0 ||
+        !Array.isArray(legacyLine[0])
+    ) {
+        return value;
+    }
+
+    if (
+        !legacyLine.every(
+            (path) =>
+                Array.isArray(path) &&
+                path.every((coordinate) =>
+                    typeof coordinate === 'number' ? Number.isFinite(coordinate) : false
+                )
+        )
+    ) {
+        return value;
+    }
+
+    const paths = legacyLine as number[][];
+    const fallbackPath = paths.reduce((longest, path) =>
+        path.length > longest.length ? path : longest
+    );
+    return {
+        ...record,
+        line: [...fallbackPath],
+        linePaths: paths.map((path) => [...path])
+    } as T;
+}
+
+const LayerDataSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('video'),
@@ -65,16 +110,24 @@ const LayerSchema = z.discriminatedUnion('type', [
             blurhash: z.string().optional(),
             playback: LayerPlaybackStateSchema
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z
         .object({
             type: z.literal('image'),
             url: z.string(),
             blurhash: z.string().optional()
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
-    z.object({ type: z.literal('text'), textHtml: z.string() }).extend(LayerBaseSchema.shape),
+    z
+        .object({
+            type: z.literal('text'),
+            textHtml: z.string(),
+            textRevision: z.number().int().nonnegative().optional(),
+            textStateHash: z.string().optional(),
+            textBindingVersion: z.string().optional()
+        })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('map'),
@@ -101,7 +154,11 @@ const LayerSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('line'),
-            line: z.array(z.number()),
+            // Keep the legacy flat path required so older clients can hydrate this layer.
+            line: LinePointsSchema,
+            // Erasing may split one stroke into multiple paths. New clients treat this as
+            // authoritative while legacy clients safely ignore the unknown field.
+            linePaths: LinePathsSchema.optional(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number()
@@ -114,7 +171,8 @@ const LayerSchema = z.discriminatedUnion('type', [
             fill: z.string(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
-            strokeWidth: z.number()
+            strokeWidth: z.number(),
+            cornerRadius: z.number().nonnegative().default(0)
         })
         .extend(LayerBaseSchema.shape),
     z
@@ -133,7 +191,33 @@ const LayerSchema = z.discriminatedUnion('type', [
         .extend(LayerBaseSchema.shape)
 ]);
 
+const LayerSchema = z.preprocess(normalizeLegacyLineLayer, LayerDataSchema);
+
 export type Layer = z.infer<typeof LayerSchema>;
+
+type LineLayer = Extract<Layer, { type: 'line' }>;
+
+export function getLinePaths(layer: LineLayer): number[][] {
+    if (layer.linePaths !== undefined) return layer.linePaths;
+    if (Array.isArray(layer.line[0])) return layer.line as unknown as number[][];
+    return layer.line.length === 0 ? [] : [layer.line];
+}
+
+export function preserveLinePathsFromExisting<T extends Layer>(
+    existing: Layer | undefined,
+    incoming: T
+): T {
+    if (
+        incoming.type !== 'line' ||
+        existing?.type !== 'line' ||
+        incoming.linePaths !== undefined ||
+        existing.linePaths === undefined
+    ) {
+        return incoming;
+    }
+
+    return { ...incoming, linePaths: existing.linePaths };
+}
 
 // ── Hello schema (exported separately for handshake-only validation) ─────────
 
@@ -246,9 +330,17 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('upsert_layer'),
         origin: z.string().regex(/^(editor|controller|yjs):[a-z0-9_]+$/),
-        layer: LayerSchema
+        layer: LayerSchema,
+        createRequestId: z.string().optional()
     }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('layer_create_response'),
+        numericId: z.number(),
+        success: z.boolean(),
+        createRequestId: z.string().optional(),
+        error: z.string().optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),
@@ -448,6 +540,8 @@ export interface ScopeState {
     commitId: string;
     slideId: string;
     dirty: boolean;
+    /** Monotonic in-memory generation used to avoid clearing concurrently-arriving changes. */
+    mutationRevision: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
     /** Optional custom render URL from the project configuration. */

@@ -7,7 +7,6 @@ import {
     controllerTransientByWallId,
     EMPTY_HYDRATE,
     editorsByScope,
-    invalidateHydrateCache,
     removeFromIndex,
     scopedState,
     wallBindingSources,
@@ -33,6 +32,7 @@ export function getOrCreateScope(
             commitId,
             slideId,
             dirty: false,
+            mutationRevision: 0,
             hydrateCache: null,
             customRenderUrl,
             customRenderCompat: customRenderCompat ?? false,
@@ -47,6 +47,7 @@ export function getOrCreateScope(
         }
         scopeIds.add(scopeId);
     } else {
+        if (!Number.isFinite(scope.mutationRevision)) scope.mutationRevision = 0;
         let changed = false;
         if (customRenderUrl !== undefined && scope.customRenderUrl !== customRenderUrl) {
             scope.customRenderUrl = customRenderUrl;

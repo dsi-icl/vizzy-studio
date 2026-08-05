@@ -17,7 +17,21 @@ import { canViewProject } from '~/server/projectAuthz';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
-const isDev = process.env.NODE_ENV === 'development';
+export function createAssetNotFoundResponse(input: {
+    reasonCode: string;
+    statusMessage?: string;
+}): Response {
+    const headers =
+        process.env.NODE_ENV === 'development'
+            ? {
+                  'X-Dev-Reason-Code': input.reasonCode,
+                  'X-Dev-Status-Message': input.statusMessage ?? input.reasonCode
+              }
+            : undefined;
+
+    return new Response('Not Found', { status: 404, headers });
+}
+
 async function logAssetDenied(input: {
     request: Request;
     authContext: AuthContext;
@@ -67,6 +81,26 @@ async function logAssetNotFound(input: {
             operation: 'GET /api/assets/$uri',
             request: input.request
         }
+    });
+}
+
+async function logAssetDeniedResponse(
+    input: Parameters<typeof logAssetDenied>[0]
+): Promise<Response> {
+    await logAssetDenied(input);
+    return createAssetNotFoundResponse({
+        reasonCode: input.reasonCode,
+        statusMessage: input.statusMessage
+    });
+}
+
+async function logAssetNotFoundResponse(
+    input: Parameters<typeof logAssetNotFound>[0]
+): Promise<Response> {
+    await logAssetNotFound(input);
+    return createAssetNotFoundResponse({
+        reasonCode: input.reasonCode,
+        statusMessage: input.statusMessage
     });
 }
 
@@ -179,54 +213,54 @@ const getResponse = createServerOnlyFn(
         try {
             stats = await stat(asset);
             if (!stats.isFile()) {
-                await logAssetNotFound({
+                return logAssetNotFoundResponse({
                     request,
                     authContext,
                     reasonCode: 'ASSET_FILE_NOT_FOUND',
                     projectId,
-                    resourceId: resourceId ?? requestedFilename
+                    resourceId: resourceId ?? requestedFilename,
+                    statusMessage: 'Asset File Not Found'
                 });
-                return new Response('Not Found', { status: 404 });
             }
         } catch (error: any) {
             if (error.code === 'ENOENT') {
                 const fallback = await chooseVariantFallbackFilename(requestedFilename);
                 if (!fallback) {
-                    await logAssetNotFound({
+                    return logAssetNotFoundResponse({
                         request,
                         authContext,
                         reasonCode: 'ASSET_FILE_NOT_FOUND',
                         projectId,
-                        resourceId: resourceId ?? requestedFilename
+                        resourceId: resourceId ?? requestedFilename,
+                        statusMessage: 'Asset File Not Found'
                     });
-                    return new Response('Not Found', { status: 404 });
                 }
                 resolvedFilename = fallback;
                 asset = join(ASSET_DIR, resolvedFilename);
                 try {
                     stats = await stat(asset);
                     if (!stats.isFile()) {
-                        await logAssetNotFound({
+                        return logAssetNotFoundResponse({
                             request,
                             authContext,
                             reasonCode: 'ASSET_FILE_NOT_FOUND',
                             projectId,
                             resourceId: resourceId ?? requestedFilename,
-                            details: { resolvedFilename }
+                            details: { resolvedFilename },
+                            statusMessage: 'Asset File Not Found'
                         });
-                        return new Response('Not Found', { status: 404 });
                     }
                 } catch (fallbackError: any) {
                     if (fallbackError.code === 'ENOENT') {
-                        await logAssetNotFound({
+                        return logAssetNotFoundResponse({
                             request,
                             authContext,
                             reasonCode: 'ASSET_FILE_NOT_FOUND',
                             projectId,
                             resourceId: resourceId ?? requestedFilename,
-                            details: { resolvedFilename }
+                            details: { resolvedFilename },
+                            statusMessage: 'Asset File Not Found'
                         });
-                        return new Response('Not Found', { status: 404 });
                     }
                     console.error('File system fallback error:', fallbackError);
                     return new Response('Internal Server Error', { status: 500 });
@@ -325,12 +359,11 @@ export const Route = createFileRoute('/api/assets/$uri')({
                     }
                 }
                 if (typeof uri !== 'string' || uri.length === 0) {
-                    await logAssetNotFound({
+                    return logAssetNotFoundResponse({
                         request,
                         authContext,
                         reasonCode: 'INVALID_ASSET_URI'
                     });
-                    return new Response('Not Found', { status: 404 });
                 }
                 const requestedFilename = basename(decodeURIComponent(uri));
                 const user = authContext.user;
@@ -338,31 +371,23 @@ export const Route = createFileRoute('/api/assets/$uri')({
 
                 const assetRecord = await getAssetRecordForFilename(requestedFilename);
                 if (!assetRecord) {
-                    await logAssetNotFound({
+                    return logAssetNotFoundResponse({
                         request,
                         authContext,
                         reasonCode: 'ASSET_RECORD_NOT_FOUND',
                         resourceId: requestedFilename,
                         statusMessage: 'Asset Not Found'
                     });
-                    return new Response('Not Found', {
-                        status: 404,
-                        headers: isDev ? { 'X-Dev-Status-Message': 'Asset Not Found' } : undefined
-                    });
                 }
 
                 const projectId = normalizeProjectId(assetRecord.projectId);
                 if (!projectId) {
-                    await logAssetNotFound({
+                    return logAssetNotFoundResponse({
                         request,
                         authContext,
                         reasonCode: 'ASSET_PROJECT_NOT_FOUND',
                         resourceId: requestedFilename,
                         statusMessage: 'Project Not Found'
-                    });
-                    return new Response('Not Found', {
-                        status: 404,
-                        headers: isDev ? { 'X-Dev-Status-Message': 'Project Not Found' } : undefined
                     });
                 }
                 const isPublicAsset =
@@ -372,7 +397,7 @@ export const Route = createFileRoute('/api/assets/$uri')({
                 if (!isPublicAsset) {
                     const project = await dbCol.projects.findById(projectId);
                     if (!project || project.deletedAt) {
-                        await logAssetNotFound({
+                        return logAssetNotFoundResponse({
                             request,
                             authContext,
                             reasonCode: 'ASSET_PROJECT_NOT_FOUND',
@@ -380,30 +405,18 @@ export const Route = createFileRoute('/api/assets/$uri')({
                             resourceId: requestedFilename,
                             statusMessage: 'Project Not Found'
                         });
-                        return new Response('Not Found', {
-                            status: 404,
-                            headers: isDev
-                                ? { 'X-Dev-Status-Message': 'Project Not Found' }
-                                : undefined
-                        });
                     }
 
                     if (project.visibility !== 'public' || !project.publishedCommitId) {
                         cacheControl = 'private, max-age=31536000, immutable';
                         if (!user && !device) {
-                            await logAssetDenied({
+                            return logAssetDeniedResponse({
                                 request,
                                 authContext,
                                 reasonCode: 'UNAUTHORIZED_GUEST',
                                 projectId,
                                 resourceId: requestedFilename,
                                 statusMessage: 'Unauthorized Guest'
-                            });
-                            return new Response('Not Found', {
-                                status: 404,
-                                headers: isDev
-                                    ? { 'X-Dev-Status-Message': 'Unauthorized Guest' }
-                                    : undefined
                             });
                         }
 
@@ -413,19 +426,13 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                 projectId
                             );
                             if (!allowed && !device) {
-                                await logAssetDenied({
+                                return logAssetDeniedResponse({
                                     request,
                                     authContext,
                                     reasonCode: 'PROJECT_VIEW_FORBIDDEN',
                                     projectId,
                                     resourceId: requestedFilename,
                                     statusMessage: 'Unauthorized'
-                                });
-                                return new Response('Not Found', {
-                                    status: 404,
-                                    headers: isDev
-                                        ? { 'X-Dev-Status-Message': 'Unauthorized' }
-                                        : undefined
                                 });
                             }
                         }
@@ -437,7 +444,7 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     : null;
 
                             if (!deviceWallId) {
-                                await logAssetDenied({
+                                return logAssetDeniedResponse({
                                     request,
                                     authContext,
                                     reasonCode: 'DEVICE_WALL_ID_MISSING',
@@ -445,17 +452,11 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     resourceId: requestedFilename,
                                     statusMessage: 'Unauthorized Device'
                                 });
-                                return new Response('Not Found', {
-                                    status: 404,
-                                    headers: isDev
-                                        ? { 'X-Dev-Status-Message': 'Unauthorized Device' }
-                                        : undefined
-                                });
                             }
 
                             const wall = await dbCol.walls.findByWallId(deviceWallId);
                             if (!wall || wall.boundProjectId !== projectId) {
-                                await logAssetDenied({
+                                return logAssetDeniedResponse({
                                     request,
                                     authContext,
                                     reasonCode: 'DEVICE_WALL_NOT_BOUND_TO_PROJECT',
@@ -463,12 +464,6 @@ export const Route = createFileRoute('/api/assets/$uri')({
                                     resourceId: requestedFilename,
                                     details: { wallId: deviceWallId },
                                     statusMessage: 'Unauthorized Wall'
-                                });
-                                return new Response('Not Found', {
-                                    status: 404,
-                                    headers: isDev
-                                        ? { 'X-Dev-Status-Message': 'Unauthorized Wall' }
-                                        : undefined
                                 });
                             }
                         }

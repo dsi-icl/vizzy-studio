@@ -13,7 +13,11 @@ import { signedFetch } from '~/lib/signedFetch';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import type { LayerWithWallComponentState } from '~/lib/types';
+import {
+    getLinePaths,
+    preserveLinePathsFromExisting,
+    type LayerWithWallComponentState
+} from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 
 const HYDRATE_FADE_MS = 1000;
@@ -306,10 +310,14 @@ function WallApp() {
                 }
                 setLayers((prev) => {
                     const existing = prev.find((l) => l.numericId === data.layer.numericId);
+                    const compatibleLayer = preserveLinePathsFromExisting(existing, data.layer);
                     const nextLayer =
-                        existing?.type === 'video' && data.layer.type === 'video'
-                            ? { ...data.layer, playback: existing.playback ?? data.layer.playback }
-                            : data.layer;
+                        existing?.type === 'video' && compatibleLayer.type === 'video'
+                            ? {
+                                  ...compatibleLayer,
+                                  playback: existing.playback ?? compatibleLayer.playback
+                              }
+                            : compatibleLayer;
                     return [...prev.filter((l) => l.numericId !== data.layer.numericId), nextLayer];
                 });
             } else if (data.type === 'delete_layer') {
@@ -336,7 +344,8 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const bounds = getLineBounds(layer.line);
+                              const segments = getLinePaths(layer);
+                              const bounds = getLineBounds(segments);
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -681,17 +690,14 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const bounds = getLineBounds(layer.line);
+                const segments = getLinePaths(layer);
+                const bounds = getLineBounds(segments);
                 if (!bounds) return null;
-                let svgPoints = [];
-                for (let i = 0; i < layer.line.length; i += 2)
-                    svgPoints.push(
-                        `${Math.round(layer.line[i] - bounds.cx + bounds.width / 2)},${Math.round(layer.line[i + 1] - bounds.cy + bounds.height / 2)}`
-                    );
                 return (
                     <div
                         key={layer.numericId}
                         {...commonProps}
+                        data-layer-id={layer.numericId}
                         className="origin-top-left"
                         style={{
                             ...commonProps.style,
@@ -705,16 +711,30 @@ function WallApp() {
                             className="overflow-visible"
                             xmlns="http://www.w3.org/2000/svg"
                         >
-                            <polyline
-                                points={svgPoints.join(' ')}
-                                fill="none"
-                                stroke={layer.strokeColor}
-                                strokeWidth={layer.strokeWidth}
-                                strokeDasharray={layer.strokeDash.join(' ')}
-                                strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
+                            {segments
+                                .filter((segment) => segment.length >= 4)
+                                .map((segment, segmentIndex) => {
+                                    const svgPoints = [];
+                                    for (let i = 0; i < segment.length; i += 2) {
+                                        svgPoints.push(
+                                            `${Math.round(segment[i] - bounds.cx + bounds.width / 2)},${Math.round(segment[i + 1] - bounds.cy + bounds.height / 2)}`
+                                        );
+                                    }
+                                    return (
+                                        <polyline
+                                            key={`line-segment-${segmentIndex}`}
+                                            data-line-path-index={segmentIndex}
+                                            points={svgPoints.join(' ')}
+                                            fill="none"
+                                            stroke={layer.strokeColor}
+                                            strokeWidth={layer.strokeWidth}
+                                            strokeDasharray={layer.strokeDash.join(' ')}
+                                            strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    );
+                                })}
                         </svg>
                     </div>
                 );
@@ -735,6 +755,8 @@ function WallApp() {
                                     y={0}
                                     width={layer.config.width}
                                     height={layer.config.height}
+                                    rx={layer.cornerRadius}
+                                    ry={layer.cornerRadius}
                                     fill={layer.fill}
                                     stroke={layer.strokeColor}
                                     strokeDasharray={layer.strokeDash.join(' ')}

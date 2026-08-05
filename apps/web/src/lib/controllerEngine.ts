@@ -1,7 +1,7 @@
 'use client';
 
 import { BusClient } from './busClient';
-import { GSMessageSchema, type GSMessage } from './types';
+import { GSMessageSchema, preserveLinePathsFromExisting, type GSMessage } from './types';
 
 type BindingStatus = {
     bound: boolean;
@@ -284,7 +284,7 @@ export class ControllerEngine {
             if (data.type === 'upsert_layer') {
                 const idx = layers.findIndex((layer) => layer.numericId === data.layer.numericId);
                 if (idx >= 0) {
-                    layers[idx] = data.layer;
+                    layers[idx] = preserveLinePathsFromExisting(layers[idx], data.layer);
                 } else {
                     layers.push(data.layer);
                 }

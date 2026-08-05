@@ -31,9 +31,11 @@ import {
     touchPing,
     unbindWall,
     unregisterPeer,
+    waitForPendingLayerPersistence,
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
+import { markScopeDirty } from '~/lib/scopeDirtyState';
 import { GSMessageSchema, makeScopeLabel, type GSMessage, type Layer } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import {
@@ -519,19 +521,41 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textRevision: number;
+    textStateHash: string;
+    textBindingVersion: string;
     fallbackLayer?: Extract<Layer, { type: 'text' }>;
 }) => {
     try {
-        const { projectId, commitId, slideId, layerId, textHtml, fallbackLayer } = payload;
+        const {
+            projectId,
+            commitId,
+            slideId,
+            layerId,
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion,
+            fallbackLayer
+        } = payload;
         const scopeId = internScope(projectId, commitId, slideId);
         const scope = getOrCreateScope(scopeId, projectId, commitId, slideId);
 
         const existing = scope.layers.get(layerId);
+        if (existing?.type === 'text' && (existing.textRevision ?? 0) > textRevision) {
+            return true;
+        }
+        const yjsProjection = {
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion
+        };
         const nextLayer =
             existing?.type === 'text'
-                ? { ...existing, textHtml }
+                ? { ...existing, ...yjsProjection }
                 : fallbackLayer
-                  ? { ...fallbackLayer, textHtml }
+                  ? { ...fallbackLayer, ...yjsProjection }
                   : null;
 
         if (!nextLayer || nextLayer.type !== 'text') {
@@ -542,7 +566,7 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
         }
 
         scope.layers.set(layerId, nextLayer);
-        scope.dirty = true;
+        markScopeDirty(scope);
         invalidateHydrateCache(scopeId);
         broadcastToScope(scopeId, {
             type: 'upsert_layer',
@@ -555,6 +579,8 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
         return false;
     }
 };
+
+process.__YJS_WAIT_FOR_LAYER_PERSISTENCE__ = waitForPendingLayerPersistence;
 
 // ── Background loops ────────────────────────────────────────────────────────
 

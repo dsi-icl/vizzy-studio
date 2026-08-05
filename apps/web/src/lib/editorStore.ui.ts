@@ -92,6 +92,29 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
             get().markDirty();
         },
 
+        setRectangleCornerRadius: (radius: number) => {
+            if (!Number.isFinite(radius)) return;
+            const cornerRadius = Math.max(0, radius);
+            let didUpdateLayer = false;
+            set((s) => {
+                const newState: Partial<EditorState> = { rectangleCornerRadius: cornerRadius };
+                if (s.selectedLayerIds.length === 1) {
+                    const numericId = parseInt(s.selectedLayerIds[0]);
+                    const layer = s.layers.get(numericId);
+                    if (layer?.type === 'shape' && layer.shape === 'rectangle') {
+                        const updatedLayer = { ...layer, cornerRadius };
+                        const newLayers = new Map(s.layers);
+                        newLayers.set(numericId, updatedLayer);
+                        newState.layers = newLayers;
+                        didUpdateLayer = true;
+                        helpers.sendLayerUpdate(updatedLayer, 'editor:set_rectangle_corner_radius');
+                    }
+                }
+                return newState;
+            });
+            if (didUpdateLayer) get().markDirty();
+        },
+
         setInsertionCenter: (x: number, y: number) =>
             set((s) => {
                 if (s.insertionCenter.x === x && s.insertionCenter.y === y) return s;
@@ -131,7 +154,16 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
         toggleDrawing: () =>
             set((s) => ({
                 isDrawing: !s.isDrawing,
+                isErasing: false,
                 selectedLayerIds: !s.isDrawing ? [] : s.selectedLayerIds
+            })),
+
+        setEraserWidth: (eraserWidth: number) => set({ eraserWidth }),
+
+        setErasing: (isErasing: boolean) =>
+            set((s) => ({
+                isErasing,
+                isDrawing: isErasing ? false : s.isDrawing
             })),
 
         toggleSnapping: () => set((s) => ({ isSnapping: !s.isSnapping })),

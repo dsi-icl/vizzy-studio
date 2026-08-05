@@ -15,6 +15,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { ControllerToolbar } from '~/components/ControllerToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
@@ -1001,6 +1002,9 @@ function Controller() {
                                                                     offsetY={
                                                                         layer.config.height / 2
                                                                     }
+                                                                    cornerRadius={
+                                                                        layer.cornerRadius
+                                                                    }
                                                                     dash={layer.strokeDash}
                                                                 />
                                                             );
@@ -1022,17 +1026,9 @@ function Controller() {
                                                     }
                                                     if (layer.type === 'line') {
                                                         return (
-                                                            <Line
+                                                            <KonvaLineSegments
                                                                 key={`lin_${layer.numericId}`}
-                                                                points={layer.line}
-                                                                stroke={layer.strokeColor}
-                                                                strokeWidth={layer.strokeWidth}
-                                                                dash={layer.strokeDash}
-                                                                dashEnabled={true}
-                                                                tension={0.4}
-                                                                lineCap="round"
-                                                                lineJoin="round"
-                                                                listening={false}
+                                                                layer={layer}
                                                             />
                                                         );
                                                     }

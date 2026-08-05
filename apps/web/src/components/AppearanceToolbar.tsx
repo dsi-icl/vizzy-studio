@@ -3,10 +3,19 @@ import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '~/lib/editorStore';
 
 import { ColorPickerPopover } from './ColourPicker';
+import { EraserTool } from './EraserTool';
+import { RectangleCornerRadiusTool } from './RectangleCornerRadiusTool';
 import { StrokeTool } from './StrokeTool';
 
-export function AppearanceToolbar() {
+export function AppearanceToolbar({
+    showRectangleCornerRadius
+}: {
+    showRectangleCornerRadius: boolean;
+}) {
     const {
+        isErasing,
+        eraserWidth,
+        setEraserWidth,
         shapeFill,
         setShapeFill,
         strokeColor,
@@ -14,9 +23,14 @@ export function AppearanceToolbar() {
         strokeWidth,
         setStrokeWidth,
         strokeDash,
-        setStrokeDash
+        setStrokeDash,
+        rectangleCornerRadius,
+        setRectangleCornerRadius
     } = useEditorStore(
         useShallow((s) => ({
+            isErasing: s.isErasing,
+            eraserWidth: s.eraserWidth,
+            setEraserWidth: s.setEraserWidth,
             shapeFill: s.shapeFill,
             setShapeFill: s.setShapeFill,
             strokeColor: s.strokeColor,
@@ -24,9 +38,19 @@ export function AppearanceToolbar() {
             strokeWidth: s.strokeWidth,
             setStrokeWidth: s.setStrokeWidth,
             strokeDash: s.strokeDash,
-            setStrokeDash: s.setStrokeDash
+            setStrokeDash: s.setStrokeDash,
+            rectangleCornerRadius: s.rectangleCornerRadius,
+            setRectangleCornerRadius: s.setRectangleCornerRadius
         }))
     );
+
+    if (isErasing) {
+        return (
+            <div className="flex items-center gap-2">
+                <EraserTool eraserWidth={eraserWidth} setEraserWidth={setEraserWidth} />
+            </div>
+        );
+    }
 
     return (
         <div className="flex items-center gap-2">
@@ -39,6 +63,12 @@ export function AppearanceToolbar() {
                 strokeDash={strokeDash}
                 setStrokeDash={setStrokeDash}
             />
+            {showRectangleCornerRadius ? (
+                <RectangleCornerRadiusTool
+                    cornerRadius={rectangleCornerRadius}
+                    setCornerRadius={setRectangleCornerRadius}
+                />
+            ) : null}
         </div>
     );
 }

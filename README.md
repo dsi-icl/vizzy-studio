@@ -174,11 +174,19 @@ For full flow maps (bind/unbind, hydrate, scope internals, YJS bridge path), see
 - Format: `bun run format`
 - Quality checks: `bun run check`
 - Build web (generates legal notice artifacts): `bun run --filter=@repo/web build`
+- Unit tests: `bun run test:unit`
+- Full test harness (unit + containerized integration + Playwright): `bun run test:all`
+- Browser smoke tests against a prepared stack: `bun run test:e2e:smoke`
+- Visual regression tests against a prepared stack: `bun run test:visual`
+- Update reviewed visual baselines: `bun run test:e2e:update`
 - Docker test stack up (build + detached): `bun run docker:test:up`
 - Docker test stack status: `bun run docker:test:ps`
 - Docker test stack logs (follow): `bun run docker:test:logs`
 - Docker test stack down: `bun run docker:test:down`
 - Docker test stack reset (remove volumes): `bun run docker:test:reset`
+
+See [Browser and Integration Test Harness](./docs/testing/playwright-integration-strategy.md)
+for coverage, determinism rules, product-intent triage, and planned increments.
 
 ### Container Source Maps (Debug Builds)
 

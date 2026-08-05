@@ -41,7 +41,7 @@ import { Separator } from '@repo/ui/components/separator';
 import { TipButton } from '@repo/ui/components/tip-button';
 import { TooltipProvider } from '@repo/ui/components/tooltip';
 import { Link } from '@tanstack/react-router';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { AppearanceToolbar } from '~/components/AppearanceToolbar';
@@ -80,10 +80,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
 
     // Tool toggle state
-    const { showGrid, isDrawing, isSnapping } = useEditorStore(
+    const { showGrid, isDrawing, isErasing, isSnapping } = useEditorStore(
         useShallow((s) => ({
             showGrid: s.showGrid,
             isDrawing: s.isDrawing,
+            isErasing: s.isErasing,
             isSnapping: s.isSnapping
         }))
     );
@@ -104,14 +105,16 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     });
 
     // Actions — stable references, never trigger re-renders
-    const { toggleSnapping, toggleDrawing, toggleGrid, startTextEditing } = useEditorStore(
-        useShallow((s) => ({
-            toggleSnapping: s.toggleSnapping,
-            toggleDrawing: s.toggleDrawing,
-            toggleGrid: s.toggleGrid,
-            startTextEditing: s.startTextEditing
-        }))
-    );
+    const { toggleSnapping, toggleDrawing, setErasing, toggleGrid, startTextEditing } =
+        useEditorStore(
+            useShallow((s) => ({
+                toggleSnapping: s.toggleSnapping,
+                toggleDrawing: s.toggleDrawing,
+                setErasing: s.setErasing,
+                toggleGrid: s.toggleGrid,
+                startTextEditing: s.startTextEditing
+            }))
+        );
     const {
         addTextLayer,
         addMapLayer,
@@ -153,6 +156,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     const isShape = activeLayer?.type === 'shape';
     const isLine = activeLayer?.type === 'line';
     const isWeb = activeLayer?.type === 'web';
+    const canErase = selectedLayerIds.length === 1 && isLine;
+
+    useEffect(() => {
+        if (isErasing && !canErase) setErasing(false);
+    }, [canErase, isErasing, setErasing]);
 
     // Save popover state
     const [commitMessage, setCommitMessage] = useState('');
@@ -248,6 +256,16 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     >
                         <PencilSimpleIcon />
                     </TipButton>
+                    <TipButton
+                        tip={canErase ? 'Eraser' : 'Select a line to erase'}
+                        aria-label="Eraser"
+                        onClick={() => setErasing(!isErasing)}
+                        variant={isErasing ? 'outline' : 'ghost'}
+                        disabled={!canErase}
+                        className="disabled:pointer-events-auto"
+                    >
+                        <EraserIcon />
+                    </TipButton>
                 </div>
 
                 <div className="w-full grow text-center text-xs text-muted-foreground">
@@ -270,6 +288,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     <Popover open={savePopoverOpen} onOpenChange={setSavePopoverOpen}>
                         <PopoverTrigger nativeButton={false} render={<div />}>
                             <TipButton
+                                aria-label="Save project"
                                 tip={
                                     saveStatus === 'dirty'
                                         ? 'Unsaved changes — click to save'
@@ -429,6 +448,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <TipButton
                             tip="Edit text"
+                            aria-label="Edit text"
                             onClick={() => startTextEditing(activeLayer.numericId)}
                         >
                             <PencilSimpleIcon />
@@ -437,10 +457,14 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                 )}
 
                 {/* ── Line / Shape / Drawing ── */}
-                {(isDrawing || isLine || isShape) && (
+                {(isDrawing || isErasing || isLine || isShape) && (
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
-                        <AppearanceToolbar />
+                        <AppearanceToolbar
+                            showRectangleCornerRadius={
+                                activeLayer?.type === 'shape' && activeLayer.shape === 'rectangle'
+                            }
+                        />
                     </>
                 )}
 
