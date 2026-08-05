@@ -43,6 +43,10 @@ const LayerPlaybackStateSchema = z.object({
 
 const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
 
+const MediaLayerBaseSchema = LayerBaseSchema.extend({
+    name: z.string().optional()
+});
+
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
 const OptionalSizesSchema = z
@@ -65,14 +69,14 @@ const LayerSchema = z.discriminatedUnion('type', [
             blurhash: z.string().optional(),
             playback: LayerPlaybackStateSchema
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z
         .object({
             type: z.literal('image'),
             url: z.string(),
             blurhash: z.string().optional()
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
     z
         .object({

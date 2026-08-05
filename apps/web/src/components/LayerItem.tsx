@@ -69,9 +69,9 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
             case 'text':
                 return layer.textHtml.replace(/<[^>]*>/g, '').slice(0, 40) || 'Text';
             case 'image':
-                return 'Image';
+                return layer.name?.trim() || 'Image';
             case 'video':
-                return 'Video';
+                return layer.name?.trim() || 'Video';
             case 'graph':
                 return 'Graph';
             case 'map':
