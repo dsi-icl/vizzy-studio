@@ -13,7 +13,8 @@ import { logAuditDenied } from '~/server/audit';
 import { canEditProject } from '~/server/projectAuthz';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
 
-import { applyHtmlToDoc, yDocToProjection } from './lexical';
+import { applyHtmlToDoc, applyLexicalStateToDoc, yDocToProjection } from './lexical';
+import { chooseSeedSource, type SeedSource } from './seedSource';
 import {
     messageSync,
     messageAwareness,
@@ -57,6 +58,37 @@ function debugLog(...args: unknown[]) {
 
 function sha1(input: string): string {
     return createHash('sha1').update(input).digest('hex');
+}
+
+/**
+ * Seed a fresh document from the most faithful source the layer offers.
+ *
+ * The persisted Yjs snapshot is preferred by the caller — it is the live CRDT
+ * state. Failing that, the serialized Lexical state round-trips losslessly,
+ * whereas the HTML projection cannot represent everything Lexical can. A state
+ * written by a newer deploy is deliberately ignored rather than guessed at.
+ */
+export async function seedDocFromLayer(
+    doc: SharedDoc,
+    layer: TextLayer,
+    docName: string
+): Promise<SeedSource> {
+    const source = chooseSeedSource({
+        hasTextState: Boolean(layer.textState),
+        textFormat: layer.textFormat,
+        supportedFormat: TEXT_FORMAT_VERSION
+    });
+
+    if (source === 'state' && layer.textState) {
+        try {
+            await applyLexicalStateToDoc(doc, layer.textState, docName);
+            return 'state';
+        } catch (error) {
+            console.warn(`[YJS] Unusable textState for ${docName}, falling back to HTML:`, error);
+        }
+    }
+    await applyHtmlToDoc(doc, layer.textHtml, docName);
+    return 'html';
 }
 
 export function getYjsPeerState(peer: Peer): YjsPeerState | null {
@@ -390,12 +422,12 @@ export class YCrossws {
 
             const hydrated = await this.persistence.bindState(docName, doc);
             if (!hydrated) {
-                await applyHtmlToDoc(doc, layer.textHtml, docName);
-                // Seeding from stored HTML is a read, not an edit. Persist the
-                // snapshot so later opens use the faithful CRDT state, but leave
-                // the layer alone — the importer narrows markup it cannot model
-                // (a heading becomes a paragraph), and a read must never write
-                // that narrowing back. The first real edit upgrades the record.
+                await seedDocFromLayer(doc, layer, docName);
+                // Seeding is a read, not an edit. Persist the snapshot so later
+                // opens use the faithful CRDT state, but leave the layer alone —
+                // a seed can narrow content it cannot model (a heading becomes a
+                // paragraph), and a read must never write that narrowing back.
+                // The first real edit upgrades the record.
                 doc.lastHtmlHash = sha1(layer.textHtml);
                 doc.dirty = false;
                 await this.persistence.writeState(docName, doc);

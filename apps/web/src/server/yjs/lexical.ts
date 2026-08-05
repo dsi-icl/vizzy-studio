@@ -88,8 +88,11 @@ async function delay(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Convert an HTML string to a YJS binary state update. */
-export async function htmlToYUpdate(html: string, docName: string): Promise<Uint8Array> {
+/** Build a YJS state update from whatever `apply` writes into a fresh editor. */
+async function editorToYUpdate(
+    docName: string,
+    apply: (editor: ReturnType<typeof createHeadlessEditor>) => void
+): Promise<Uint8Array> {
     const doc = new Y.Doc();
     const docMap = new Map<string, Y.Doc>([[docName, doc]]);
     const provider = createNoopProvider();
@@ -111,20 +114,40 @@ export async function htmlToYUpdate(html: string, docName: string): Promise<Uint
         }
     );
 
-    withLexicalDomGlobals(() => {
-        const parser = new lexicalWindow.DOMParser();
-        const dom = parser.parseFromString(html || '<p></p>', 'text/html');
-        editor.update(() => {
-            const root = $getRoot();
-            root.clear();
-            $appendHtmlToRoot(root, dom.body as never);
+    try {
+        apply(editor);
+        await delay(0);
+    } finally {
+        unobserve();
+        binding.root.destroy(binding as any);
+    }
+    return Y.encodeStateAsUpdate(doc);
+}
+
+/** Convert an HTML string to a YJS binary state update. */
+export async function htmlToYUpdate(html: string, docName: string): Promise<Uint8Array> {
+    return editorToYUpdate(docName, (editor) => {
+        withLexicalDomGlobals(() => {
+            const parser = new lexicalWindow.DOMParser();
+            const dom = parser.parseFromString(html || '<p></p>', 'text/html');
+            editor.update(() => {
+                const root = $getRoot();
+                root.clear();
+                $appendHtmlToRoot(root, dom.body as never);
+            });
         });
     });
+}
 
-    await delay(0);
-    unobserve();
-    binding.root.destroy(binding as any);
-    return Y.encodeStateAsUpdate(doc);
+/**
+ * Convert a serialized Lexical editor state to a YJS binary state update.
+ * Throws if the payload is malformed or references unknown nodes — callers are
+ * expected to fall back to the HTML projection.
+ */
+export async function lexicalStateToYUpdate(state: string, docName: string): Promise<Uint8Array> {
+    return editorToYUpdate(docName, (editor) => {
+        editor.setEditorState(editor.parseEditorState(state));
+    });
 }
 
 export type TextProjection = {
@@ -194,5 +217,15 @@ export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
 /** Apply an HTML string directly to an existing YJS document. */
 export async function applyHtmlToDoc(doc: Y.Doc, html: string, docName: string): Promise<void> {
     const update = await htmlToYUpdate(html, docName);
+    Y.applyUpdate(doc, update);
+}
+
+/** Apply a serialized Lexical editor state directly to an existing YJS document. */
+export async function applyLexicalStateToDoc(
+    doc: Y.Doc,
+    state: string,
+    docName: string
+): Promise<void> {
+    const update = await lexicalStateToYUpdate(state, docName);
     Y.applyUpdate(doc, update);
 }
