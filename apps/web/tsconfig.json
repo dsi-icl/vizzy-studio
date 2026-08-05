@@ -3,6 +3,8 @@
     "compilerOptions": {
         "moduleResolution": "bundler",
         "module": "esnext",
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
         "paths": {
             "~/*": ["./src/*"],
 
