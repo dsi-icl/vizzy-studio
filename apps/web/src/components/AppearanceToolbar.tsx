@@ -3,9 +3,14 @@ import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '~/lib/editorStore';
 
 import { ColorPickerPopover } from './ColourPicker';
+import { RectangleCornerRadiusTool } from './RectangleCornerRadiusTool';
 import { StrokeTool } from './StrokeTool';
 
-export function AppearanceToolbar() {
+export function AppearanceToolbar({
+    showRectangleCornerRadius
+}: {
+    showRectangleCornerRadius: boolean;
+}) {
     const {
         shapeFill,
         setShapeFill,
@@ -14,7 +19,9 @@ export function AppearanceToolbar() {
         strokeWidth,
         setStrokeWidth,
         strokeDash,
-        setStrokeDash
+        setStrokeDash,
+        rectangleCornerRadius,
+        setRectangleCornerRadius
     } = useEditorStore(
         useShallow((s) => ({
             shapeFill: s.shapeFill,
@@ -24,7 +31,9 @@ export function AppearanceToolbar() {
             strokeWidth: s.strokeWidth,
             setStrokeWidth: s.setStrokeWidth,
             strokeDash: s.strokeDash,
-            setStrokeDash: s.setStrokeDash
+            setStrokeDash: s.setStrokeDash,
+            rectangleCornerRadius: s.rectangleCornerRadius,
+            setRectangleCornerRadius: s.setRectangleCornerRadius
         }))
     );
 
@@ -39,6 +48,12 @@ export function AppearanceToolbar() {
                 strokeDash={strokeDash}
                 setStrokeDash={setStrokeDash}
             />
+            {showRectangleCornerRadius ? (
+                <RectangleCornerRadiusTool
+                    cornerRadius={rectangleCornerRadius}
+                    setCornerRadius={setRectangleCornerRadius}
+                />
+            ) : null}
         </div>
     );
 }

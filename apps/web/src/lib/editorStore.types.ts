@@ -31,6 +31,7 @@ export interface EditorState {
     strokeDash: number[];
     shapeFill: string;
     shapeStroke: string;
+    rectangleCornerRadius: number;
     editingTextLayerId: number | null;
 
     // ── Wall binding ──
@@ -86,6 +87,7 @@ export interface EditorState {
     setStrokeWidth: (width: number) => void;
     setStrokeDash: (dash: number[]) => void;
     setShapeFill: (fill: string) => void;
+    setRectangleCornerRadius: (radius: number) => void;
     setInsertionCenter: (x: number, y: number) => void;
     setInsertionViewport: (width: number, height: number) => void;
     markDirty: () => void;

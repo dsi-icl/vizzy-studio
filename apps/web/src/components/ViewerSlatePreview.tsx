@@ -145,6 +145,7 @@ export function ViewerSlatePreview({
                                             height={shape.config.height}
                                             offsetX={shape.config.width / 2}
                                             offsetY={shape.config.height / 2}
+                                            cornerRadius={shape.cornerRadius}
                                             rotation={shape.config.rotation}
                                             fill="transparent"
                                             stroke={shape.strokeColor}

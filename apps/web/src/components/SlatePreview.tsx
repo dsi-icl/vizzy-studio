@@ -140,6 +140,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                                             height={shape.config.height}
                                             offsetX={shape.config.width / 2}
                                             offsetY={shape.config.height / 2}
+                                            cornerRadius={shape.cornerRadius}
                                             rotation={shape.config.rotation}
                                             fill={shape.fill}
                                             stroke={shape.strokeColor}
