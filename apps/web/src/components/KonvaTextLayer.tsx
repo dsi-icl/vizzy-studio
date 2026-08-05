@@ -37,8 +37,10 @@ export function KonvaTextLayer({
         if (renderTimer.current) clearTimeout(renderTimer.current);
         renderTimer.current = setTimeout(() => {
             textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
-                .then((rendered) => {
-                    setImg(rendered);
+                .then(async (rendered) => {
+                    const image = await rendered;
+                    if (!image) return;
+                    setImg(image);
                     imageRef.current?.getLayer()?.batchDraw();
                 })
                 .catch(() => setImg(null));
