@@ -429,6 +429,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <TipButton
                             tip="Edit text"
+                            aria-label="Edit text"
                             onClick={() => startTextEditing(activeLayer.numericId)}
                         >
                             <PencilSimpleIcon />
