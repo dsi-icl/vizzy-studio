@@ -87,12 +87,20 @@ async function createActor(testHelpers, input) {
         })
     );
     const login = await testHelpers.login({ userId: user.id });
+    // The seed process runs in test mode so Better Auth exposes its helpers, while
+    // the harness server intentionally runs in production mode. Mirror the
+    // production cookie name/attributes without changing the signed token.
+    const cookies = login.cookies.map((cookie) => ({
+        ...cookie,
+        name: cookie.name.startsWith('__Secure-') ? cookie.name : `__Secure-${cookie.name}`,
+        secure: true
+    }));
     return {
         id: user.id,
         email: user.email,
         role: user.role ?? input.role,
-        cookieHeader: toCookieHeader(login.cookies),
-        cookies: login.cookies
+        cookieHeader: toCookieHeader(cookies),
+        cookies
     };
 }
 
@@ -125,6 +133,17 @@ function layerConfig(cx, cy, width, height, zIndex, extra = {}) {
         visible: true,
         ...extra
     };
+}
+
+function createToolbarTextLayers() {
+    return [
+        {
+            numericId: 1,
+            type: 'text',
+            config: layerConfig(960, 540, 960, 240, 1),
+            textHtml: '<p>Harness focus text</p>'
+        }
+    ];
 }
 
 function createRenderingLayers() {
@@ -695,7 +714,28 @@ async function seed() {
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness private head',
-            content: { slides: [{ id: 'slide-private-1', order: 0, name: 'Slide 1', layers: [] }] },
+            content: {
+                slides: [
+                    {
+                        id: 'slide-private-1',
+                        order: 0,
+                        name: 'Slide 1',
+                        layers: createToolbarTextLayers()
+                    },
+                    {
+                        id: 'slide-toolbar-primary',
+                        order: 1,
+                        name: 'Toolbar inputs primary',
+                        layers: createToolbarTextLayers()
+                    },
+                    {
+                        id: 'slide-toolbar-retry',
+                        order: 2,
+                        name: 'Toolbar inputs retry',
+                        layers: createToolbarTextLayers()
+                    }
+                ]
+            },
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
@@ -1205,6 +1245,9 @@ async function seed() {
             privateProjectId: privateProjectId.toHexString(),
             privateCommitId: privateCommitId.toHexString(),
             privateSlideId: 'slide-private-1',
+            toolbarProjectId: privateProjectId.toHexString(),
+            toolbarCommitId: privateCommitId.toHexString(),
+            toolbarSlideIds: ['slide-toolbar-primary', 'slide-toolbar-retry'],
             publicProjectId: publicProjectId.toHexString(),
             publicCommitId: publicCommitId.toHexString(),
             publicSlideId: 'slide-public-1',
