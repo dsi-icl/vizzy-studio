@@ -34,6 +34,7 @@ import {
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
+import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, makeScopeLabel, type GSMessage, type Layer } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import {
@@ -556,7 +557,7 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
         }
 
         scope.layers.set(layerId, nextLayer);
-        scope.dirty = true;
+        markScopeDirty(scope);
         invalidateHydrateCache(scopeId);
         broadcastToScope(scopeId, {
             type: 'upsert_layer',

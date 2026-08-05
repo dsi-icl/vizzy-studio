@@ -1,5 +1,6 @@
 import type { CommitDocument } from '@repo/db/documents';
 
+import { captureScopeRevision, KeyedSerialQueue, markScopePersisted } from '~/lib/scopePersistence';
 import type { Layer, ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
@@ -226,6 +227,9 @@ export async function buildSlidesSnapshot(
     return updatedSlides;
 }
 
+/** Serializes saves per scope so concurrent writes cannot interleave. */
+const scopeSaveQueue = new KeyedSerialQueue<ScopeId>();
+
 export async function saveScope(
     scopeId: ScopeId,
     message: string,
@@ -234,6 +238,22 @@ export async function saveScope(
 ): Promise<{ success: boolean; commitId?: string; error?: string }> {
     const scope = scopedState.get(scopeId);
     if (!scope) return { success: false, error: 'Scope not found' };
+
+    return scopeSaveQueue.run(scopeId, () =>
+        writeScope(scopeId, scope, message, isAutoSave, authorEmail)
+    );
+}
+
+async function writeScope(
+    scopeId: ScopeId,
+    scope: ScopeState,
+    message: string,
+    isAutoSave: boolean,
+    authorEmail?: string | null
+): Promise<{ success: boolean; commitId?: string; error?: string }> {
+    // Captured before the snapshot is read, so a mutation arriving afterwards is
+    // never mistaken for one this write included.
+    const persistedRevision = captureScopeRevision(scope);
 
     try {
         // Resolve the mutable HEAD commit ID — prefer scope.commitId, fall back to project lookup
@@ -255,7 +275,7 @@ export async function saveScope(
                 content: { slides: updatedSlides as CommitDocument['content']['slides'] }
             });
 
-            scope.dirty = false;
+            markScopePersisted(scope, persistedRevision);
             return { success: true };
         }
 
@@ -278,12 +298,32 @@ export async function saveScope(
         // Pointer swap: HEAD now points at the snapshot
         await dbCol.commits.setParent(headId, snapshot.id);
 
-        scope.dirty = false;
+        markScopePersisted(scope, persistedRevision);
         return { success: true, commitId: snapshot.id };
     } catch (err) {
         console.error(`[Bus] saveScope failed for ${scopeLabel(scopeId)}:`, err);
         return { success: false, error: String(err) };
     }
+}
+
+/**
+ * Persist a scope right away rather than waiting for the autosave tick.
+ *
+ * A newly created layer lives only in memory until autosave runs, up to 30s
+ * later. Anything that reads the layer straight from the commit — the Yjs text
+ * session does — fails for that whole window. Creating a layer therefore has to
+ * make it durable immediately.
+ *
+ * Fire-and-forget: the caller is a message handler and must not block on I/O.
+ */
+export function persistScopeNow(scopeId: ScopeId, reason: string): void {
+    void saveScope(scopeId, reason, true).then((result) => {
+        if (!result.success) {
+            console.error(
+                `[Bus] Immediate persist failed for ${scopeLabel(scopeId)}: ${result.error}`
+            );
+        }
+    });
 }
 
 /**

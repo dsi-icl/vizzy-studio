@@ -68,10 +68,12 @@ describe('KeyedSerialQueue', () => {
 
     test('continues the queue after a task rejects', async () => {
         const queue = new KeyedSerialQueue<string>();
-        const failing = queue.run('scope', async () => {
-            throw new Error('boom');
-        });
-        await expect(failing).rejects.toThrow('boom');
+        const failing = queue
+            .run('scope', async () => {
+                throw new Error('boom');
+            })
+            .catch((error: Error) => error.message);
+        expect(await failing).toBe('boom');
 
         const after = await queue.run('scope', async () => 'ok');
         expect(after).toBe('ok');
@@ -79,12 +81,14 @@ describe('KeyedSerialQueue', () => {
 
     test('propagates a rejection to its own caller only', async () => {
         const queue = new KeyedSerialQueue<string>();
-        const bad = queue.run('scope', async () => {
-            throw new Error('first');
-        });
+        const bad = queue
+            .run('scope', async () => {
+                throw new Error('first');
+            })
+            .catch((error: Error) => error.message);
         const good = queue.run('scope', async () => 'second');
 
-        await expect(bad).rejects.toThrow('first');
+        expect(await bad).toBe('first');
         expect(await good).toBe('second');
     });
 

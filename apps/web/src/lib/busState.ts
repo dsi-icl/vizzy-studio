@@ -59,6 +59,7 @@ export {
     seedScopeFromDb,
     buildSlidesSnapshot,
     saveScope,
+    persistScopeNow,
     persistSlideMetadata
 } from './busState.persistence';
 

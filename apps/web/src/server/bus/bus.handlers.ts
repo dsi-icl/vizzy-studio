@@ -27,6 +27,7 @@ import {
     notifyControllers,
     notifyControllersByCommit,
     peers,
+    persistScopeNow,
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
@@ -46,6 +47,7 @@ import {
     type PeerEntry
 } from '~/lib/busState';
 import { validatePortalToken } from '~/lib/portalTokens';
+import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -157,7 +159,7 @@ handlers.set('clear_stage', ({ entry, scopeId }) => {
             clearPlaybackCommand(scopeId, numericId);
         }
         scope.layers.clear();
-        scope.dirty = true;
+        markScopeDirty(scope);
     }
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -202,9 +204,15 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                         relayPayload = JSON.stringify({ ...data, layer });
                     }
                 }
+                const isNewLayer = !scope.layers.has(layer.numericId);
                 scope.layers.set(layer.numericId, layer);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 invalidateHydrateCache(scopeId);
+                // A new layer exists only in memory until the 30s autosave tick.
+                // Anything reading it from the commit — the Yjs text session
+                // does — would fail for that whole window, so make it durable
+                // now. Updates to an existing layer can wait for the tick.
+                if (isNewLayer) persistScopeNow(scopeId, 'Layer added');
             }
         }
         // recomputeLayerNodes(layer.numericId, layer, scopeId);
@@ -236,7 +244,7 @@ handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
             deletedPersistentLayer = scope.layers.delete(data.numericId);
             if (deletedPersistentLayer) {
                 clearPlaybackCommand(scopeId, data.numericId);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 deleteYDocForLayer(scopeId, data.numericId);
             }
             deletedControllerTransient = deleteControllerTransientLayerForScope(
@@ -272,7 +280,7 @@ handlers.set('seed_scope', ({ entry, data, scopeId }) => {
             scope.layers.set(layer.numericId, layer);
         }
     }
-    scope.dirty = true;
+    markScopeDirty(scope);
 
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -320,7 +328,7 @@ handlers.set('reboot', ({ scopeId, rawText }) => {
 handlers.set('stage_dirty', ({ scopeId }) => {
     if (scopeId === null) return;
     const scope = scopedState.get(scopeId);
-    if (scope) scope.dirty = true;
+    if (scope) markScopeDirty(scope);
 });
 
 handlers.set('leave_scope', ({ entry }) => {

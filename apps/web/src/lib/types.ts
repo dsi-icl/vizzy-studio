@@ -470,6 +470,11 @@ export interface ScopeState {
     commitId: string;
     slideId: string;
     dirty: boolean;
+    /**
+     * Incremented on every mutation. A persist records the revision it covers so
+     * an edit landing mid-write is not mistakenly marked as saved.
+     */
+    mutationRevision?: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
     /** Optional custom render URL from the project configuration. */
