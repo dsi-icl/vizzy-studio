@@ -438,7 +438,7 @@ export type LayerWithWallEngineState = LayerWithWallComponentState & {
     animDuration: number;
 };
 
-export type LayerWithEditorState = Layer & { progress?: number; isUploadding?: boolean };
+export type LayerWithEditorState = Layer & { progress?: number; isUploading?: boolean };
 
 // ── Scope utilities ──────────────────────────────────────────────────────────
 

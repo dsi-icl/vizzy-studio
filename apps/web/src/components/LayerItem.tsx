@@ -113,8 +113,9 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
             </div>
             <div className="flex items-center gap-1">
                 <TipButton
-                    tip={'Copy layer (Ctrl+C)'}
+                    tip={layer.isUploading ? 'Wait for upload to finish' : 'Copy layer (Ctrl+C)'}
                     variant="ghost"
+                    disabled={layer.isUploading}
                     onClick={(event) => {
                         event.stopPropagation();
                         copyLayer(layer.numericId);

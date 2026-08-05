@@ -6,7 +6,7 @@ export function snapshotCopyableLayers(
     layers: Iterable<LayerWithEditorState>
 ): LayerWithEditorState[] {
     return Array.from(layers)
-        .filter((layer) => layer.type !== 'background')
+        .filter((layer) => layer.type !== 'background' && !layer.isUploading)
         .sort((a, b) => a.config.zIndex - b.config.zIndex)
         .map((layer) => structuredClone(layer));
 }
@@ -33,6 +33,7 @@ export function createPastedLayers(
         };
 
         delete pasted.progress;
+        delete pasted.isUploading;
 
         if (pasted.type === 'line') {
             pasted.line = pasted.line.map((coordinate) => coordinate + offset);

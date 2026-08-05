@@ -40,9 +40,11 @@ export function KonvaVideo({
             imageRef.current?.getLayer()?.batchDraw();
         };
         i.src = layer.url;
-    }, [layer.url, layer.numericId]);
+    }, [layer.isUploading, layer.url, layer.numericId]);
 
     useEffect(() => {
+        if (layer.isUploading) return;
+
         const vid = document.createElement('video');
         if (!layer.url.startsWith('blob:') && !layer.url.startsWith('data:')) {
             vid.crossOrigin = 'anonymous';
@@ -66,7 +68,7 @@ export function KonvaVideo({
             vid.removeAttribute('src');
             vid.load();
         };
-    }, [layer.url, layer.numericId]);
+    }, [layer.isUploading, layer.url, layer.numericId]);
 
     // Seamlessly toggle loop without unmounting the video
     useEffect(() => {
@@ -169,7 +171,7 @@ export function KonvaVideo({
                 width={layer.config.width}
                 height={layer.config.height}
             />
-            {
+            {layer.isUploading && (
                 <>
                     <Rect
                         width={layer.config.width}
@@ -202,7 +204,7 @@ export function KonvaVideo({
                         fontFamily="Arial"
                     />
                 </>
-            }
+            )}
         </Group>
     );
 }
