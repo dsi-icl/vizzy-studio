@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM oven/bun:1.3.13 AS build
+FROM oven/bun:1.3.14 AS build
 ARG BUILD_SOURCEMAPS=false
 ARG VITE_GIT_SHA=
 ARG APP_COMMIT_SHA=
@@ -105,6 +105,11 @@ RUN set -eux; \
     cd /tmp/pw && bun add "playwright@${PW_VERSION}" && \
     cp -r /tmp/pw/node_modules/. /app/node_modules/ && \
     rm -rf /tmp/pw
+
+# Nitro bundles sharp's JavaScript into the server output but cannot inline its native addon,
+# which sharp loads at runtime through a bare "@img/sharp-<platform>" specifier. Ship the
+# platform binaries so the resolver finds them in /app/node_modules (same idea as Playwright).
+COPY --from=build --chown=app:app /workspace/node_modules/@img /app/node_modules/@img
 
 # Source maps are not needed in production runtime image.
 RUN if [ "${KEEP_SOURCE_MAPS}" = "true" ] || [ "${KEEP_SOURCE_MAPS}" = "1" ]; then \

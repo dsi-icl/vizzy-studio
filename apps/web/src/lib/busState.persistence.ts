@@ -1,7 +1,15 @@
 import type { CommitDocument } from '@repo/db/documents';
+import * as Y from 'yjs';
 
 import type { Layer, ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
+import { yDocToHtml } from '~/server/yjs/lexical';
+import {
+    binaryToUint8Array,
+    hashBytes,
+    hashText,
+    LEXICAL_YJS_BINDING_VERSION
+} from '~/server/yjs/yjs.doc';
 
 import {
     clearActiveVideosForScope,
@@ -20,10 +28,54 @@ import {
     wallPeersByScope,
     type ScopeId
 } from './busState.state';
+import { KeyedSerialTaskQueue } from './keyedSerialTaskQueue';
 import { revokePortalTokensForScope } from './portalTokens';
+import { captureScopeMutation, markScopePersisted } from './scopeDirtyState';
 
 const SCOPE_CLEANUP_GRACE_MS = 5 * 60 * 1000; // 5 minutes
 const PING_TIMEOUT_MS = 60_000; // Force-close peers with no ping for 60s
+
+type LayerPersistenceScope = {
+    projectId: string;
+    commitId: string;
+    slideId: string;
+    layerId: number;
+};
+
+type PersistenceRuntime = {
+    commitQueue: KeyedSerialTaskQueue<string>;
+    pendingLayers: Map<string, Promise<boolean>>;
+};
+
+type PersistenceProcess = typeof process & {
+    __BUS_PERSISTENCE_RUNTIME__?: Partial<PersistenceRuntime> & {
+        /** Compatibility with an in-flight development HMR generation. */
+        scopeQueue?: KeyedSerialTaskQueue<unknown>;
+    };
+};
+
+const persistenceProcess = process as PersistenceProcess;
+const previousPersistenceRuntime = persistenceProcess.__BUS_PERSISTENCE_RUNTIME__;
+const persistenceRuntime: PersistenceRuntime = {
+    commitQueue:
+        previousPersistenceRuntime?.commitQueue ??
+        (previousPersistenceRuntime?.scopeQueue as KeyedSerialTaskQueue<string> | undefined) ??
+        new KeyedSerialTaskQueue<string>(),
+    pendingLayers: previousPersistenceRuntime?.pendingLayers ?? new Map<string, Promise<boolean>>()
+};
+persistenceProcess.__BUS_PERSISTENCE_RUNTIME__ = persistenceRuntime;
+
+function layerPersistenceKey(scope: LayerPersistenceScope): string {
+    return JSON.stringify([scope.projectId, scope.commitId, scope.slideId, scope.layerId]);
+}
+
+/** Serialize all read-modify-write operations touching one commit document. */
+export function runCommitPersistenceTask<Result>(
+    commitId: string,
+    task: () => Promise<Result>
+): Promise<Result> {
+    return persistenceRuntime.commitQueue.run(commitId, task);
+}
 
 // ── Scope GC scheduling ───────────────────────────────────────────────────────
 
@@ -162,6 +214,7 @@ export function logPeerCounts() {
 export async function seedScopeFromDb(scopeId: ScopeId): Promise<boolean> {
     const scope = scopedState.get(scopeId);
     if (!scope || scope.layers.size > 0) return false;
+    const observedRevision = captureScopeMutation(scope);
 
     try {
         const commit = await dbCol.commits.findById(scope.commitId);
@@ -172,12 +225,16 @@ export async function seedScopeFromDb(scopeId: ScopeId): Promise<boolean> {
         );
         if (!slide?.layers?.length) return false;
 
+        // A live mutation won the race with the DB read. Never overwrite it or
+        // mark it clean with the older commit snapshot.
+        if (scope.layers.size > 0 || scope.mutationRevision !== observedRevision) return false;
+
         for (const layer of slide.layers) {
             if (typeof layer?.numericId === 'number') {
                 scope.layers.set(layer.numericId, layer);
             }
         }
-        scope.dirty = false;
+        markScopePersisted(scope, observedRevision);
         invalidateHydrateCache(scopeId);
         return true;
     } catch (err) {
@@ -209,7 +266,20 @@ export async function buildSlidesSnapshot(
     const updatedSlides = existingSlides.map((slide) => {
         if (slide.id === scope.slideId) {
             slideFound = true;
-            return { ...slide, layers: currentLayers };
+            const persistedById = new Map(slide.layers.map((layer) => [layer.numericId, layer]));
+            const revisionSafeLayers = currentLayers.map((layer) => {
+                const persisted = persistedById.get(layer.numericId);
+                if (layer.type !== 'text' || persisted?.type !== 'text') return layer;
+                if ((persisted.textRevision ?? 0) <= (layer.textRevision ?? 0)) return layer;
+                return {
+                    ...layer,
+                    textHtml: persisted.textHtml,
+                    textRevision: persisted.textRevision,
+                    textStateHash: persisted.textStateHash,
+                    textBindingVersion: persisted.textBindingVersion
+                };
+            });
+            return { ...slide, layers: revisionSafeLayers };
         }
         return slide;
     });
@@ -226,7 +296,60 @@ export async function buildSlidesSnapshot(
     return updatedSlides;
 }
 
-export async function saveScope(
+/**
+ * Whole-scope autosaves can race a Yjs projection written by another worker.
+ * Re-applying the latest revisioned snapshots after the broad write makes the
+ * last operation safe regardless of which side won the write ordering race.
+ */
+async function reconcileYjsTextProjections(
+    projectId: string,
+    commitId: string,
+    slides: Array<{ id: string; layers: Layer[] }>
+): Promise<void> {
+    for (const slide of slides) {
+        for (const layer of slide.layers) {
+            if (layer.type !== 'text') continue;
+            const docName = `${projectId}_${commitId}_${slide.id}_${layer.numericId}`;
+            const persisted = await dbCol.ydocs.findStateByScope(docName);
+            if (
+                !persisted ||
+                persisted.revision <= 0 ||
+                persisted.bindingVersion !== LEXICAL_YJS_BINDING_VERSION
+            ) {
+                continue;
+            }
+            const update = binaryToUint8Array(persisted.data);
+            if (!update) continue;
+            const stateHash = persisted.stateHash ?? hashBytes(update);
+            if (
+                layer.textRevision === persisted.revision &&
+                layer.textStateHash === stateHash &&
+                layer.textBindingVersion === persisted.bindingVersion &&
+                persisted.htmlHash === hashText(layer.textHtml)
+            ) {
+                continue;
+            }
+            const doc = new Y.Doc();
+            try {
+                Y.applyUpdate(doc, update);
+                const textHtml = await yDocToHtml(doc, docName);
+                await dbCol.commits.updateTextLayerProjection({
+                    commitId,
+                    slideId: slide.id,
+                    layerId: layer.numericId,
+                    textHtml,
+                    textRevision: persisted.revision,
+                    textStateHash: stateHash,
+                    textBindingVersion: persisted.bindingVersion
+                });
+            } finally {
+                doc.destroy();
+            }
+        }
+    }
+}
+
+async function performSaveScope(
     scopeId: ScopeId,
     message: string,
     isAutoSave: boolean,
@@ -246,6 +369,7 @@ export async function saveScope(
             headId = project.headCommitId;
         }
 
+        const persistedRevision = captureScopeMutation(scope);
         const updatedSlides = await buildSlidesSnapshot(scope, headId);
 
         if (isAutoSave) {
@@ -254,8 +378,13 @@ export async function saveScope(
                 message,
                 content: { slides: updatedSlides as CommitDocument['content']['slides'] }
             });
+            await reconcileYjsTextProjections(
+                scope.projectId,
+                headId,
+                updatedSlides as Array<{ id: string; layers: Layer[] }>
+            );
 
-            scope.dirty = false;
+            markScopePersisted(scope, persistedRevision);
             return { success: true };
         }
 
@@ -278,7 +407,7 @@ export async function saveScope(
         // Pointer swap: HEAD now points at the snapshot
         await dbCol.commits.setParent(headId, snapshot.id);
 
-        scope.dirty = false;
+        markScopePersisted(scope, persistedRevision);
         return { success: true, commitId: snapshot.id };
     } catch (err) {
         console.error(`[Bus] saveScope failed for ${scopeLabel(scopeId)}:`, err);
@@ -286,11 +415,92 @@ export async function saveScope(
     }
 }
 
+export function saveScope(
+    scopeId: ScopeId,
+    message: string,
+    isAutoSave: boolean,
+    authorEmail?: string | null
+): Promise<{ success: boolean; commitId?: string; error?: string }> {
+    const commitId = scopedState.get(scopeId)?.commitId;
+    if (!commitId) return Promise.resolve({ success: false, error: 'Scope not found' });
+    return runCommitPersistenceTask(commitId, () =>
+        performSaveScope(scopeId, message, isAutoSave, authorEmail)
+    );
+}
+
+/** Persist a newly-created layer immediately without replacing its slide. */
+export function persistNewLayer(scopeId: ScopeId, layer: Layer): Promise<boolean> {
+    const scope = scopedState.get(scopeId);
+    if (!scope) return Promise.resolve(false);
+    const key = layerPersistenceKey({ ...scope, layerId: layer.numericId });
+    const pending = runCommitPersistenceTask(scope.commitId, async () => {
+        const liveScope = scopedState.get(scopeId);
+        const liveLayer = liveScope?.layers.get(layer.numericId);
+        if (!liveScope || !liveLayer) return true;
+
+        try {
+            const result = await dbCol.commits.insertLayerIfAbsent({
+                commitId: liveScope.commitId,
+                slideId: liveScope.slideId,
+                layer: liveLayer
+            });
+            if (result !== 'missing_slide') return true;
+
+            // A just-created slide can still be racing its metadata write. The
+            // serialized full snapshot creates the slide and layer together.
+            return (await performSaveScope(scopeId, 'Persist newly added layer', true)).success;
+        } catch (error) {
+            console.error(`[Bus] Failed to persist new layer ${key}:`, error);
+            return false;
+        }
+    });
+    persistenceRuntime.pendingLayers.set(key, pending);
+    void pending.finally(() => {
+        if (persistenceRuntime.pendingLayers.get(key) === pending) {
+            persistenceRuntime.pendingLayers.delete(key);
+        }
+    });
+    return pending;
+}
+
+/** Pair deletion with pending insertion so rapid add/remove cannot leave a ghost layer. */
+export function persistDeletedLayer(scopeId: ScopeId, layerId: number): Promise<boolean> {
+    const scope = scopedState.get(scopeId);
+    if (!scope) return Promise.resolve(false);
+    const key = layerPersistenceKey({ ...scope, layerId });
+    const pending = runCommitPersistenceTask(scope.commitId, async () => {
+        try {
+            return await dbCol.commits.deleteLayer({
+                commitId: scope.commitId,
+                slideId: scope.slideId,
+                layerId
+            });
+        } catch (error) {
+            console.error(`[Bus] Failed to persist deleted layer ${key}:`, error);
+            return false;
+        }
+    });
+    persistenceRuntime.pendingLayers.set(key, pending);
+    void pending.finally(() => {
+        if (persistenceRuntime.pendingLayers.get(key) === pending) {
+            persistenceRuntime.pendingLayers.delete(key);
+        }
+    });
+    return pending;
+}
+
+export async function waitForPendingLayerPersistence(
+    scope: LayerPersistenceScope
+): Promise<boolean> {
+    const pending = persistenceRuntime.pendingLayers.get(layerPersistenceKey(scope));
+    return pending ? pending : false;
+}
+
 /**
  * Persist slide metadata (id, order, name) to the commit document.
  * Only updates metadata fields — never touches layers.
  */
-export async function persistSlideMetadata(
+async function performPersistSlideMetadata(
     commitId: string,
     slides: Array<{ id: string; order: number; name: string }>
 ): Promise<boolean> {
@@ -338,4 +548,11 @@ export async function persistSlideMetadata(
         console.error(`[Bus] persistSlideMetadata failed for commit ${commitId}:`, err);
         return false;
     }
+}
+
+export function persistSlideMetadata(
+    commitId: string,
+    slides: Array<{ id: string; order: number; name: string }>
+): Promise<boolean> {
+    return runCommitPersistenceTask(commitId, () => performPersistSlideMetadata(commitId, slides));
 }

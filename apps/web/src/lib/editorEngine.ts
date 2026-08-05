@@ -27,6 +27,7 @@ type ConnectionStatusCallback = (status: ConnectionStatus) => void;
 type BindOverrideResultCallback = (
     data: Extract<GSMessage, { type: 'bind_override_result' }>
 ) => void;
+type UpsertLayerMessage = Extract<GSMessage, { type: 'upsert_layer' }>;
 
 export class EditorEngine {
     private bus: BusClient;
@@ -46,6 +47,10 @@ export class EditorEngine {
     private currentProjectId: string | null = null;
     private currentCommitId: string | null = null;
     private currentSlideId: string | null = null;
+    private pendingLayerCreates = new Map<
+        string,
+        { resolve: (success: boolean) => void; timer: ReturnType<typeof setTimeout> }
+    >();
 
     private constructor() {
         this.bus = new BusClient({
@@ -164,6 +169,22 @@ export class EditorEngine {
                 return;
             }
 
+            if (data.type === 'layer_create_response') {
+                const pending = data.createRequestId
+                    ? this.pendingLayerCreates.get(data.createRequestId)
+                    : null;
+                if (pending && data.createRequestId) {
+                    clearTimeout(pending.timer);
+                    this.pendingLayerCreates.delete(data.createRequestId);
+                    pending.resolve(data.success);
+                    return;
+                }
+                if (!data.success) {
+                    this.reportLayerCreateFailure(data);
+                }
+                return;
+            }
+
             if (data.type === 'bind_override_result') {
                 this.bindOverrideResultCallbacks.forEach((cb) => cb(data));
                 return;
@@ -209,6 +230,11 @@ export class EditorEngine {
         this.playbackCallbacks.clear();
         this.connectionStatusCallbacks.clear();
         this.bindOverrideResultCallbacks.clear();
+        for (const pending of this.pendingLayerCreates.values()) {
+            clearTimeout(pending.timer);
+            pending.resolve(false);
+        }
+        this.pendingLayerCreates.clear();
     }
 
     /**
@@ -407,16 +433,90 @@ export class EditorEngine {
         return `bind_${Date.now()}_${rand}`;
     }
 
-    public sendJSON = (data: GSMessage) => {
+    private reportLayerCreateFailure(
+        response: Extract<GSMessage, { type: 'layer_create_response' }>
+    ) {
+        this.messageCallbacks.forEach((callback) => callback(response));
+        toast.error(
+            response.error ??
+                `Layer ${response.numericId} was not saved. Reloading the slide to prevent data loss.`
+        );
+        this.sendJSON({ type: 'rehydrate_please' });
+    }
+
+    public sendJSON = (data: GSMessage): boolean => {
         // Protocol discipline:
         // Editor upsert_layer for video should never carry playback timeline fields.
         if (data.type === 'upsert_layer' && data.layer.type === 'video') {
             const { playback: _playback, ...layerWithoutPlayback } = data.layer;
-            this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
-            return;
+            return this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
         }
-        this.bus.sendJSON(data);
+        return this.bus.sendJSON(data);
     };
+
+    /** Send a first layer upsert and wait until the server confirms durable creation. */
+    public async createLayer(layer: Layer, origin: UpsertLayerMessage['origin']): Promise<boolean> {
+        if (!this.currentProjectId || !this.currentCommitId || !this.currentSlideId) {
+            this.reportLayerCreateFailure({
+                type: 'layer_create_response',
+                numericId: layer.numericId,
+                success: false,
+                error: 'Layer was not saved because no slide is active.'
+            });
+            return false;
+        }
+        const expectedScope = `${this.currentProjectId}/${this.currentCommitId}/${this.currentSlideId}`;
+        const ready = await this.bus.waitUntilReady();
+        const currentScope = `${this.currentProjectId}/${this.currentCommitId}/${this.currentSlideId}`;
+        if (!ready || currentScope !== expectedScope) {
+            if (!ready && currentScope === expectedScope) {
+                this.reportLayerCreateFailure({
+                    type: 'layer_create_response',
+                    numericId: layer.numericId,
+                    success: false,
+                    error: 'Layer was not saved because the editor is offline.'
+                });
+            }
+            return false;
+        }
+
+        const createRequestId = `layer_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        const acknowledged = new Promise<boolean>((resolve) => {
+            const timer = setTimeout(() => {
+                this.pendingLayerCreates.delete(createRequestId);
+                resolve(false);
+            }, 10_000);
+            this.pendingLayerCreates.set(createRequestId, { resolve, timer });
+        });
+
+        const sent = this.sendJSON({
+            type: 'upsert_layer',
+            origin,
+            layer,
+            createRequestId
+        });
+        if (!sent) {
+            const pending = this.pendingLayerCreates.get(createRequestId);
+            if (pending) {
+                clearTimeout(pending.timer);
+                this.pendingLayerCreates.delete(createRequestId);
+                pending.resolve(false);
+            }
+        }
+
+        const persisted = await acknowledged;
+        const scopeAfterAcknowledgement = `${this.currentProjectId}/${this.currentCommitId}/${this.currentSlideId}`;
+        if (!persisted && scopeAfterAcknowledgement === expectedScope) {
+            this.reportLayerCreateFailure({
+                type: 'layer_create_response',
+                numericId: layer.numericId,
+                success: false,
+                createRequestId,
+                error: `Layer ${layer.numericId} was not acknowledged by the server. Reloading the slide.`
+            });
+        }
+        return persisted;
+    }
 
     public broadcastBinaryMove = throttle(
         (

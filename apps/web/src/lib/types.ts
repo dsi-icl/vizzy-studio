@@ -43,6 +43,10 @@ const LayerPlaybackStateSchema = z.object({
 
 const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
 
+const MediaLayerBaseSchema = LayerBaseSchema.extend({
+    name: z.string().optional()
+});
+
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
 const OptionalSizesSchema = z
@@ -68,16 +72,24 @@ const LayerSchema = z.discriminatedUnion('type', [
             blurhash: z.string().optional(),
             playback: LayerPlaybackStateSchema
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z
         .object({
             type: z.literal('image'),
             url: z.string(),
             blurhash: z.string().optional()
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
-    z.object({ type: z.literal('text'), textHtml: z.string() }).extend(LayerBaseSchema.shape),
+    z
+        .object({
+            type: z.literal('text'),
+            textHtml: z.string(),
+            textRevision: z.number().int().nonnegative().optional(),
+            textStateHash: z.string().optional(),
+            textBindingVersion: z.string().optional()
+        })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('map'),
@@ -117,7 +129,8 @@ const LayerSchema = z.discriminatedUnion('type', [
             fill: z.string(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
-            strokeWidth: z.number()
+            strokeWidth: z.number(),
+            cornerRadius: z.number().nonnegative().default(0)
         })
         .extend(LayerBaseSchema.shape),
     z
@@ -256,9 +269,17 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('upsert_layer'),
         origin: z.string().regex(/^(editor|controller|yjs):[a-z0-9_]+$/),
-        layer: LayerSchema
+        layer: LayerSchema,
+        createRequestId: z.string().optional()
     }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('layer_create_response'),
+        numericId: z.number(),
+        success: z.boolean(),
+        createRequestId: z.string().optional(),
+        error: z.string().optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),
@@ -458,6 +479,8 @@ export interface ScopeState {
     commitId: string;
     slideId: string;
     dirty: boolean;
+    /** Monotonic in-memory generation used to avoid clearing concurrently-arriving changes. */
+    mutationRevision: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
     /** Optional custom render URL from the project configuration. */

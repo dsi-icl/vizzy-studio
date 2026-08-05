@@ -1,7 +1,9 @@
+import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
+import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
 type SliceSet = (
@@ -162,10 +164,92 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     newState.strokeDash = selectedLayer.strokeDash;
                     newState.strokeWidth = selectedLayer.strokeWidth;
                     newState.shapeFill = selectedLayer.fill;
+                    if (selectedLayer.shape === 'rectangle') {
+                        newState.rectangleCornerRadius = selectedLayer.cornerRadius ?? 0;
+                    }
                 }
                 set(newState);
             }
             set({ lastSelectedLayerId: id });
+        },
+
+        copySelectedLayers: () => {
+            const state = get();
+            if (!state.projectId) return 0;
+            const selectedLayers = state.selectedLayerIds
+                .map((id) => Number.parseInt(id, 10))
+                .filter((id) => Number.isFinite(id))
+                .map((id) => state.layers.get(id))
+                .filter((layer): layer is LayerWithEditorState => Boolean(layer));
+            const copiedLayers = snapshotCopyableLayers(selectedLayers);
+            if (copiedLayers.length === 0) return 0;
+
+            set({
+                layerClipboard: {
+                    projectId: state.projectId,
+                    layers: copiedLayers,
+                    pasteCount: 0
+                }
+            });
+            return copiedLayers.length;
+        },
+
+        copyLayer: (numericId: number) => {
+            const state = get();
+            if (!state.projectId) return false;
+            const layer = state.layers.get(numericId);
+            if (!layer) return false;
+            const copiedLayers = snapshotCopyableLayers([layer]);
+            if (copiedLayers.length === 0) return false;
+
+            set({
+                layerClipboard: {
+                    projectId: state.projectId,
+                    layers: copiedLayers,
+                    pasteCount: 0
+                }
+            });
+            return true;
+        },
+
+        pasteLayers: () => {
+            const state = get();
+            const clipboard = state.layerClipboard;
+            if (!state.projectId || !clipboard || clipboard.projectId !== state.projectId)
+                return [];
+
+            const pasteCount = clipboard.pasteCount + 1;
+            const pastedLayers = createPastedLayers(
+                clipboard.layers,
+                pasteCount,
+                helpers.allocateId,
+                helpers.allocateZIndex
+            );
+            if (pastedLayers.length === 0) return [];
+
+            const selectedLayerIds = pastedLayers.map((layer) => layer.numericId.toString());
+            set((current) => {
+                const layers = new Map(current.layers);
+                for (const layer of pastedLayers) layers.set(layer.numericId, layer);
+                return {
+                    layers,
+                    selectedLayerIds,
+                    lastSelectedLayerId: selectedLayerIds.at(-1) ?? null,
+                    editingTextLayerId: null,
+                    layerClipboard: { ...clipboard, pasteCount }
+                };
+            });
+
+            const engine = EditorEngine.getInstance();
+            for (const layer of pastedLayers) {
+                engine.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'editor:paste_layers',
+                    layer
+                });
+            }
+            get().markDirty();
+            return selectedLayerIds;
         },
 
         deleteSelectedLayer: () => {
@@ -319,8 +403,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const numericId = allocateId();
             const zIndex = allocateZIndex();
             const fitted = fitSizeToViewport(
-                1920,
-                1080,
+                TEXT_DEFAULT_LAYER_WIDTH_PX,
+                TEXT_DEFAULT_LAYER_HEIGHT_PX,
                 insertionViewport.width,
                 insertionViewport.height
             );
@@ -348,11 +432,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_text_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_text_layer');
             get().markDirty();
         },
 
@@ -396,11 +476,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_map_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_map_layer');
             get().markDirty();
         },
 
@@ -440,11 +516,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_web_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_web_layer');
             get().markDirty();
         },
 
@@ -485,7 +557,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 fill: 'transparent',
                 strokeColor,
                 strokeDash,
-                strokeWidth
+                strokeWidth,
+                cornerRadius: shape === 'rectangle' ? get().rectangleCornerRadius : 0
             };
 
             set((s) => {
@@ -494,11 +567,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_shape_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_shape_layer');
             get().markDirty();
         },
 
@@ -541,11 +610,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_background_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_background_layer');
             get().markDirty();
         },
 
@@ -605,11 +670,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_line_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_line_layer');
             get().markDirty();
         },
 

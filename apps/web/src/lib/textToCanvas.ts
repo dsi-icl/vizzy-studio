@@ -2,6 +2,8 @@
  * Converts HTML content to an HTMLImageElement via foreignObject SVG.
  * Used to render text layer previews in the Konva canvas.
  */
+import { asyncThrottle } from '@tanstack/pacer';
+
 import {
     TEXT_BASE_FONT_FAMILY,
     TEXT_BASE_FONT_SIZE_PX,
@@ -26,16 +28,14 @@ const LEXICAL_CSS = `
     .lexical-li { margin: 0; }
 `;
 
-export async function textHtmlToImage(
-    html: string,
-    width: number,
-    height: number
-): Promise<HTMLImageElement> {
-    const escaped = html
-        // foreignObject needs well-formed XHTML
-        .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;');
+export const textHtmlToImage = asyncThrottle(
+    async (html: string, width: number, height: number): Promise<HTMLImageElement> => {
+        const escaped = html
+            // foreignObject needs well-formed XHTML
+            .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;')
+            .replace(/<br\s*\/?>/gi, '<br/>');
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <foreignObject width="100%" height="100%">
             <div xmlns="http://www.w3.org/1999/xhtml"
                  style="width:${width}px;height:${height}px;overflow:hidden;color:white;font-family:${TEXT_BASE_FONT_FAMILY};font-size:${TEXT_BASE_FONT_SIZE_PX}px;line-height:${TEXT_BASE_LINE_HEIGHT};padding:${TEXT_BASE_PADDING_PX}px;box-sizing:border-box;">
@@ -45,19 +45,21 @@ export async function textHtmlToImage(
         </foreignObject>
     </svg>`;
 
-    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
 
-    try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('Failed to render text to canvas'));
-            img.src = url;
-        });
-        return img;
-    } finally {
-        URL.revokeObjectURL(url);
-    }
-}
+        try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise<void>((resolve, reject) => {
+                img.onload = () => resolve();
+                img.onerror = () => reject(new Error('Failed to render text to canvas'));
+                img.src = url;
+            });
+            return img;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    },
+    { wait: 100 }
+);

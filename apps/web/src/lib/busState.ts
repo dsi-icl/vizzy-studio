@@ -58,7 +58,11 @@ export {
     logPeerCounts,
     seedScopeFromDb,
     buildSlidesSnapshot,
+    runCommitPersistenceTask,
     saveScope,
+    persistNewLayer,
+    persistDeletedLayer,
+    waitForPendingLayerPersistence,
     persistSlideMetadata
 } from './busState.persistence';
 

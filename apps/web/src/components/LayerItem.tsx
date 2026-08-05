@@ -7,6 +7,7 @@ import {
     MapTrifoldIcon,
     TextTIcon,
     GraphIcon,
+    CopyIcon,
     ScribbleIcon,
     TrashIcon,
     RectangleIcon,
@@ -19,7 +20,7 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import React from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
-import { LayerWithEditorState } from '~/lib/types';
+import type { LayerWithEditorState } from '~/lib/types';
 
 interface LayerItemProps {
     layer: LayerWithEditorState;
@@ -28,6 +29,7 @@ interface LayerItemProps {
 
 export function LayerItem({ layer, isSelected }: LayerItemProps) {
     const removeLayer = useEditorStore((s) => s.removeLayer);
+    const copyLayer = useEditorStore((s) => s.copyLayer);
     const toggleLayerVisibility = useEditorStore((s) => s.toggleLayerVisibility);
     const isHidden = !layer.config.visible;
 
@@ -69,9 +71,9 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
             case 'text':
                 return layer.textHtml.replace(/<[^>]*>/g, '').slice(0, 40) || 'Text';
             case 'image':
-                return 'Image';
+                return layer.name?.trim() || 'Image';
             case 'video':
-                return 'Video';
+                return layer.name?.trim() || 'Video';
             case 'graph':
                 return 'Graph';
             case 'map':
@@ -110,6 +112,18 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
                 <span>{getLayerName(layer)}</span>
             </div>
             <div className="flex items-center gap-1">
+                <TipButton
+                    tip={layer.isUploading ? 'Wait for upload to finish' : 'Copy layer (Ctrl+C)'}
+                    variant="ghost"
+                    disabled={layer.isUploading}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        copyLayer(layer.numericId);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100"
+                >
+                    <CopyIcon />
+                </TipButton>
                 <TipButton
                     tip={isHidden ? 'Show layer' : 'Hide layer'}
                     variant="ghost"

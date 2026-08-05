@@ -1,109 +1,150 @@
-# Playwright Integration Strategy (6 Concurrent Clients)
+# Browser and integration test harness
 
-This plan targets your real production topology in one test run:
+## Purpose
 
-- 2 `editor` clients
-- 2 `controller` clients
-- 2 `wall` clients
+This harness records the application's observable posture before broader product changes are made.
+It prioritises rendering, editor behaviour, runtime convergence, and user-visible workflows over a
+line-coverage target. Complete coverage would be expensive and brittle, and would still not prove
+that a presentation system renders correctly.
 
-## 1) Test Harness Layout
+The supported CI contract is a single application server backed by a replica-set MongoDB. Exact
+video-frame synchronisation, scheduler timing, multi-server propagation, long-running soak tests,
+and arbitrary third-party network availability are deliberately outside the pull-request gate.
 
-Use Playwright projects and fixtures to model each client role.
+## Harness shape
 
-- `project: editor-a`, `editor-b`
-- `project: controller-a`, `controller-b`
-- `project: wall-a`, `wall-b`
+`docker-compose.test.yml` starts the application, MongoDB, and a deterministic second-origin page.
+The preparation script waits for health, resets and seeds the database, enrols test devices, and
+writes Playwright storage states plus a fixture manifest.
 
-Create a shared fixture that:
+Chromium runs the complete suite with one worker and deterministic locale, timezone, viewport,
+device scale, colour scheme, and reduced-motion settings. Firefox and WebKit run a small tagged
+public-surface smoke. Visual CSS removes animation, caret, and clock noise. CI retains traces,
+screenshots, video, and the HTML report when a test fails.
 
-1. Seeds a test project/commit in MongoDB.
-2. Starts the app once (`bun run --filter=@repo/web start`).
-3. Creates six isolated browser contexts (not just pages) to simulate independent sessions.
-4. Exposes helpers for role-specific actions (`editLayer`, `bindWall`, `publishCommit`, `assertRenderedState`).
+The canonical rendering fixture covers solid backgrounds, shapes, strokes, rotation, opacity,
+lines, rich text, an embedded SVG image, and the empty web-layer placeholder. Mutable editor,
+convergence, capture, media, interaction, and runtime fixtures are separate so one workflow cannot
+silently invalidate another test's baseline.
 
-Use `test.describe.configure({ mode: "serial" })` for each multi-client scenario to preserve causality.
+Small accessible labels on icon-only controls are intentional harness instrumentation. They provide
+stable user-facing selectors and improve the real accessibility tree without exposing test-only
+production behaviour.
 
-## 2) Scenario Buckets
+## Async gate design
 
-Prioritize scenarios that match your known risk areas:
+Elapsed time is not a correctness condition. Timeouts are diagnostic ceilings; tests wait for an
+observable state transition rather than sleeping and assuming work completed.
 
-1. Live editing consistency:
+- Runtime tests wait for an authenticated engine and open application WebSocket before acting.
+- Wall convergence checks binding source, exact foreground-layer count, and transition-overlay state.
+- Screenshots wait for fonts and two animation frames after application state converges.
+- Multi-wall coverage connects all four wall peers before binding, then checks exact transforms,
+  culling, seam continuation, overlap order, and per-panel screenshots.
+- Gallery/controller tests first establish an idle wall, then require binding, slide selection,
+  reconnect recovery, fresh-client recovery, and user-visible unbinding.
+- Editor convergence uses two independent browser contexts and checks eventual agreement in both
+  directions; it does not impose a latency target.
+- Ownership coverage observes gallery state, editor takeover, abrupt final-editor disconnect, and
+  the resulting wall lifecycle independently.
+- Media coverage waits for finalised metadata and authenticated asset responses. Video assertions
+  stop at metadata and play/pause posture rather than claiming frame-perfect synchronisation.
+- External capture retries only the server's explicit browser-not-ready response. Success requires
+  deterministic output dimensions and pixels, editor rendering, save completion, and fresh-viewer
+  recovery.
+- Project lifecycle gates use visible UI state and fresh gallery reads instead of guessed propagation
+  delays.
 
-- editor-a updates layer position/content.
-- editor-b receives update under expected latency budget.
-- both walls converge to same rendered state.
+Dedicated walls keep delayed events from one runtime workflow from satisfying another workflow's
+assertion.
 
-2. Controller binding churn:
+## Current coverage
 
-- controller-a binds wall-a while editor stream is active.
-- controller-b rebinding/unbinding does not desync wall hydration.
+| Area                                 | Required observation                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit and HTTP integration            | Existing isolated suites remain separate from Playwright; seeded actor and protected-route behaviour runs against the stack.                             |
+| Public and authenticated surfaces    | Home, login, gallery, projects, administration, and wall administration render for the appropriate posture.                                              |
+| Application posture                  | Narrow viewport, history/reload, console/page errors, structural accessibility, and a small Firefox/WebKit smoke are checked.                            |
+| Editor workflow                      | A seeded layer can be selected, moved on the active grid, marked dirty, and saved.                                                                       |
+| Text toolbar                         | Colour and size fields retain input focus until valid Enter/Tab commit, preserve the Lexical selection affordance, and match reviewed baselines.         |
+| Editor interaction                   | Rich-text line breaks render, pointer-down selects before drag, and Backspace deletes once and persists after reload.                                    |
+| Editor convergence and ownership     | Two editors converge after authoritative changes and reconnect; gallery/editor ownership transitions reach an observable final state.                    |
+| Visual rendering                     | Editor, immutable viewer, wall, controller, and four wall panels compare against Windows and Linux baselines.                                            |
+| Gallery and controller               | Natural project ordering, bind/unbind, slide control, reconnect, and fresh-client recovery are exercised.                                                |
+| Project lifecycle and administration | Create/publish/rename/archive visibility plus custom-render navigation and wall-form reactivity are covered.                                             |
+| Media                                | Deterministic image/video upload, processing metadata, authorisation, wall/viewer rendering, removal, and access revocation are exercised.               |
+| External capture                     | A controlled page that refuses iframe embedding is captured and persisted as a still image.                                                              |
+| Device posture                       | Pending enrolment is required; revoked-device and cross-assigned-controller checks remain narrow expected-failure probes until their product fixes land. |
 
-3. Save/publish transitions:
+## Product intent versus defects
 
-- manual save creates immutable snapshot.
-- publish/unpublish changes propagate consistently to both controllers and both walls.
+The harness must distinguish the software's target function from an apparent gap.
 
-4. Asset pipeline under contention:
+Expected constraints include:
 
-- simultaneous image and video uploads.
-- progress events are emitted.
-- assets appear in both editor clients and become renderable on walls.
+- a wall must be enrolled and participate in the server's live binding state;
+- a requested wall slug does not itself grant device scope;
+- the gallery controller can be unavailable while an editor owns a live session;
+- public gallery content is published content, while private editing requires an actor;
+- third-party sites may refuse iframe embedding;
+- an empty web-layer URL renders the explicit unavailable-content posture; and
+- frame-perfect video timing is not a stable CI assertion.
 
-5. Recovery paths:
+Those constraints do not cancel broader product requirements. If users are promised screenshot
+capture regardless of the site they visit, an iframe restriction is not a reason to abandon the
+feature; the implementation needs a capture service, proxy, or suitable fallback. The harness uses a
+controlled second-origin page which rejects embedding but permits capture. It proves the intended
+path without pretending every public site is permanently available.
 
-- force close one editor and one wall mid-session.
-- reconnect and validate rehydration from authoritative scope state.
+A failure is a product regression when, under the supported single-server setup, it removes
+canonical visible content, breaks an editor action or save transition, violates an actor/device
+boundary, prevents a valid enrolled wall from hydrating, or makes a promised feature unavailable for
+content the contract says must be supported.
 
-## 3) Hardness Model (Test Harness Hardening)
+Known product defects may be kept as `test.fail` probes when the scenario is valuable but the fix is
+outside this branch. Such a probe must be narrow and must fail unexpectedly if the application starts
+passing or changes in a different way. This branch does not carry the corresponding product fix.
 
-Implement hardness in phases so failures are diagnosable:
+The current `main` posture includes probes for revoked/cross-assigned devices, keyboard-driven editor
+convergence, rich-text line-break rendering, pointer/Backspace behaviour, durable external capture,
+finalised media convergence, controller reconnect recovery, Firefox onboarding hydration, and WebKit
+public-gallery hydration. Unauthenticated TUS creation is skipped because `main` currently accepts the
+creation request before authentication; the skipped integration test documents the required status
+without making this harness branch carry the server fix.
 
-1. Deterministic phase:
+## Commands
 
-- fixed waits are forbidden.
-- all assertions wait on explicit protocol/UI signals.
-- strict time budgets per step.
+Install browsers once:
 
-2. Stress phase:
+```sh
+bunx playwright install chromium firefox webkit
+```
 
-- run each scenario N times (`N=10` initially).
-- inject jitter (random 20-300 ms delays) into editor/controller actions.
+Run the gates:
 
-3. Fault-injection phase:
+```sh
+bun run test:unit
+bun run test:e2e:full
+bun run test:all
+bun run test:e2e:smoke
+bun run test:visual
+bun run test:e2e:update
+```
 
-- random client restarts.
-- temporary network throttling/packet loss on selected contexts.
-- optional Mongo primary step-down in dedicated chaos workflow.
+For interactive debugging:
 
-4. Soak phase:
+```sh
+bun run test:harness:up
+bun run test:harness:prepare
+bun run test:e2e
+bun run test:harness:down
+```
 
-- 20-30 minute long-running mixed-role scenario.
-- fail on memory growth, websocket reconnect storms, or drift in wall render checksums.
+Baseline updates must be reviewed as images and generated for both the local Windows Chromium target
+and the CI Linux Chromium target.
 
-## 4) CI Execution Shape
+## Remaining gaps
 
-Recommended GitHub Actions split:
-
-- PR gate (fast): deterministic smoke set, 1-2 key 6-client scenarios.
-- post-merge/nightly: stress + fault-injection matrix.
-- weekly: soak suite with traces/videos retained.
-
-Keep Playwright artifacts (`trace`, `video`, `screenshot`) only on failure for PRs, always-on for nightly chaos runs.
-
-## 5) Data and Isolation
-
-- Use one Mongo database name per run (`vizzy_ci_<run_id>`).
-- Prefix project names/ids by run id.
-- Cleanup in `afterAll` and with a fallback TTL cleanup job.
-
-## 6) First Implementation Milestone
-
-Start with one critical end-to-end test:
-
-- `multi-client-live-sync.spec.ts`
-- six clients connected
-- one editor mutation
-- both walls and both controllers converge
-- includes reconnect of one wall
-
-Once this is stable in CI, expand to save/publish and asset processing scenarios.
+Useful follow-ups are a reviewed contrast/theme-token correction, a small supported-codec matrix,
+role-specific sharing and restore behaviour, and targeted mobile interaction checks. Exact video
+synchronisation and multi-server behaviour remain outside the current deployment contract.

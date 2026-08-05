@@ -48,6 +48,8 @@ function InfoTab() {
                     heroImages: project.heroImages,
                     customControlUrl: project.customControlUrl ?? '',
                     customRenderUrl: project.customRenderUrl ?? '',
+                    customRenderCompat: project.customRenderCompat ?? false,
+                    customRenderProxy: project.customRenderProxy ?? false,
                     collaborators: project.collaborators
                 }}
                 onSubmit={(data) => mutation.mutate({ ...data, id: projectId })}

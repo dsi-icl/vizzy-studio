@@ -3,6 +3,12 @@ import type { Layer, LayerWithEditorState, Slide } from './types';
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
+export interface LayerClipboard {
+    projectId: string;
+    layers: LayerWithEditorState[];
+    pasteCount: number;
+}
+
 export interface EditorState {
     // ── State ──
     projectId: string | null;
@@ -10,6 +16,7 @@ export interface EditorState {
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
     selectedLayerIds: string[];
+    layerClipboard: LayerClipboard | null;
     slides: Slide[];
     activeSlideId: string | null;
     selectedSlides: string[];
@@ -24,6 +31,7 @@ export interface EditorState {
     strokeDash: number[];
     shapeFill: string;
     shapeStroke: string;
+    rectangleCornerRadius: number;
     editingTextLayerId: number | null;
     isErasing: boolean;
     eraserWidth: number;
@@ -56,6 +64,9 @@ export interface EditorState {
     toggleLayerVisibility: (numericId: number) => void;
     deselectAllLayers: () => void;
     toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
+    copySelectedLayers: () => number;
+    copyLayer: (numericId: number) => boolean;
+    pasteLayers: () => string[];
     deleteSelectedLayer: () => void;
     bringToFront: () => void;
     sendToBack: () => void;
@@ -78,6 +89,7 @@ export interface EditorState {
     setStrokeWidth: (width: number) => void;
     setStrokeDash: (dash: number[]) => void;
     setShapeFill: (fill: string) => void;
+    setRectangleCornerRadius: (radius: number) => void;
     setInsertionCenter: (x: number, y: number) => void;
     setInsertionViewport: (width: number, height: number) => void;
     markDirty: () => void;

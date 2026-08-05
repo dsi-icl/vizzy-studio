@@ -1,8 +1,10 @@
 {
-    "extends": "@repo/tsconfig/base.json",
+    "extends": "../../tooling/tsconfig/base.json",
     "compilerOptions": {
         "moduleResolution": "bundler",
         "module": "esnext",
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
         "paths": {
             "~/*": ["./src/*"],
 

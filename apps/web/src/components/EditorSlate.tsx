@@ -32,11 +32,16 @@ import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
+import {
+    applyKeyboardArrowTransform,
+    broadcastKeyboardLayerTransform,
+    isEditorArrowKey
+} from '~/lib/editorKeyboardMovement';
 import { useEditorStore } from '~/lib/editorStore';
 import { ERASER_WHEEL_STEP, clampEraserWidth } from '~/lib/eraser';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { appendEraserPoint, eraseLinePaths, LINE_PATH_MAX_POINTS } from '~/lib/lineEraser';
-import { isFontAsset } from '~/lib/mediaUtils';
+import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -364,8 +369,14 @@ export function EditorSlate() {
                 anchorServerTime: engine.getServerTime()
             };
 
+            const layerName = makeUniqueMediaLayerName(
+                asset.name,
+                useEditorStore.getState().layers.values()
+            );
+
             const layerBase = {
                 numericId,
+                name: layerName,
                 url: `/api/assets/${asset.url}`,
                 config,
                 isUploading: false,
@@ -391,11 +402,7 @@ export function EditorSlate() {
             store.upsertLayer(layer);
             store.toggleLayerSelection(numericId.toString(), false, false);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:asset_library_drop',
-                layer
-            });
+            void engine.createLayer(layer, 'editor:asset_library_drop');
             store.markDirty();
         },
         [engine]
@@ -602,31 +609,51 @@ export function EditorSlate() {
             if (isEditingInput) return;
             if (editingTextLayerId !== null) return;
             const store = useEditorStore.getState();
+            const shortcutKey = e.key.toLowerCase();
+            const isClipboardShortcut = (e.ctrlKey || e.metaKey) && !e.altKey;
+
+            if (isClipboardShortcut && shortcutKey === 'c') {
+                const browserSelection = window.getSelection();
+                if (browserSelection && !browserSelection.isCollapsed) return;
+                if (store.copySelectedLayers() > 0) e.preventDefault();
+                return;
+            }
+            if (isClipboardShortcut && shortcutKey === 'v') {
+                if (store.pasteLayers().length > 0) e.preventDefault();
+                return;
+            }
+
             if (!store.selectedLayerIds.length) return;
 
-            if (e.key === 'Delete') store.deleteSelectedLayer();
-            if (e.key === 'Escape') store.deselectAllLayers();
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                store.deleteSelectedLayer();
+                return;
+            }
+            if (e.key === 'Escape') {
+                store.deselectAllLayers();
+                return;
+            }
+            if (!isEditorArrowKey(e.key)) return;
+
             const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
             if (!currentSelected) return;
 
-            const newLayerState = { ...currentSelected, config: { ...currentSelected.config } };
-            if (e.key === 'ArrowLeft') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation - 1);
-                else newLayerState.config.cx -= isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowRight') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation + 1);
-                else newLayerState.config.cx += isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowUp') newLayerState.config.cy -= isSnapping ? SNAP_GRID : 10;
-            if (e.key === 'ArrowDown') newLayerState.config.cy += isSnapping ? SNAP_GRID : 10;
-            store.updateLayerConfig(currentSelected.numericId, newLayerState.config);
+            e.preventDefault();
+            e.stopPropagation();
+            const updatedLayer = applyKeyboardArrowTransform(
+                currentSelected,
+                e.key,
+                e.shiftKey,
+                isSnapping ? SNAP_GRID : 10
+            );
+            store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
+            if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [editingTextLayerId, isSnapping]);
+        // Capture editor movement shortcuts before focused descendants (for example the
+        // sortable layer list) can scroll or interpret the same arrow keystroke.
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    }, [editingTextLayerId, engine, isSnapping]);
 
     // ── Upload handler (stays here — complex async + file APIs) ───────────
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -717,9 +744,13 @@ export function EditorSlate() {
         };
 
         // 2. OPTIMISTIC UPDATE — mount immediately
+
+        const layerName = makeUniqueMediaLayerName(file.name, store.layers.values());
+
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
+            name: layerName,
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
@@ -806,17 +837,17 @@ export function EditorSlate() {
             useEditorStore.getState().upsertLayer(finalizedLayer);
             engine.setPlayback(numericId, defaultPlayback);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:handle_upload',
-                layer: {
+            void engine.createLayer(
+                {
                     numericId,
                     type: finalizedLayer.type,
+                    name: layerName,
                     playback: defaultPlayback,
                     url: assetUrl,
                     config: freshestLayer.config
-                } as LayerWithEditorState
-            });
+                } as LayerWithEditorState,
+                'editor:handle_upload'
+            );
             URL.revokeObjectURL(localUrl);
 
             // Asset record is created server-side in onUploadFinish
@@ -1191,6 +1222,18 @@ export function EditorSlate() {
             if (clickedOnEmpty && currentSelectedIds.length) {
                 flushNodeState(currentSelectedIds[0]);
                 deselectAllLayers();
+            } else if (!clickedOnEmpty) {
+                const hasModifier = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
+                const targetId = e.target.id();
+                if (
+                    !hasModifier &&
+                    targetId &&
+                    layers.has(parseInt(targetId)) &&
+                    !currentSelectedIds.includes(targetId)
+                ) {
+                    if (currentSelectedIds.length) flushNodeState(currentSelectedIds[0]);
+                    toggleLayerSelection(targetId, false, false);
+                }
             }
             if (!isDrawing) return;
         }
@@ -1660,6 +1703,7 @@ export function EditorSlate() {
                                                 height={layer.config.height}
                                                 offsetX={layer.config.width / 2}
                                                 offsetY={layer.config.height / 2}
+                                                cornerRadius={layer.cornerRadius}
                                                 dash={layer.strokeDash}
                                                 dashOffset={(layer.strokeDash[0] ?? 0) / 2}
                                                 lineCap="round"

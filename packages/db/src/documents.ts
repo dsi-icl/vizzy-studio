@@ -149,6 +149,16 @@ export interface YDocDocument {
     id: string;
     scope: string;
     data: Binary;
+    /** Monotonic compare-and-swap revision for the persisted Yjs snapshot. */
+    revision?: number;
+    /** Hash of the encoded Yjs snapshot stored in `data`. */
+    stateHash?: string;
+    /** Hash of the HTML projection generated from this exact snapshot. */
+    htmlHash?: string;
+    /** Hash of the source HTML used when the Yjs document was first bootstrapped. */
+    sourceTextHash?: string;
+    /** Semantic encoding version of the Lexical <-> Yjs binding. */
+    bindingVersion?: string;
     createdAt: number;
     updatedAt: number;
 }
