@@ -55,7 +55,11 @@ export interface ProjectAuditListInput {
     toCreatedAt?: number;
 }
 
-import { scopedState, updateProjectCustomRenderSettings } from '~/lib/busState';
+import {
+    runCommitPersistenceTask,
+    scopedState,
+    updateProjectCustomRenderSettings
+} from '~/lib/busState';
 import { revokeUploadToken, validateUploadToken } from '~/lib/uploadTokens';
 import { logAuditSuccess } from '~/server/audit';
 import { dbCol, collections } from '~/server/collections';
@@ -608,83 +612,87 @@ export async function copySlideInCommit(
     actorEmail: string,
     auditContext?: ProjectAuditContext
 ): Promise<void> {
-    const commit = await dbCol.commits.findById(commitId);
-    if (!commit?.content?.slides) throw new Error('Commit not found');
+    // Read-modify-write of the whole slides array, so it must serialize against
+    // scope saves and other slide mutations on the same commit.
+    return runCommitPersistenceTask(commitId, async () => {
+        const commit = await dbCol.commits.findById(commitId);
+        if (!commit?.content?.slides) throw new Error('Commit not found');
 
-    const slides = commit.content.slides as Array<{
-        id: string;
-        order: number;
-        name?: string;
-        layers: Array<Record<string, unknown>>;
-    }>;
-    const source = slides.find((s) => s.id === sourceSlideId);
-    if (!source) throw new Error('Source slide not found');
+        const slides = commit.content.slides as Array<{
+            id: string;
+            order: number;
+            name?: string;
+            layers: Array<Record<string, unknown>>;
+        }>;
+        const source = slides.find((s) => s.id === sourceSlideId);
+        if (!source) throw new Error('Source slide not found');
 
-    // Prefer live bus scope layers (may have unsaved changes) over commit data
-    let sourceLayers: Array<Record<string, unknown>> = source.layers ?? [];
-    for (const scope of scopedState.values()) {
-        if (
-            scope.commitId === commitId &&
-            scope.slideId === sourceSlideId &&
-            scope.layers.size > 0
-        ) {
-            sourceLayers = Array.from(scope.layers.values()) as Array<Record<string, unknown>>;
-            break;
-        }
-    }
-
-    // Find the highest numericId across ALL slides + live scopes to avoid conflicts
-    let maxId = 0;
-    for (const slide of slides) {
-        for (const layer of slide.layers ?? []) {
-            if (typeof layer.numericId === 'number' && layer.numericId > maxId) {
-                maxId = layer.numericId;
+        // Prefer live bus scope layers (may have unsaved changes) over commit data
+        let sourceLayers: Array<Record<string, unknown>> = source.layers ?? [];
+        for (const scope of scopedState.values()) {
+            if (
+                scope.commitId === commitId &&
+                scope.slideId === sourceSlideId &&
+                scope.layers.size > 0
+            ) {
+                sourceLayers = Array.from(scope.layers.values()) as Array<Record<string, unknown>>;
+                break;
             }
         }
-    }
-    // Also check all live scopes for the same commit (other slides may have unsaved layers)
-    for (const scope of scopedState.values()) {
-        if (scope.commitId === commitId) {
-            for (const [numericId] of scope.layers) {
-                if (numericId > maxId) maxId = numericId;
+
+        // Find the highest numericId across ALL slides + live scopes to avoid conflicts
+        let maxId = 0;
+        for (const slide of slides) {
+            for (const layer of slide.layers ?? []) {
+                if (typeof layer.numericId === 'number' && layer.numericId > maxId) {
+                    maxId = layer.numericId;
+                }
             }
         }
-    }
+        // Also check all live scopes for the same commit (other slides may have unsaved layers)
+        for (const scope of scopedState.values()) {
+            if (scope.commitId === commitId) {
+                for (const [numericId] of scope.layers) {
+                    if (numericId > maxId) maxId = numericId;
+                }
+            }
+        }
 
-    // Deep-copy layers with new numericIds
-    const copiedLayers = sourceLayers.map((layer, i) => ({
-        ...JSON.parse(JSON.stringify(layer)),
-        numericId: maxId + i + 1
-    }));
+        // Deep-copy layers with new numericIds
+        const copiedLayers = sourceLayers.map((layer, i) => ({
+            ...JSON.parse(JSON.stringify(layer)),
+            numericId: maxId + i + 1
+        }));
 
-    const newSlide = {
-        id: newSlideId,
-        order: source.order + 0.5,
-        name: newSlideName,
-        layers: copiedLayers
-    };
+        const newSlide = {
+            id: newSlideId,
+            order: source.order + 0.5,
+            name: newSlideName,
+            layers: copiedLayers
+        };
 
-    const updatedSlides = [...slides, newSlide]
-        .sort((a, b) => a.order - b.order)
-        .map((s, i) => ({ ...s, order: i }));
+        const updatedSlides = [...slides, newSlide]
+            .sort((a, b) => a.order - b.order)
+            .map((s, i) => ({ ...s, order: i }));
 
-    await dbCol.commits.updateSlides(
-        commitId,
-        updatedSlides as CommitDocument['content']['slides']
-    );
+        await dbCol.commits.updateSlides(
+            commitId,
+            updatedSlides as CommitDocument['content']['slides']
+        );
 
-    await logAuditSuccess({
-        action: 'COMMIT_SLIDE_COPIED',
-        actorId: actorEmail,
-        projectId: commit.projectId,
-        resourceType: 'commit',
-        resourceId: commitId,
-        changes: {
-            sourceSlideId,
-            newSlideId,
-            newSlideName
-        },
-        ...withProjectAuditContext(auditContext)
+        await logAuditSuccess({
+            action: 'COMMIT_SLIDE_COPIED',
+            actorId: actorEmail,
+            projectId: commit.projectId,
+            resourceType: 'commit',
+            resourceId: commitId,
+            changes: {
+                sourceSlideId,
+                newSlideId,
+                newSlideName
+            },
+            ...withProjectAuditContext(auditContext)
+        });
     });
 }
 
@@ -698,51 +706,55 @@ export async function deleteSlideFromCommit(
     actorEmail: string,
     auditContext?: ProjectAuditContext
 ): Promise<boolean> {
-    const commit = await dbCol.commits.findById(commitId);
-    if (!commit?.content?.slides) throw new Error('Commit not found');
+    // Read-modify-write of the whole slides array, so it must serialize against
+    // scope saves and other slide mutations on the same commit.
+    return runCommitPersistenceTask(commitId, async () => {
+        const commit = await dbCol.commits.findById(commitId);
+        if (!commit?.content?.slides) throw new Error('Commit not found');
 
-    const slides = commit.content.slides as Array<{
-        id: string;
-        order: number;
-        name?: string;
-        layers: unknown[];
-    }>;
+        const slides = commit.content.slides as Array<{
+            id: string;
+            order: number;
+            name?: string;
+            layers: unknown[];
+        }>;
 
-    if (slides.length <= 1) {
+        if (slides.length <= 1) {
+            await logAuditSuccess({
+                action: 'COMMIT_SLIDE_DELETE_BLOCKED',
+                actorId: actorEmail,
+                projectId: commit.projectId,
+                resourceType: 'commit',
+                resourceId: commitId,
+                reasonCode: 'LAST_SLIDE',
+                changes: { slideId },
+                ...withProjectAuditContext(auditContext)
+            });
+            return false;
+        }
+
+        const updatedSlides = slides
+            .filter((s) => s.id !== slideId)
+            .sort((a, b) => a.order - b.order)
+            .map((s, i) => ({ ...s, order: i }));
+
+        await dbCol.commits.updateSlides(
+            commitId,
+            updatedSlides as CommitDocument['content']['slides']
+        );
+
         await logAuditSuccess({
-            action: 'COMMIT_SLIDE_DELETE_BLOCKED',
+            action: 'COMMIT_SLIDE_DELETED',
             actorId: actorEmail,
             projectId: commit.projectId,
             resourceType: 'commit',
             resourceId: commitId,
-            reasonCode: 'LAST_SLIDE',
             changes: { slideId },
             ...withProjectAuditContext(auditContext)
         });
-        return false;
-    }
 
-    const updatedSlides = slides
-        .filter((s) => s.id !== slideId)
-        .sort((a, b) => a.order - b.order)
-        .map((s, i) => ({ ...s, order: i }));
-
-    await dbCol.commits.updateSlides(
-        commitId,
-        updatedSlides as CommitDocument['content']['slides']
-    );
-
-    await logAuditSuccess({
-        action: 'COMMIT_SLIDE_DELETED',
-        actorId: actorEmail,
-        projectId: commit.projectId,
-        resourceType: 'commit',
-        resourceId: commitId,
-        changes: { slideId },
-        ...withProjectAuditContext(auditContext)
+        return true;
     });
-
-    return true;
 }
 
 export async function revokeUploadTokenForActor(

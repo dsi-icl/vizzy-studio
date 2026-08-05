@@ -60,7 +60,8 @@ export {
     buildSlidesSnapshot,
     saveScope,
     persistScopeNow,
-    persistSlideMetadata
+    persistSlideMetadata,
+    runCommitPersistenceTask
 } from './busState.persistence';
 
 export {

@@ -227,8 +227,23 @@ export async function buildSlidesSnapshot(
     return updatedSlides;
 }
 
-/** Serializes saves per scope so concurrent writes cannot interleave. */
-const scopeSaveQueue = new KeyedSerialQueue<ScopeId>();
+/**
+ * Serializes commit writes.
+ *
+ * Keyed by commit, not by scope. Several scopes — one per slide — share a
+ * commit document, and every write rewrites the whole slides array from a fresh
+ * read. Two scopes of the same commit saving concurrently would each read, then
+ * each write, and the later write would clobber the earlier one's slide.
+ */
+const commitWriteQueue = new KeyedSerialQueue<string>();
+
+/** Run a task that rewrites a commit document, serialized against all others. */
+export function runCommitPersistenceTask<Result>(
+    commitId: string,
+    task: () => Promise<Result>
+): Promise<Result> {
+    return commitWriteQueue.run(commitId, task);
+}
 
 export async function saveScope(
     scopeId: ScopeId,
@@ -239,7 +254,10 @@ export async function saveScope(
     const scope = scopedState.get(scopeId);
     if (!scope) return { success: false, error: 'Scope not found' };
 
-    return scopeSaveQueue.run(scopeId, () =>
+    // The head commit is resolved inside the write. When the scope has none yet,
+    // fall back to the project so we still serialize, just more coarsely.
+    const key = scope.commitId || `project:${scope.projectId}`;
+    return commitWriteQueue.run(key, () =>
         writeScope(scopeId, scope, message, isAutoSave, authorEmail)
     );
 }
