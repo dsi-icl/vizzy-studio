@@ -3,6 +3,12 @@ import type { Layer, LayerWithEditorState, Slide } from './types';
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
+export interface LayerClipboard {
+    projectId: string;
+    layers: LayerWithEditorState[];
+    pasteCount: number;
+}
+
 export interface EditorState {
     // ── State ──
     projectId: string | null;
@@ -10,6 +16,7 @@ export interface EditorState {
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
     selectedLayerIds: string[];
+    layerClipboard: LayerClipboard | null;
     slides: Slide[];
     activeSlideId: string | null;
     selectedSlides: string[];
@@ -54,6 +61,9 @@ export interface EditorState {
     toggleLayerVisibility: (numericId: number) => void;
     deselectAllLayers: () => void;
     toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
+    copySelectedLayers: () => number;
+    copyLayer: (numericId: number) => boolean;
+    pasteLayers: () => string[];
     deleteSelectedLayer: () => void;
     bringToFront: () => void;
     sendToBack: () => void;
