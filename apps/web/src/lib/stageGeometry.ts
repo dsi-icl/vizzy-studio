@@ -21,6 +21,94 @@ export function snapToGrid(value: number, grid: number): number {
     return Math.round(value / grid) * grid;
 }
 
+export type RectTransform = {
+    cx: number;
+    cy: number;
+    width: number;
+    height: number;
+    rotation: number;
+    scaleX: number;
+    scaleY: number;
+};
+
+export function getKonvaRectTransform(config: RectTransform, coordinateScale = 1) {
+    return {
+        x: config.cx * coordinateScale,
+        y: config.cy * coordinateScale,
+        width: config.width * coordinateScale,
+        height: config.height * coordinateScale,
+        offsetX: (config.width * coordinateScale) / 2,
+        offsetY: (config.height * coordinateScale) / 2,
+        scaleX: config.scaleX,
+        scaleY: config.scaleY,
+        rotation: config.rotation
+    };
+}
+
+export function getTransformedRectBounds(config: RectTransform) {
+    const width = Math.abs(config.width * config.scaleX);
+    const height = Math.abs(config.height * config.scaleY);
+    const radians = (config.rotation * Math.PI) / 180;
+    const radiusX =
+        (width / 2) * Math.abs(Math.cos(radians)) + (height / 2) * Math.abs(Math.sin(radians));
+    const radiusY =
+        (width / 2) * Math.abs(Math.sin(radians)) + (height / 2) * Math.abs(Math.cos(radians));
+
+    return {
+        left: config.cx - radiusX,
+        top: config.cy - radiusY,
+        right: config.cx + radiusX,
+        bottom: config.cy + radiusY,
+        width: radiusX * 2,
+        height: radiusY * 2
+    };
+}
+
+type HorizontalEdge = 'left' | 'right';
+type VerticalEdge = 'top' | 'bottom';
+
+/** Map a Konva transformer's local anchor name onto world-facing edges. */
+export function getVisualAnchorEdges(anchor: string | null, rotation: number) {
+    const normalized = normalizeRotationToQuadrant(rotation);
+    const localEdges = [
+        anchor?.includes('left') ? 'left' : anchor?.includes('right') ? 'right' : null,
+        anchor?.includes('top') ? 'top' : anchor?.includes('bottom') ? 'bottom' : null
+    ].filter((edge): edge is HorizontalEdge | VerticalEdge => edge !== null);
+
+    const mappings: Record<
+        number,
+        Record<HorizontalEdge | VerticalEdge, HorizontalEdge | VerticalEdge>
+    > = {
+        0: { left: 'left', right: 'right', top: 'top', bottom: 'bottom' },
+        90: { left: 'top', right: 'bottom', top: 'right', bottom: 'left' },
+        180: { left: 'right', right: 'left', top: 'bottom', bottom: 'top' },
+        270: { left: 'bottom', right: 'top', top: 'left', bottom: 'right' }
+    };
+    const mapping = mappings[normalized] ?? mappings[0];
+    const visualEdges = localEdges.map((edge) => mapping[edge]);
+
+    return {
+        horizontal: visualEdges.find(
+            (edge): edge is HorizontalEdge => edge === 'left' || edge === 'right'
+        ),
+        vertical: visualEdges.find(
+            (edge): edge is VerticalEdge => edge === 'top' || edge === 'bottom'
+        )
+    };
+}
+
+export function hasSameSpatialTransform(a: RectTransform, b: RectTransform): boolean {
+    return (
+        a.cx === b.cx &&
+        a.cy === b.cy &&
+        a.width === b.width &&
+        a.height === b.height &&
+        a.rotation === b.rotation &&
+        a.scaleX === b.scaleX &&
+        a.scaleY === b.scaleY
+    );
+}
+
 // ── Touch / pinch ─────────────────────────────────────────────────────────────
 
 export function getDistance(p1: { x: number; y: number }, p2: { x: number; y: number }): number {

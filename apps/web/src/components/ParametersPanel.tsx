@@ -7,6 +7,7 @@ import { useCallback, useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
+import { getTransformedRectBounds } from '~/lib/stageGeometry';
 import type { LayerWithEditorState } from '~/lib/types';
 
 interface ParametersPanelProps {
@@ -96,12 +97,9 @@ export function ParametersPanel({
         [selectedLayer, markDirty]
     );
 
-    const selectedLeftX = selectedLayer
-        ? selectedLayer.config.cx - selectedLayer.config.width / 2
-        : null;
-    const selectedTopY = selectedLayer
-        ? selectedLayer.config.cy - selectedLayer.config.height / 2
-        : null;
+    const selectedBounds = selectedLayer ? getTransformedRectBounds(selectedLayer.config) : null;
+    const selectedLeftX = selectedBounds?.left ?? null;
+    const selectedTopY = selectedBounds?.top ?? null;
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-muted/30">
@@ -135,7 +133,11 @@ export function ParametersPanel({
                                         onInput={(e) => console.log(e)}
                                         onValueChange={(v) => {
                                             if (v === null || !selectedLayer) return;
-                                            updateConfig('cx', v + selectedLayer.config.width / 2);
+                                            updateConfig(
+                                                'cx',
+                                                selectedLayer.config.cx +
+                                                    (v - (selectedBounds?.left ?? v))
+                                            );
                                         }}
                                     />
                                     <SideButtonNumberField
@@ -144,7 +146,11 @@ export function ParametersPanel({
                                         value={selectedTopY ?? 0}
                                         onValueChange={(v) => {
                                             if (v === null || !selectedLayer) return;
-                                            updateConfig('cy', v + selectedLayer.config.height / 2);
+                                            updateConfig(
+                                                'cy',
+                                                selectedLayer.config.cy +
+                                                    (v - (selectedBounds?.top ?? v))
+                                            );
                                         }}
                                     />
                                 </div>

@@ -126,6 +126,9 @@ export function ViewerSlatePreview({
                                             offsetX={shape.config.width / 2}
                                             offsetY={shape.config.height / 2}
                                             radius={shape.config.width / 2}
+                                            scaleX={shape.config.scaleX}
+                                            scaleY={shape.config.scaleY}
+                                            rotation={shape.config.rotation}
                                             fill="transparent"
                                             stroke={shape.strokeColor}
                                             strokeWidth={shape.strokeWidth * 2}
@@ -145,6 +148,8 @@ export function ViewerSlatePreview({
                                             height={shape.config.height}
                                             offsetX={shape.config.width / 2}
                                             offsetY={shape.config.height / 2}
+                                            scaleX={shape.config.scaleX}
+                                            scaleY={shape.config.scaleY}
                                             rotation={shape.config.rotation}
                                             fill="transparent"
                                             stroke={shape.strokeColor}
@@ -197,6 +202,8 @@ export function ViewerSlatePreview({
                                     height={shape.config.height}
                                     offsetX={shape.config.width / 2}
                                     offsetY={shape.config.height / 2}
+                                    scaleX={shape.config.scaleX}
+                                    scaleY={shape.config.scaleY}
                                     rotation={shape.config.rotation}
                                     fill="#555"
                                     listening={false}

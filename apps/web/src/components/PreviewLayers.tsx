@@ -5,6 +5,7 @@ import { Image, Rect } from 'react-konva';
 
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
+import { getKonvaRectTransform } from '~/lib/stageGeometry';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -17,6 +18,7 @@ export function PreviewMediaLayer({
 }) {
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
+    const transform = getKonvaRectTransform(shape.config, stageScaleFactor);
 
     const mediaUrl =
         shape.type === 'image'
@@ -48,20 +50,7 @@ export function PreviewMediaLayer({
     }, [shape.config.filters, img, shape.config.width, shape.config.height]);
 
     if (mediaUrl && img) {
-        return (
-            <Image
-                ref={imageRef}
-                image={img}
-                x={shape.config.cx * stageScaleFactor}
-                y={shape.config.cy * stageScaleFactor}
-                width={shape.config.width * stageScaleFactor}
-                height={shape.config.height * stageScaleFactor}
-                offsetX={(shape.config.width * stageScaleFactor) / 2}
-                offsetY={(shape.config.height * stageScaleFactor) / 2}
-                rotation={shape.config.rotation}
-                listening={false}
-            />
-        );
+        return <Image ref={imageRef} image={img} {...transform} listening={false} />;
     }
 
     if (shape.blurhash && isBlurhashValid(shape.blurhash)) {
@@ -72,35 +61,10 @@ export function PreviewMediaLayer({
         offscreenCanvas.height = 100;
         const ctx = offscreenCanvas.getContext('2d');
         ctx?.putImageData(imageData, 0, 0);
-        return (
-            <Image
-                ref={imageRef}
-                image={offscreenCanvas}
-                x={shape.config.cx * stageScaleFactor}
-                y={shape.config.cy * stageScaleFactor}
-                width={shape.config.width * stageScaleFactor}
-                height={shape.config.height * stageScaleFactor}
-                offsetX={(shape.config.width * stageScaleFactor) / 2}
-                offsetY={(shape.config.height * stageScaleFactor) / 2}
-                rotation={shape.config.rotation}
-                listening={false}
-            />
-        );
+        return <Image ref={imageRef} image={offscreenCanvas} {...transform} listening={false} />;
     }
 
-    return (
-        <Rect
-            x={shape.config.cx * stageScaleFactor}
-            y={shape.config.cy * stageScaleFactor}
-            width={shape.config.width * stageScaleFactor}
-            height={shape.config.height * stageScaleFactor}
-            offsetX={(shape.config.width * stageScaleFactor) / 2}
-            offsetY={(shape.config.height * stageScaleFactor) / 2}
-            rotation={shape.config.rotation}
-            fill="#555"
-            listening={false}
-        />
-    );
+    return <Rect {...transform} fill="#555" listening={false} />;
 }
 
 export function PreviewTextLayer({
@@ -112,6 +76,7 @@ export function PreviewTextLayer({
 }) {
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
+    const transform = getKonvaRectTransform(shape.config, stageScaleFactor);
 
     useEffect(() => {
         let cancelled = false;
@@ -132,33 +97,8 @@ export function PreviewTextLayer({
     }, [shape.config.filters, img, shape.config.width, shape.config.height]);
 
     if (img) {
-        return (
-            <Image
-                ref={imageRef}
-                image={img}
-                x={shape.config.cx * stageScaleFactor}
-                y={shape.config.cy * stageScaleFactor}
-                width={shape.config.width * stageScaleFactor}
-                height={shape.config.height * stageScaleFactor}
-                offsetX={(shape.config.width * stageScaleFactor) / 2}
-                offsetY={(shape.config.height * stageScaleFactor) / 2}
-                rotation={shape.config.rotation}
-                listening={false}
-            />
-        );
+        return <Image ref={imageRef} image={img} {...transform} listening={false} />;
     }
 
-    return (
-        <Rect
-            x={shape.config.cx * stageScaleFactor}
-            y={shape.config.cy * stageScaleFactor}
-            width={shape.config.width * stageScaleFactor}
-            height={shape.config.height * stageScaleFactor}
-            offsetX={(shape.config.width * stageScaleFactor) / 2}
-            offsetY={(shape.config.height * stageScaleFactor) / 2}
-            rotation={shape.config.rotation}
-            fill="#555"
-            listening={false}
-        />
-    );
+    return <Rect {...transform} fill="#555" listening={false} />;
 }

@@ -39,6 +39,8 @@ import {
     getAngle,
     getAngleDelta,
     getDistance,
+    getTransformedRectBounds,
+    getVisualAnchorEdges,
     isCardinalRotation,
     normalizeRotationToQuadrant,
     snapToGrid,
@@ -876,67 +878,87 @@ export function EditorSlate() {
 
                 // Drag end: snap a stable visual reference (top-left of AABB) to the grid.
                 if (e.type === 'dragend') {
-                    const left = node.x() - node.width() / 2;
-                    const top = node.y() - node.height() / 2;
-                    const snappedLeft = snapToGrid(left, SNAP_GRID);
-                    const snappedTop = snapToGrid(top, SNAP_GRID);
+                    const parent = node.getParent();
+                    const bounds = node.getClientRect({
+                        ...(parent ? { relativeTo: parent } : {}),
+                        skipShadow: true,
+                        skipStroke: true
+                    });
                     node.position({
-                        x: snappedLeft + node.width() / 2,
-                        y: snappedTop + node.height() / 2
+                        x: node.x() + snapToGrid(bounds.x, SNAP_GRID) - bounds.x,
+                        y: node.y() + snapToGrid(bounds.y, SNAP_GRID) - bounds.y
                     });
                 }
 
                 // Transform end: snap only moved edges and keep pinned edges/corner stable.
                 if (e.type === 'transformend' && isCardinalRotation(rotation)) {
                     const anchor = node.getAttr('lastActiveAnchor') as string | null;
-                    const left = node.x() - node.width() / 2;
-                    const right = node.x() + node.width() / 2;
-                    const top = node.y() - node.height() / 2;
-                    const bottom = node.y() + node.height() / 2;
+                    const bounds = getTransformedRectBounds({
+                        cx: node.x(),
+                        cy: node.y(),
+                        width: node.width(),
+                        height: node.height(),
+                        rotation,
+                        scaleX: node.scaleX(),
+                        scaleY: node.scaleY()
+                    });
+                    const visualEdges = getVisualAnchorEdges(anchor, rotation);
 
-                    let nextLeft = left;
-                    let nextRight = right;
-                    let nextTop = top;
-                    let nextBottom = bottom;
+                    let nextLeft = bounds.left;
+                    let nextRight = bounds.right;
+                    let nextTop = bounds.top;
+                    let nextBottom = bounds.bottom;
 
-                    if (anchor?.includes('left')) {
+                    if (visualEdges.horizontal === 'left') {
                         // Moving the left edge -> keep right edge pinned
-                        nextLeft = snapToGrid(left, SNAP_GRID);
-                    } else if (anchor?.includes('right')) {
+                        nextLeft = snapToGrid(bounds.left, SNAP_GRID);
+                    } else if (visualEdges.horizontal === 'right') {
                         // Moving the right edge -> keep left edge pinned
-                        nextRight = snapToGrid(right, SNAP_GRID);
+                        nextRight = snapToGrid(bounds.right, SNAP_GRID);
                     } else {
                         // No horizontal handle (e.g. top-center/bottom-center): snap by position
-                        const snappedLeft = snapToGrid(left, SNAP_GRID);
-                        const deltaX = snappedLeft - left;
+                        const snappedLeft = snapToGrid(bounds.left, SNAP_GRID);
+                        const deltaX = snappedLeft - bounds.left;
                         nextLeft += deltaX;
                         nextRight += deltaX;
                     }
 
-                    if (anchor?.includes('top')) {
+                    if (visualEdges.vertical === 'top') {
                         // Moving the top edge -> keep bottom edge pinned
-                        nextTop = snapToGrid(top, SNAP_GRID);
-                    } else if (anchor?.includes('bottom')) {
+                        nextTop = snapToGrid(bounds.top, SNAP_GRID);
+                    } else if (visualEdges.vertical === 'bottom') {
                         // Moving the bottom edge -> keep top edge pinned
-                        nextBottom = snapToGrid(bottom, SNAP_GRID);
+                        nextBottom = snapToGrid(bounds.bottom, SNAP_GRID);
                     } else {
                         // No vertical handle (e.g. middle-left/middle-right): snap by position
-                        const snappedTop = snapToGrid(top, SNAP_GRID);
-                        const deltaY = snappedTop - top;
+                        const snappedTop = snapToGrid(bounds.top, SNAP_GRID);
+                        const deltaY = snappedTop - bounds.top;
                         nextTop += deltaY;
                         nextBottom += deltaY;
                     }
 
-                    const nextWidth = Math.max(MIN_LAYER_DIMENSION, nextRight - nextLeft);
-                    const nextHeight = Math.max(MIN_LAYER_DIMENSION, nextBottom - nextTop);
+                    const nextVisualWidth = Math.max(MIN_LAYER_DIMENSION, nextRight - nextLeft);
+                    const nextVisualHeight = Math.max(MIN_LAYER_DIMENSION, nextBottom - nextTop);
+                    const swapsAxes = rotation === 90 || rotation === 270;
+                    const nextLocalWidth = swapsAxes ? nextVisualHeight : nextVisualWidth;
+                    const nextLocalHeight = swapsAxes ? nextVisualWidth : nextVisualHeight;
+                    const scaleXSign = Math.sign(node.scaleX()) || 1;
+                    const scaleYSign = Math.sign(node.scaleY()) || 1;
 
-                    node.width(nextWidth);
-                    node.height(nextHeight);
-                    node.offsetX(nextWidth / 2);
-                    node.offsetY(nextHeight / 2);
+                    if (layerToUpdate.type === 'video') {
+                        node.scaleX(scaleXSign * (nextLocalWidth / Math.max(node.width(), 1e-6)));
+                        node.scaleY(scaleYSign * (nextLocalHeight / Math.max(node.height(), 1e-6)));
+                    } else {
+                        const scaleX = Math.max(Math.abs(node.scaleX()), 1e-6);
+                        const scaleY = Math.max(Math.abs(node.scaleY()), 1e-6);
+                        node.width(nextLocalWidth / scaleX);
+                        node.height(nextLocalHeight / scaleY);
+                        node.offsetX(node.width() / 2);
+                        node.offsetY(node.height() / 2);
+                    }
                     node.position({
-                        x: nextLeft + nextWidth / 2,
-                        y: nextTop + nextHeight / 2
+                        x: nextLeft + nextVisualWidth / 2,
+                        y: nextTop + nextVisualHeight / 2
                     });
                 }
                 node.getLayer()?.batchDraw();

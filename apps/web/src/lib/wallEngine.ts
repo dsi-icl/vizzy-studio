@@ -1,6 +1,7 @@
 'use client';
 
 import { BusClient } from './busClient';
+import { hasSameSpatialTransform } from './stageGeometry';
 import {
     GSMessageSchema,
     type GSMessage,
@@ -140,11 +141,15 @@ export class WallEngine {
                     ? (layerPtr.playback ?? layer.playback)
                     : null;
 
+            const spatialTransformChanged = !hasSameSpatialTransform(layerPtr.config, layer.config);
+
             Object.assign(layerPtr, layer);
-            layerPtr.startPos = { ...layer.config };
-            layerPtr.targetPos = { ...layer.config };
-            layerPtr.animStartTime = 0;
-            layerPtr.animDuration = LAYER_ANIMATION_DURATION;
+            if (spatialTransformChanged) {
+                layerPtr.startPos = { ...layer.config };
+                layerPtr.targetPos = { ...layer.config };
+                layerPtr.animStartTime = 0;
+                layerPtr.animDuration = LAYER_ANIMATION_DURATION;
+            }
 
             if (layer.type === 'video' && preservedVideoPlayback && layerPtr.type === 'video') {
                 layerPtr.playback = preservedVideoPlayback;

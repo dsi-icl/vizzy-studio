@@ -676,7 +676,7 @@ function WallApp() {
                         muted
                         playsInline
                         loop={layer.loop ?? true}
-                        className="object-cover"
+                        className="object-fill"
                     />
                 );
 
