@@ -462,7 +462,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                 )}
 
                 {/* ── Video Playback ── */}
-                {isVideo && activeLayer && !activeLayer.isUploading && engine && (
+                {isVideo && activeLayer && engine && (
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <PlaybackControls

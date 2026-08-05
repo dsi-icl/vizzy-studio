@@ -6,7 +6,7 @@ export function snapshotCopyableLayers(
     layers: Iterable<LayerWithEditorState>
 ): LayerWithEditorState[] {
     return Array.from(layers)
-        .filter((layer) => layer.type !== 'background' && !layer.isUploading)
+        .filter((layer) => layer.type !== 'background')
         .sort((a, b) => a.config.zIndex - b.config.zIndex)
         .map((layer) => structuredClone(layer));
 }
@@ -33,14 +33,10 @@ export function createPastedLayers(
         };
 
         delete pasted.progress;
-        delete pasted.isUploading;
 
         if (pasted.type === 'line') {
             pasted.line = pasted.line.map((coordinate) => coordinate + offset);
         } else if (pasted.type === 'text') {
-            delete pasted.textRevision;
-            delete pasted.textStateHash;
-            delete pasted.textBindingVersion;
         } else if (pasted.type === 'video') {
             pasted.playback = {
                 status: 'paused',
