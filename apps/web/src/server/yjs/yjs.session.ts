@@ -13,6 +13,7 @@ import { logAuditDenied } from '~/server/audit';
 import { canEditProject } from '~/server/projectAuthz';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
 
+import { DocumentRegistry } from './documentRegistry';
 import { applyHtmlToDoc, applyLexicalStateToDoc, yDocToProjection } from './lexical';
 import { chooseSeedSource, type SeedSource } from './seedSource';
 import {
@@ -157,8 +158,7 @@ export function parseScope(docName: string): DocScope {
 
 export class YCrossws {
     persistence: Persistence;
-    docs: Map<string, SharedDoc> = new Map();
-    initializing: Map<string, Promise<SharedDoc>> = new Map();
+    private readonly registry = new DocumentRegistry<SharedDoc>();
     peers: Set<Peer> = new Set();
 
     constructor() {
@@ -349,13 +349,16 @@ export class YCrossws {
         awarenessProtocol.removeAwarenessStates(doc.awareness, [...controlledIds], undefined);
 
         if (doc.peerIds.size === 0) {
-            doc.stopSyncLoop();
-            await this.flushDoc(doc);
-            await this.persistence.writeState(doc.name, doc).catch((err) => {
-                console.error('[YJS] Failed to persist doc on close:', err);
+            // Held behind the registry so a reconnect arriving mid-teardown
+            // rebuilds rather than resolving onto a document being destroyed.
+            await this.registry.release(doc.name, doc, async () => {
+                doc.stopSyncLoop();
+                await this.flushDoc(doc);
+                await this.persistence.writeState(doc.name, doc).catch((err) => {
+                    console.error('[YJS] Failed to persist doc on close:', err);
+                });
+                doc.destroy();
             });
-            doc.destroy();
-            this.docs.delete(doc.name);
         }
     }
 
@@ -414,7 +417,8 @@ export class YCrossws {
         const scope = parseScope(docName);
         const doc = new SharedDoc(docName, scope, this);
         doc.gc = true;
-        this.docs.set(docName, doc);
+        // Deliberately not registered yet — the registry publishes it only once
+        // this resolves, so no peer can observe a half-hydrated document.
 
         try {
             const layer = await loadTextLayer(scope);
@@ -435,7 +439,6 @@ export class YCrossws {
             doc.startSyncLoop();
             return doc;
         } catch (error) {
-            this.docs.delete(docName);
             doc.stopSyncLoop();
             doc.destroy();
             throw error;
@@ -451,19 +454,7 @@ export class YCrossws {
         if (state.doc) return state.doc;
 
         const docName = getDocName(peer);
-        let doc = this.docs.get(docName);
-        if (!doc) {
-            let pending = this.initializing.get(docName);
-            if (!pending) {
-                pending = this.createDoc(docName);
-                this.initializing.set(docName, pending);
-            }
-            try {
-                doc = await pending;
-            } finally {
-                this.initializing.delete(docName);
-            }
-        }
+        const doc = await this.registry.acquire(docName, () => this.createDoc(docName));
 
         if (!doc.peerIds.has(peer)) doc.peerIds.set(peer, new Set());
         setYjsPeerState(peer, { ...state, doc });
