@@ -492,6 +492,20 @@ export function EditorSlate() {
             if (isEditingInput) return;
             if (editingTextLayerId !== null) return;
             const store = useEditorStore.getState();
+            const shortcutKey = e.key.toLowerCase();
+            const isClipboardShortcut = (e.ctrlKey || e.metaKey) && !e.altKey;
+
+            if (isClipboardShortcut && shortcutKey === 'c') {
+                const browserSelection = window.getSelection();
+                if (browserSelection && !browserSelection.isCollapsed) return;
+                if (store.copySelectedLayers() > 0) e.preventDefault();
+                return;
+            }
+            if (isClipboardShortcut && shortcutKey === 'v') {
+                if (store.pasteLayers().length > 0) e.preventDefault();
+                return;
+            }
+
             if (!store.selectedLayerIds.length) return;
 
             if (e.key === 'Delete' || e.key === 'Backspace') store.deleteSelectedLayer();
