@@ -76,7 +76,7 @@ export const useEditorStore =
                   showSpacePreview: false,
                   showGrid: true,
                   isDrawing: false,
-                  isSnapping: true,
+                  isSnapping: false,
                   strokeColor: '#ff0000',
                   strokeWidth: 10,
                   strokeDash: [],
