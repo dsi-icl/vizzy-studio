@@ -1045,6 +1045,10 @@ export function EditorSlate() {
 
     const flushNodeState = (idToFlush: string) => {
         if (!trRef.current) return;
+        // Line layers draw from absolute `points` and ignore `config` geometry, so their
+        // Konva node reports x/y/width/height as 0. Flushing one would zero the stored
+        // bounding box and broadcast it. They are not transformable — nothing to flush.
+        if (useEditorStore.getState().layers.get(parseInt(idToFlush))?.type === 'line') return;
         const stage = trRef.current.getStage();
         const node = stage?.findOne<Konva.Shape>(`#${idToFlush}`);
         if (node)
@@ -1249,7 +1253,14 @@ export function EditorSlate() {
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
-            const node = trRef.current.getStage()?.findOne(`#${selectedLayerIds[0]}`);
+            // Lines are selectable but not transformable — their render ignores `config`,
+            // so any transform would be reverted on the next render. Leave handles off.
+            const isLine =
+                useEditorStore.getState().layers.get(parseInt(selectedLayerIds[0]))?.type ===
+                'line';
+            const node = isLine
+                ? undefined
+                : trRef.current.getStage()?.findOne(`#${selectedLayerIds[0]}`);
             if (node) {
                 trRef.current.nodes([node]);
                 trRef.current.getLayer()?.batchDraw();
@@ -1491,8 +1502,11 @@ export function EditorSlate() {
                                     return (
                                         <Line
                                             key={`lin_${layer.numericId}`}
+                                            id={layer.numericId.toString()}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}
+                                            onClick={props.onSelect}
+                                            onTap={props.onSelect}
                                             points={layer.line}
                                             stroke={layer.strokeColor}
                                             strokeWidth={layer.strokeWidth}
