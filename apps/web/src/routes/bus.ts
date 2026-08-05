@@ -519,19 +519,33 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textState?: string;
+    textFormat?: number;
     fallbackLayer?: Extract<Layer, { type: 'text' }>;
 }) => {
     try {
-        const { projectId, commitId, slideId, layerId, textHtml, fallbackLayer } = payload;
+        const {
+            projectId,
+            commitId,
+            slideId,
+            layerId,
+            textHtml,
+            textState,
+            textFormat,
+            fallbackLayer
+        } = payload;
         const scopeId = internScope(projectId, commitId, slideId);
         const scope = getOrCreateScope(scopeId, projectId, commitId, slideId);
 
+        // textState and textHtml are projected together, so they are written
+        // together or not at all — a stale pairing must never be persisted.
+        const textFields = { textHtml, textState, textFormat };
         const existing = scope.layers.get(layerId);
         const nextLayer =
             existing?.type === 'text'
-                ? { ...existing, textHtml }
+                ? { ...existing, ...textFields }
                 : fallbackLayer
-                  ? { ...fallbackLayer, textHtml }
+                  ? { ...fallbackLayer, ...textFields }
                   : null;
 
         if (!nextLayer || nextLayer.type !== 'text') {

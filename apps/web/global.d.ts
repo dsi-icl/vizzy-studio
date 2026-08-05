@@ -44,6 +44,8 @@ declare global {
                 slideId: string;
                 layerId: number;
                 textHtml: string;
+                textState?: string;
+                textFormat?: number;
                 fallbackLayer?: Extract<Layer, { type: 'text' }>;
             }) => boolean | Promise<boolean>;
             __VSYNC_INTERVAL__?: ReturnType<typeof setInterval>;

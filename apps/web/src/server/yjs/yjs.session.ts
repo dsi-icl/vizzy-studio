@@ -8,11 +8,12 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 
 import type { PeerMeta } from '~/lib/busState';
+import { TEXT_FORMAT_VERSION } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { canEditProject } from '~/server/projectAuthz';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
 
-import { applyHtmlToDoc, yDocToHtml } from './lexical';
+import { applyHtmlToDoc, yDocToProjection } from './lexical';
 import {
     messageSync,
     messageAwareness,
@@ -43,6 +44,8 @@ type BridgePayload = {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textState: string;
+    textFormat: number;
     fallbackLayer?: TextLayer;
 };
 
@@ -345,8 +348,8 @@ export class YCrossws {
             doc.dirty = false;
             await this.persistence.writeState(doc.name, doc);
 
-            const html = await yDocToHtml(doc, doc.name);
-            const nextHash = sha1(html);
+            const projection = await yDocToProjection(doc, doc.name);
+            const nextHash = sha1(projection.html);
             if (doc.lastHtmlHash === nextHash) return;
             doc.lastHtmlHash = nextHash;
 
@@ -355,7 +358,9 @@ export class YCrossws {
                 commitId: doc.scope.commitId,
                 slideId: doc.scope.slideId,
                 layerId: doc.scope.layerId,
-                textHtml: html,
+                textHtml: projection.html,
+                textState: projection.state,
+                textFormat: TEXT_FORMAT_VERSION,
                 fallbackLayer: doc.fallbackLayer ?? undefined
             };
 

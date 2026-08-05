@@ -127,8 +127,36 @@ export async function htmlToYUpdate(html: string, docName: string): Promise<Uint
     return Y.encodeStateAsUpdate(doc);
 }
 
-/** Render a YJS document back to an HTML string via Lexical. */
-export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
+export type TextProjection = {
+    /** Derived render artifact. */
+    html: string;
+    /** Serialized Lexical editor state — lossless, unlike the HTML. */
+    state: string;
+};
+
+/**
+ * Project a YJS document to both representations in a single pass, so the HTML
+ * and the serialized state can never describe different content.
+ */
+export async function yDocToProjection(doc: Y.Doc, docName: string): Promise<TextProjection> {
+    return yDocToLexical(doc, docName, (editor) => {
+        const html = withLexicalDomGlobals(() => {
+            let out = '';
+            editor.getEditorState().read(() => {
+                out = $generateHtmlFromNodes(editor);
+            });
+            return out;
+        });
+        return { html: html || '<p></p>', state: JSON.stringify(editor.getEditorState().toJSON()) };
+    });
+}
+
+/** Hydrate a throwaway Lexical editor from a YJS document and read from it. */
+async function yDocToLexical<Result>(
+    doc: Y.Doc,
+    docName: string,
+    read: (editor: ReturnType<typeof createHeadlessEditor>) => Result
+): Promise<Result> {
     const sourceUpdate = Y.encodeStateAsUpdate(doc);
     const tempDoc = new Y.Doc();
     const docMap = new Map<string, Y.Doc>([[docName, tempDoc]]);
@@ -150,16 +178,17 @@ export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
     await delay(0);
     binding.root.getSharedType().unobserveDeep(observer);
 
-    const html = withLexicalDomGlobals(() => {
-        let out = '';
-        editor.getEditorState().read(() => {
-            out = $generateHtmlFromNodes(editor);
-        });
-        return out;
-    });
+    try {
+        return read(editor);
+    } finally {
+        binding.root.destroy(binding as any);
+    }
+}
 
-    binding.root.destroy(binding as any);
-    return html || '<p></p>';
+/** Render a YJS document back to an HTML string via Lexical. */
+export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
+    const projection = await yDocToProjection(doc, docName);
+    return projection.html;
 }
 
 /** Apply an HTML string directly to an existing YJS document. */

@@ -1,5 +1,12 @@
 import { z } from '~/lib/zod';
 
+/**
+ * Version stamped on a text layer whose `textState` is written alongside
+ * `textHtml`. A layer without `textFormat` predates structured state and is
+ * readable only through its HTML. Bump when the serialized shape changes.
+ */
+export const TEXT_FORMAT_VERSION = 1;
+
 // ── Layer schemas ────────────────────────────────────────────────────────────
 
 const LayerPositionStateSchema = z.object({
@@ -78,7 +85,17 @@ const LayerSchema = z.discriminatedUnion('type', [
         })
         .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
-    z.object({ type: z.literal('text'), textHtml: z.string() }).extend(LayerBaseSchema.shape),
+    z
+        .object({
+            type: z.literal('text'),
+            /** Derived render artifact. Consumed by the canvas, wall and viewers. */
+            textHtml: z.string(),
+            /** Serialized Lexical editor state. Canonical when present. */
+            textState: z.string().optional(),
+            /** Absent means legacy, HTML-only. See TEXT_FORMAT_VERSION. */
+            textFormat: z.number().int().nonnegative().optional()
+        })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('map'),
