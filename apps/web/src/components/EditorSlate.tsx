@@ -31,6 +31,11 @@ import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
+import {
+    applyKeyboardArrowTransform,
+    broadcastKeyboardLayerTransform,
+    isEditorArrowKey
+} from '~/lib/editorKeyboardMovement';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
@@ -508,29 +513,32 @@ export function EditorSlate() {
 
             if (!store.selectedLayerIds.length) return;
 
-            if (e.key === 'Delete') store.deleteSelectedLayer();
-            if (e.key === 'Escape') store.deselectAllLayers();
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                store.deleteSelectedLayer();
+                return;
+            }
+            if (e.key === 'Escape') {
+                store.deselectAllLayers();
+                return;
+            }
+            if (!isEditorArrowKey(e.key)) return;
+
             const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
             if (!currentSelected) return;
 
-            const newLayerState = { ...currentSelected, config: { ...currentSelected.config } };
-            if (e.key === 'ArrowLeft') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation - 1);
-                else newLayerState.config.cx -= isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowRight') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation + 1);
-                else newLayerState.config.cx += isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowUp') newLayerState.config.cy -= isSnapping ? SNAP_GRID : 10;
-            if (e.key === 'ArrowDown') newLayerState.config.cy += isSnapping ? SNAP_GRID : 10;
-            store.updateLayerConfig(currentSelected.numericId, newLayerState.config);
+            e.preventDefault();
+            const updatedLayer = applyKeyboardArrowTransform(
+                currentSelected,
+                e.key,
+                e.shiftKey,
+                isSnapping ? SNAP_GRID : 10
+            );
+            store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
+            if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [editingTextLayerId, isSnapping]);
+    }, [editingTextLayerId, engine, isSnapping]);
 
     // ── Upload handler (stays here — complex async + file APIs) ───────────
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
