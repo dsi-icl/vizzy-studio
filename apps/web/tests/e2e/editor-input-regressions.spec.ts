@@ -125,6 +125,110 @@ async function countBrightTextPixels(page: Page) {
     return brightPixels;
 }
 
+test('selected-layer arrow movement is consumed before editor containers', async ({ page }) => {
+    await openInteractionEditor(page);
+    await resetInteractionLayers(page);
+
+    const initial = await page.evaluate(() => {
+        const harnessWindow = window as Window & {
+            __EDITOR_ARROW_BUBBLE_COUNT__?: number;
+            __EDITOR_STORE__?: {
+                getState: () => {
+                    toggleLayerSelection: (
+                        id: string,
+                        isShiftClick: boolean,
+                        isCtrlClick: boolean
+                    ) => void;
+                };
+            };
+        };
+        const slate = document.getElementById('slate');
+        const store = harnessWindow.__EDITOR_STORE__;
+        if (!(slate instanceof HTMLDivElement) || !store) {
+            throw new Error('Editor stage was not ready');
+        }
+
+        store.getState().toggleLayerSelection('2', false, false);
+        slate.tabIndex = 0;
+        slate.scrollLeft = 500;
+        slate.scrollTop = 100;
+        slate.focus();
+        harnessWindow.__EDITOR_ARROW_BUBBLE_COUNT__ = 0;
+        slate.addEventListener(
+            'keydown',
+            (event) => {
+                if (event.key === 'ArrowRight') {
+                    harnessWindow.__EDITOR_ARROW_BUBBLE_COUNT__ =
+                        (harnessWindow.__EDITOR_ARROW_BUBBLE_COUNT__ ?? 0) + 1;
+                }
+            },
+            { once: true }
+        );
+
+        return { scrollLeft: slate.scrollLeft, scrollTop: slate.scrollTop };
+    });
+
+    await page.keyboard.press('ArrowRight');
+
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    (
+                        window as Window & {
+                            __EDITOR_STORE__?: {
+                                getState: () => {
+                                    layers: Map<number, { config: { cx: number } }>;
+                                };
+                            };
+                        }
+                    ).__EDITOR_STORE__
+                        ?.getState()
+                        .layers.get(2)?.config.cx ?? null
+            )
+        )
+        .toBe(480);
+    expect(
+        await page.evaluate(
+            () =>
+                (window as Window & { __EDITOR_ARROW_BUBBLE_COUNT__?: number })
+                    .__EDITOR_ARROW_BUBBLE_COUNT__ ?? -1
+        )
+    ).toBe(0);
+    expect(
+        await page.evaluate(() => {
+            const slate = document.getElementById('slate');
+            if (!(slate instanceof HTMLDivElement)) return null;
+            return { scrollLeft: slate.scrollLeft, scrollTop: slate.scrollTop };
+        })
+    ).toEqual(initial);
+
+    await resetInteractionLayers(page);
+
+    const unselectedScrollLeft = await page.evaluate(() => {
+        const harnessWindow = window as Window & {
+            __EDITOR_STORE__?: { getState: () => { deselectAllLayers: () => void } };
+        };
+        const slate = document.getElementById('slate');
+        if (!(slate instanceof HTMLDivElement) || !harnessWindow.__EDITOR_STORE__) {
+            throw new Error('Editor stage was not ready');
+        }
+        harnessWindow.__EDITOR_STORE__.getState().deselectAllLayers();
+        slate.scrollLeft = 500;
+        slate.focus();
+        return slate.scrollLeft;
+    });
+    await page.keyboard.press('ArrowRight');
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const slate = document.getElementById('slate');
+                return slate instanceof HTMLDivElement ? slate.scrollLeft : -1;
+            })
+        )
+        .toBeGreaterThan(unselectedScrollLeft);
+});
+
 test('line-break text produces visible pixels on the editor canvas', async ({ page }) => {
     test.fail(
         true,

@@ -507,6 +507,7 @@ export function EditorSlate() {
             if (!currentSelected) return;
 
             e.preventDefault();
+            e.stopPropagation();
             const updatedLayer = applyKeyboardArrowTransform(
                 currentSelected,
                 e.key,
@@ -516,8 +517,10 @@ export function EditorSlate() {
             store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
             if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        // Capture editor movement shortcuts before focused descendants (for example the
+        // sortable layer list) can scroll or interpret the same arrow keystroke.
+        window.addEventListener('keydown', handleKeyDown, { capture: true });
+        return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
     }, [editingTextLayerId, engine, isSnapping]);
 
     // ── Upload handler (stays here — complex async + file APIs) ───────────
