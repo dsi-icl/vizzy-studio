@@ -117,9 +117,8 @@ export function ReadOnlyTextLayer({
     useEffect(() => {
         let cancelled = false;
         textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
-            .then(async (rendered) => {
-                const image = await rendered;
-                if (!cancelled && image) setImg(image);
+            .then((rendered) => {
+                if (!cancelled) setImg(rendered);
             })
             .catch(() => {
                 if (!cancelled) setImg(null);

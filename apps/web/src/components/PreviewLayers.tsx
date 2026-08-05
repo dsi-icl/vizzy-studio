@@ -116,9 +116,8 @@ export function PreviewTextLayer({
     useEffect(() => {
         let cancelled = false;
         textHtmlToImage(shape.textHtml ?? '', shape.config.width, shape.config.height)
-            .then(async (rendered) => {
-                const image = await rendered;
-                if (!cancelled && image) setImg(image);
+            .then((rendered) => {
+                if (!cancelled) setImg(rendered);
             })
             .catch(() => {
                 if (!cancelled) setImg(null);

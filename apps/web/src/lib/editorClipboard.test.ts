@@ -82,7 +82,7 @@ describe('editor layer clipboard', () => {
         const text: LayerWithEditorState = {
             numericId: 1,
             type: 'text',
-            textHtml: '<p>Copy me</p>',
+            textHtml: '<p><span style="color: #ef4444; font-size: 2em;">Copy me</span></p>',
             textRevision: 8,
             textStateHash: 'hash',
             textBindingVersion: 'binding',
@@ -120,6 +120,7 @@ describe('editor layer clipboard', () => {
 
         expect(pastedText?.config.cx).toBe(10 + LAYER_PASTE_OFFSET * 2);
         expect(pastedText?.progress).toBeUndefined();
+        expect(pastedText?.type === 'text' && pastedText.textHtml).toBe(text.textHtml);
         expect(pastedText?.type === 'text' && pastedText.textRevision).toBeUndefined();
         expect(pastedText?.type === 'text' && pastedText.textStateHash).toBeUndefined();
         expect(pastedLine?.type === 'line' && pastedLine.line).toEqual([40, 40, 50, 50]);

@@ -78,7 +78,7 @@ export const useEditorStore =
                   isDrawing: false,
                   isErasing: false,
                   eraserWidth: 70,
-                  isSnapping: true,
+                  isSnapping: false,
                   strokeColor: '#ff0000',
                   strokeWidth: 10,
                   strokeDash: [],
