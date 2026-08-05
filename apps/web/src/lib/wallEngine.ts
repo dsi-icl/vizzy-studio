@@ -268,6 +268,21 @@ export class WallEngine {
                 this.boundSource = data.boundSource;
             }
 
+            if (data.type === 'delete_layer') {
+                const layerId = data.numericId;
+                const pendingStartRaf = this.playbackStartRafs.get(layerId);
+                if (pendingStartRaf !== undefined) {
+                    cancelAnimationFrame(pendingStartRaf);
+                    this.playbackStartRafs.delete(layerId);
+                }
+                const pendingDriftRaf = this.playbackDriftRafs.get(layerId);
+                if (pendingDriftRaf !== undefined) {
+                    cancelAnimationFrame(pendingDriftRaf);
+                    this.playbackDriftRafs.delete(layerId);
+                }
+                this.layers.delete(layerId);
+            }
+
             if (
                 data.type === 'hydrate' ||
                 data.type === 'upsert_layer' ||
