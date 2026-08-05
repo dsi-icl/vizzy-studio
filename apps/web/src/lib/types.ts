@@ -258,9 +258,17 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('upsert_layer'),
         origin: z.string().regex(/^(editor|controller|yjs):[a-z0-9_]+$/),
-        layer: LayerSchema
+        layer: LayerSchema,
+        createRequestId: z.string().optional()
     }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('layer_create_response'),
+        numericId: z.number(),
+        success: z.boolean(),
+        createRequestId: z.string().optional(),
+        error: z.string().optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),
@@ -460,6 +468,8 @@ export interface ScopeState {
     commitId: string;
     slideId: string;
     dirty: boolean;
+    /** Monotonic in-memory generation used to avoid clearing concurrently-arriving changes. */
+    mutationRevision: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
     /** Optional custom render URL from the project configuration. */

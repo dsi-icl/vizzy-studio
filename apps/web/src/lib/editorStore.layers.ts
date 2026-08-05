@@ -348,11 +348,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_text_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_text_layer');
             get().markDirty();
         },
 
@@ -396,11 +392,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_map_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_map_layer');
             get().markDirty();
         },
 
@@ -440,11 +432,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_web_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_web_layer');
             get().markDirty();
         },
 
@@ -494,11 +482,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_shape_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_shape_layer');
             get().markDirty();
         },
 
@@ -541,11 +525,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_background_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_background_layer');
             get().markDirty();
         },
 
@@ -605,11 +585,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_line_layer',
-                layer: newLayer
-            });
+            void engine.createLayer(newLayer, 'editor:add_line_layer');
             get().markDirty();
         },
 

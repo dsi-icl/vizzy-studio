@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 import type { Layer } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
+import { retryTextLayerLookup, TextLayerLookupError } from './yjs.layerLookup';
 import { mergeYjsSnapshots } from './yjs.state';
 
 export const messageSync = 0;
@@ -108,7 +109,7 @@ export function binaryToUint8Array(data: unknown): Uint8Array | null {
     return null;
 }
 
-export async function loadTextLayer(scope: DocScope): Promise<TextLayer> {
+async function loadTextLayerOnce(scope: DocScope): Promise<TextLayer> {
     const commit = await dbCol.commits.findById(scope.commitId);
     if (
         !commit ||
@@ -116,19 +117,48 @@ export async function loadTextLayer(scope: DocScope): Promise<TextLayer> {
         !commit.content?.slides ||
         !Array.isArray(commit.content.slides)
     ) {
-        throw new Error(`Commit not found or invalid content for ${scope.commitId}`);
+        throw new TextLayerLookupError(
+            `Commit not found or invalid content for ${scope.commitId}`,
+            'commit_invalid'
+        );
     }
 
     const slide = commit.content.slides.find((s: any) => s?.id === scope.slideId);
     if (!slide?.layers || !Array.isArray(slide.layers)) {
-        throw new Error(`Slide ${scope.slideId} not found in commit ${scope.commitId}`);
+        throw new TextLayerLookupError(
+            `Slide ${scope.slideId} not found in commit ${scope.commitId}`,
+            'slide_missing'
+        );
     }
 
     const layer = slide.layers.find((l: any) => l?.numericId === scope.layerId);
-    if (!layer || layer.type !== 'text') {
-        throw new Error(`Text layer ${scope.layerId} not found in slide ${scope.slideId}`);
+    if (!layer) {
+        throw new TextLayerLookupError(
+            `Text layer ${scope.layerId} not found in slide ${scope.slideId}`,
+            'layer_missing'
+        );
+    }
+    if (layer.type !== 'text') {
+        throw new TextLayerLookupError(
+            `Layer ${scope.layerId} in slide ${scope.slideId} is not a text layer`,
+            'layer_not_text'
+        );
     }
     return layer as TextLayer;
+}
+
+export async function loadTextLayer(scope: DocScope): Promise<TextLayer> {
+    return retryTextLayerLookup(() => loadTextLayerOnce(scope), {
+        beforeRetry: async () => {
+            try {
+                await process.__YJS_WAIT_FOR_LAYER_PERSISTENCE__?.(scope);
+            } catch (error) {
+                // The database retry below remains authoritative. This bridge is
+                // only a same-worker fast path and must not mask the final error.
+                console.warn('[YJS] Waiting for pending layer persistence failed:', error);
+            }
+        }
+    });
 }
 
 export class MongoYDocPersistence implements Persistence {

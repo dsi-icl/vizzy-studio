@@ -27,10 +27,11 @@ import {
     notifyControllers,
     notifyControllersByCommit,
     peers,
+    persistDeletedLayer,
+    persistNewLayer,
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
-    resolveScopeId,
     saveScope,
     scopedState,
     sendJSON,
@@ -46,6 +47,7 @@ import {
     type PeerEntry
 } from '~/lib/busState';
 import { validatePortalToken } from '~/lib/portalTokens';
+import { markScopeDirty } from '~/lib/scopeDirtyState';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -157,7 +159,12 @@ handlers.set('clear_stage', ({ entry, scopeId }) => {
             clearPlaybackCommand(scopeId, numericId);
         }
         scope.layers.clear();
-        scope.dirty = true;
+        markScopeDirty(scope);
+        void saveScope(scopeId, 'Persist cleared stage', true).then((result) => {
+            if (!result.success) {
+                console.error(`[Bus] Failed to persist cleared scope ${scopeId}:`, result.error);
+            }
+        });
     }
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -183,6 +190,21 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                 if (entry.meta.specimen !== 'controller') return;
                 upsertControllerTransientLayer(entry.meta.wallId, layer);
             } else {
+                const isNewLayer = !scope.layers.has(layer.numericId);
+                if (!isNewLayer && typeof data.createRequestId === 'string') {
+                    try {
+                        sendJSON(entry.peer, {
+                            type: 'layer_create_response',
+                            numericId: layer.numericId,
+                            success: false,
+                            createRequestId: data.createRequestId,
+                            error: 'Layer numeric ID already exists'
+                        });
+                    } catch {
+                        // The existing layer remains authoritative if the peer disconnected.
+                    }
+                    return;
+                }
                 // Playback timeline is authoritative via video_play/pause/seek handlers.
                 // Generic upsert_layer must never override live playback state.
                 if (layer.type === 'video') {
@@ -203,8 +225,23 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                     }
                 }
                 scope.layers.set(layer.numericId, layer);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 invalidateHydrateCache(scopeId);
+                if (isNewLayer || typeof data.createRequestId === 'string') {
+                    void persistNewLayer(scopeId, layer).then((success) => {
+                        try {
+                            sendJSON(entry.peer, {
+                                type: 'layer_create_response',
+                                numericId: layer.numericId,
+                                success,
+                                createRequestId: data.createRequestId,
+                                error: success ? undefined : 'Layer could not be persisted'
+                            });
+                        } catch {
+                            // Persistence remains valid if the originating peer disconnected.
+                        }
+                    });
+                }
             }
         }
         // recomputeLayerNodes(layer.numericId, layer, scopeId);
@@ -236,8 +273,9 @@ handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
             deletedPersistentLayer = scope.layers.delete(data.numericId);
             if (deletedPersistentLayer) {
                 clearPlaybackCommand(scopeId, data.numericId);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 deleteYDocForLayer(scopeId, data.numericId);
+                void persistDeletedLayer(scopeId, data.numericId);
             }
             deletedControllerTransient = deleteControllerTransientLayerForScope(
                 scopeId,
@@ -272,7 +310,7 @@ handlers.set('seed_scope', ({ entry, data, scopeId }) => {
             scope.layers.set(layer.numericId, layer);
         }
     }
-    scope.dirty = true;
+    markScopeDirty(scope);
 
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -320,7 +358,7 @@ handlers.set('reboot', ({ scopeId, rawText }) => {
 handlers.set('stage_dirty', ({ scopeId }) => {
     if (scopeId === null) return;
     const scope = scopedState.get(scopeId);
-    if (scope) scope.dirty = true;
+    if (scope) markScopeDirty(scope);
 });
 
 handlers.set('leave_scope', ({ entry }) => {
