@@ -3,6 +3,7 @@ import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
+import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
 type SliceSet = (
@@ -402,8 +403,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const numericId = allocateId();
             const zIndex = allocateZIndex();
             const fitted = fitSizeToViewport(
-                1920,
-                1080,
+                TEXT_DEFAULT_LAYER_WIDTH_PX,
+                TEXT_DEFAULT_LAYER_HEIGHT_PX,
                 insertionViewport.width,
                 insertionViewport.height
             );

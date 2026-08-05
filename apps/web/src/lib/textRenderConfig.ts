@@ -3,6 +3,12 @@ export const TEXT_BASE_LINE_HEIGHT = 1.3;
 export const TEXT_BASE_PADDING_PX = 16;
 export const TEXT_BASE_FONT_FAMILY = 'sans-serif';
 
+/** A compact, single-line starting size for newly inserted text layers. */
+export const TEXT_DEFAULT_LAYER_WIDTH_PX = 640;
+export const TEXT_DEFAULT_LAYER_HEIGHT_PX = Math.ceil(
+    TEXT_BASE_FONT_SIZE_PX * TEXT_BASE_LINE_HEIGHT + TEXT_BASE_PADDING_PX * 2
+);
+
 export const TEXT_BASE_STYLE = {
     color: 'white',
     fontFamily: TEXT_BASE_FONT_FAMILY,
