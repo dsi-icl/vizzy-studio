@@ -7,8 +7,13 @@ import * as Y from 'yjs';
 
 import { useEditorStore } from '~/lib/editorStore';
 
-import { createWebsocketProvider } from './providers';
+import { createWebsocketProvider, observeProviderStatus } from './providers';
 import { TextEditor } from './TextEditor';
+import {
+    TEXT_HYDRATION_TIMEOUT_MS,
+    transitionTextHydrationState,
+    type TextHydrationState
+} from './textHydrationState';
 import theme from './theme';
 
 const editorConfig = {
@@ -53,6 +58,8 @@ export function CollaborativeEditor({
         return provider;
     }, []);
 
+    const [hydration, setHydration] = useState<TextHydrationState>('connecting');
+
     if (!user) return null;
 
     useEffect(() => {
@@ -61,8 +68,38 @@ export function CollaborativeEditor({
         };
     }, [onMeasuredHeight]);
 
+    useEffect(() => {
+        const unobserve = observeProviderStatus(textEditScope, (event) => {
+            setHydration((current) => transitionTextHydrationState(current, event));
+        });
+        // Only a connection that never syncs is a failure; reconnects are handled
+        // by the state machine and must not surface as errors.
+        const timer = setTimeout(() => {
+            setHydration((current) => transitionTextHydrationState(current, 'timeout'));
+        }, TEXT_HYDRATION_TIMEOUT_MS);
+
+        return () => {
+            unobserve();
+            clearTimeout(timer);
+        };
+    }, [textEditScope]);
+
     return (
-        <div ref={containerRef}>
+        <div ref={containerRef} className="relative">
+            {hydration !== 'synced' && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-end p-2">
+                    <output
+                        aria-live="polite"
+                        className={`rounded-md px-2 py-1 text-xs backdrop-blur-sm ${
+                            hydration === 'error'
+                                ? 'text-destructive-foreground bg-destructive/80'
+                                : 'bg-muted/80 text-muted-foreground'
+                        }`}
+                    >
+                        {hydration === 'error' ? 'Text unavailable — retrying' : 'Loading text…'}
+                    </output>
+                </div>
+            )}
             <LexicalCollaboration>
                 <LexicalComposer initialConfig={editorConfig}>
                     <CollaborationPlugin
