@@ -29,6 +29,21 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
                     )
                 };
             });
+        } else if (data.type === 'layer_create_response' && !data.success) {
+            store.setState((state) => {
+                const layers = new Map(state.layers);
+                layers.delete(data.numericId);
+                return {
+                    layers,
+                    selectedLayerIds: state.selectedLayerIds.filter(
+                        (id) => id !== data.numericId.toString()
+                    ),
+                    editingTextLayerId:
+                        state.editingTextLayerId === data.numericId
+                            ? null
+                            : state.editingTextLayerId
+                };
+            });
         } else if (data.type === 'processing_progress') {
             s.updateProgress(data.numericId, data.progress);
         } else if (data.type === 'slides_updated') {

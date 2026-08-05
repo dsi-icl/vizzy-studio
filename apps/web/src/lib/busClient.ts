@@ -128,14 +128,33 @@ export class BusClient {
         this.rws.destroy();
     }
 
-    public sendRaw(data: string | Blob | BufferSource): void {
-        if (!this.isAuthenticated) return;
-        if (this.rws.status !== 'connected') return;
+    public sendRaw(data: string | Blob | BufferSource): boolean {
+        if (!this.isAuthenticated) return false;
+        if (this.rws.status !== 'connected') return false;
         this.rws.send(data);
+        return true;
     }
 
-    public sendJSON(data: GSMessage): void {
-        this.sendRaw(JSON.stringify(data));
+    public sendJSON(data: GSMessage): boolean {
+        return this.sendRaw(JSON.stringify(data));
+    }
+
+    public waitUntilReady(timeoutMs = 10_000): Promise<boolean> {
+        if (this.isReady) return Promise.resolve(true);
+        return new Promise((resolve) => {
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            let unsubscribe: () => void = () => undefined;
+            const finish = (ready: boolean) => {
+                if (settled) return;
+                settled = true;
+                if (timeout) clearTimeout(timeout);
+                unsubscribe();
+                resolve(ready);
+            };
+            unsubscribe = this.onReady(() => finish(true));
+            timeout = setTimeout(() => finish(false), timeoutMs);
+        });
     }
 
     private async handleOpen() {

@@ -281,11 +281,7 @@ export function EditorSlate() {
             store.upsertLayer(layer);
             store.toggleLayerSelection(numericId.toString(), false, false);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:asset_library_drop',
-                layer
-            });
+            void engine.createLayer(layer, 'editor:asset_library_drop');
             store.markDirty();
         },
         [engine]
@@ -714,18 +710,17 @@ export function EditorSlate() {
             useEditorStore.getState().upsertLayer(finalizedLayer);
             engine.setPlayback(numericId, defaultPlayback);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:handle_upload',
-                layer: {
+            void engine.createLayer(
+                {
                     numericId,
                     type: finalizedLayer.type,
                     name: layerName,
                     playback: defaultPlayback,
                     url: assetUrl,
                     config: freshestLayer.config
-                } as LayerWithEditorState
-            });
+                } as LayerWithEditorState,
+                'editor:handle_upload'
+            );
             URL.revokeObjectURL(localUrl);
 
             // Asset record is created server-side in onUploadFinish
