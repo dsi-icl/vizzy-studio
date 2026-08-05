@@ -81,6 +81,7 @@ export function EditorSlate() {
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
+    const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -89,6 +90,7 @@ export function EditorSlate() {
     const stageWrapper = useRef<HTMLDivElement>(null);
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
+    const hoverTrRef = useRef<Konva.Transformer>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
@@ -107,6 +109,10 @@ export function EditorSlate() {
         [sortedLayers]
     );
     const selectedLayerIdSet = useMemo(() => new Set(selectedLayerIds), [selectedLayerIds]);
+    const hoverHintLayerId =
+        hoveredLayerId && !selectedLayerIdSet.has(hoveredLayerId) && !isDrawing && !isPinching
+            ? hoveredLayerId
+            : null;
     const selectedOutlineLayers = useMemo(
         () =>
             selectedLayerIds
@@ -1075,6 +1081,9 @@ export function EditorSlate() {
     };
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (e.evt instanceof TouchEvent || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
+            setHoveredLayerId(null);
+        }
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches?.length === 2;
         if (isDrawing && isTwoFingerTouch) {
@@ -1128,6 +1137,17 @@ export function EditorSlate() {
     const handleTouchMove = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         e.evt.preventDefault();
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
+        if (e.evt instanceof MouseEvent) {
+            const targetId =
+                !isDrawing && e.evt.buttons === 0 && !trRef.current?.isTransforming()
+                    ? resolveLayerIdFromTarget(e.target)
+                    : null;
+            const nextHoveredLayerId =
+                targetId && !currentSelectedIds.includes(targetId) ? targetId : null;
+            setHoveredLayerId((current) =>
+                current === nextHoveredLayerId ? current : nextHoveredLayerId
+            );
+        }
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
         if (isDrawing) {
             if (!isTwoFingerTouch) {
@@ -1242,6 +1262,11 @@ export function EditorSlate() {
         lastCenter.current = null;
     };
 
+    const handleStageMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
+        setHoveredLayerId(null);
+        handleTouchEnd(e);
+    };
+
     const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
         const slot = stageSlot.current;
         if (!slot) return;
@@ -1274,6 +1299,17 @@ export function EditorSlate() {
         }
     }, [selectedLayerIds]);
 
+    useEffect(() => {
+        const transformer = hoverTrRef.current;
+        if (!transformer) return;
+
+        const node = hoverHintLayerId
+            ? transformer.getStage()?.findOne(`#${hoverHintLayerId}`)
+            : undefined;
+        transformer.nodes(node ? [node] : []);
+        transformer.getLayer()?.batchDraw();
+    }, [hoverHintLayerId, layers]);
+
     return (
         <>
             <EditorToolbar
@@ -1301,7 +1337,7 @@ export function EditorSlate() {
                         onMouseDown={handleStageInteractionStart}
                         onMouseMove={handleTouchMove}
                         onMouseUp={handleTouchEnd}
-                        onMouseLeave={handleTouchEnd}
+                        onMouseLeave={handleStageMouseLeave}
                         onWheel={handleStageWheel}
                         onTouchStart={handleStageInteractionStart}
                         onTouchMove={handleTouchMove}
@@ -1541,6 +1577,16 @@ export function EditorSlate() {
                                     lineJoin="round"
                                 />
                             )}
+                            <Transformer
+                                ref={hoverTrRef}
+                                listening={false}
+                                resizeEnabled={false}
+                                rotateEnabled={false}
+                                enabledAnchors={[]}
+                                borderStroke="rgba(148, 163, 184, 0.65)"
+                                borderStrokeWidth={1}
+                                padding={0}
+                            />
                             {selectedOutlineLayers.length > 1
                                 ? selectedOutlineLayers.map((layer) => (
                                       <Rect
