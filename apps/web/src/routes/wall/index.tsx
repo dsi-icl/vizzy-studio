@@ -13,7 +13,11 @@ import { signedFetch } from '~/lib/signedFetch';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
+import {
+    getLinePaths,
+    preserveLinePathsFromExisting,
+    type LayerWithWallComponentState
+} from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 
 const HYDRATE_FADE_MS = 1000;
@@ -306,10 +310,14 @@ function WallApp() {
                 }
                 setLayers((prev) => {
                     const existing = prev.find((l) => l.numericId === data.layer.numericId);
+                    const compatibleLayer = preserveLinePathsFromExisting(existing, data.layer);
                     const nextLayer =
-                        existing?.type === 'video' && data.layer.type === 'video'
-                            ? { ...data.layer, playback: existing.playback ?? data.layer.playback }
-                            : data.layer;
+                        existing?.type === 'video' && compatibleLayer.type === 'video'
+                            ? {
+                                  ...compatibleLayer,
+                                  playback: existing.playback ?? compatibleLayer.playback
+                              }
+                            : compatibleLayer;
                     return [...prev.filter((l) => l.numericId !== data.layer.numericId), nextLayer];
                 });
             } else if (data.type === 'delete_layer') {
@@ -689,6 +697,7 @@ function WallApp() {
                     <div
                         key={layer.numericId}
                         {...commonProps}
+                        data-layer-id={layer.numericId}
                         className="origin-top-left"
                         style={{
                             ...commonProps.style,
@@ -714,6 +723,7 @@ function WallApp() {
                                     return (
                                         <polyline
                                             key={`line-segment-${segmentIndex}`}
+                                            data-line-path-index={segmentIndex}
                                             points={svgPoints.join(' ')}
                                             fill="none"
                                             stroke={layer.strokeColor}

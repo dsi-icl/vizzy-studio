@@ -3,8 +3,14 @@ import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
+import { getLineBounds } from './stageGeometry';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import type { Layer, LayerWithEditorState } from './types';
+import {
+    normalizeLegacyLineLayer,
+    preserveLinePathsFromExisting,
+    type Layer,
+    type LayerWithEditorState
+} from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -16,7 +22,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
             set((s) => {
-                const mergedLayers = layers.map((layer) => {
+                const mergedLayers = layers.map((rawLayer) => {
+                    const layer = normalizeLegacyLineLayer(rawLayer);
                     if (layer.type !== 'video') return layer;
                     const existing = s.layers.get(layer.numericId);
                     if (existing?.type === 'video') {
@@ -41,10 +48,14 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             set((s) => {
                 const existingLayer = s.layers.get(layer.numericId);
                 const isNew = !existingLayer;
+                const compatibleLayer = preserveLinePathsFromExisting(existingLayer, layer);
                 const nextLayer =
-                    existingLayer?.type === 'video' && layer.type === 'video'
-                        ? { ...layer, playback: existingLayer.playback ?? layer.playback }
-                        : layer;
+                    existingLayer?.type === 'video' && compatibleLayer.type === 'video'
+                        ? {
+                              ...compatibleLayer,
+                              playback: existingLayer.playback ?? compatibleLayer.playback
+                          }
+                        : compatibleLayer;
 
                 if (nextLayer.numericId >= helpers.peekNextId())
                     helpers.setNextId(nextLayer.numericId + 5);
@@ -674,20 +685,35 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
-        commitLineErase: (numericId: number, line: number[][]) => {
+        commitLineErase: (numericId: number, linePaths: number[][]) => {
             const layer = get().layers.get(numericId);
 
             if (!layer || layer.type !== 'line') return;
 
-            if (line.length === 0) {
+            if (linePaths.length === 0) {
                 set({ isErasing: false });
                 get().removeLayer(numericId);
                 return;
             }
 
-            const updatedLayer = {
+            const persistedPaths = linePaths.map((path) => [...path]);
+            const fallbackPath = persistedPaths.reduce((longest, path) =>
+                path.length > longest.length ? path : longest
+            );
+            const bounds = getLineBounds(persistedPaths);
+            if (!bounds) return;
+
+            const updatedLayer: LayerWithEditorState = {
                 ...layer,
-                line
+                config: {
+                    ...layer.config,
+                    cx: Math.round(bounds.cx),
+                    cy: Math.round(bounds.cy),
+                    width: Math.max(MIN_LAYER_DIMENSION, bounds.width),
+                    height: Math.max(MIN_LAYER_DIMENSION, bounds.height)
+                },
+                line: [...fallbackPath],
+                linePaths: persistedPaths
             };
 
             set((s) => {

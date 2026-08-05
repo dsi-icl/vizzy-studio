@@ -1,7 +1,7 @@
 import type { CommitDocument } from '@repo/db/documents';
 import * as Y from 'yjs';
 
-import type { Layer, ScopeState } from '~/lib/types';
+import { normalizeLegacyLineLayer, type Layer, type ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 import { yDocToHtml } from '~/server/yjs/lexical';
 import {
@@ -231,7 +231,8 @@ export async function seedScopeFromDb(scopeId: ScopeId): Promise<boolean> {
 
         for (const layer of slide.layers) {
             if (typeof layer?.numericId === 'number') {
-                scope.layers.set(layer.numericId, layer);
+                const normalizedLayer = normalizeLegacyLineLayer(layer);
+                scope.layers.set(normalizedLayer.numericId, normalizedLayer);
             }
         }
         markScopePersisted(scope, observedRevision);
@@ -256,7 +257,7 @@ export async function buildSlidesSnapshot(
             existingSlides = headCommit.content.slides.map((s, i) => ({
                 ...s,
                 name: s.name ?? `Slide ${i + 1}`,
-                layers: s.layers as Layer[]
+                layers: (s.layers as Layer[]).map(normalizeLegacyLineLayer)
             }));
         }
     }

@@ -40,7 +40,12 @@ import {
 import { useEditorStore } from '~/lib/editorStore';
 import { ERASER_WHEEL_STEP, clampEraserWidth } from '~/lib/eraser';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { appendEraserPoint, eraseLinePaths, LINE_PATH_MAX_POINTS } from '~/lib/lineEraser';
+import {
+    appendEraserPoint,
+    eraseLinePathsResiliently,
+    getLineEraseFailureMessage,
+    type LineEraseTerminalFailureReason
+} from '~/lib/lineEraser';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
@@ -67,10 +72,13 @@ type EraserGesture = {
     line: number[][];
     didChange: boolean;
     didProcessBatch: boolean;
+    failureReason: LineEraseTerminalFailureReason | null;
+    processing: Promise<void>;
+    cancelled: boolean;
+    finalizing: boolean;
 };
 
 function appendPathPoint(path: number[], x: number, y: number): number[] {
-    if (path.length / 2 >= LINE_PATH_MAX_POINTS) return path;
     if (path[path.length - 2] === x && path[path.length - 1] === y) return path;
     return path.concat([x, y]);
 }
@@ -171,6 +179,7 @@ export function EditorSlate() {
             if (eraserPreviewRafRef.current !== null) {
                 cancelAnimationFrame(eraserPreviewRafRef.current);
             }
+            if (eraserGestureRef.current) eraserGestureRef.current.cancelled = true;
         },
         []
     );
@@ -183,12 +192,14 @@ export function EditorSlate() {
     };
 
     const resetEraserGesture = () => {
+        if (eraserGestureRef.current) eraserGestureRef.current.cancelled = true;
         eraserPathRef.current = [];
         eraserGestureRef.current = null;
         setEraserPreview(null);
     };
 
     const beginEraserGesture = (numericId: number): boolean => {
+        if (eraserGestureRef.current?.finalizing) return false;
         const layer = useEditorStore.getState().layers.get(numericId);
         if (!layer || layer.type !== 'line') return false;
 
@@ -196,7 +207,11 @@ export function EditorSlate() {
             numericId,
             line: getLinePaths(layer),
             didChange: false,
-            didProcessBatch: false
+            didProcessBatch: false,
+            failureReason: null,
+            processing: Promise.resolve(),
+            cancelled: false,
+            finalizing: false
         };
         setEraserPreview(null);
         return true;
@@ -204,31 +219,80 @@ export function EditorSlate() {
 
     const processEraserBatch = (path: number[]) => {
         const gesture = eraserGestureRef.current;
-        if (path.length < 2 || !gesture) return;
+        if (path.length < 2 || !gesture || gesture.failureReason || gesture.cancelled) return;
 
-        const layer = useEditorStore.getState().layers.get(gesture.numericId);
-        if (!layer || layer.type !== 'line') return;
+        const batchPath = [...path];
+        gesture.processing = gesture.processing.then(async () => {
+            if (gesture.failureReason || gesture.cancelled) return;
 
-        const nextLine = eraseLinePaths(
-            gesture.line,
-            path,
-            useEditorStore.getState().eraserWidth / 2 + layer.strokeWidth / 2
-        );
-        if (nextLine === gesture.line) return;
+            const layer = useEditorStore.getState().layers.get(gesture.numericId);
+            if (!layer || layer.type !== 'line') return;
 
-        gesture.line = nextLine;
-        gesture.didChange = true;
-        setEraserPreview({ numericId: gesture.numericId, line: nextLine });
+            const effectiveRadius =
+                useEditorStore.getState().eraserWidth / 2 + layer.strokeWidth / 2;
+            try {
+                const result = await eraseLinePathsResiliently(
+                    gesture.line,
+                    batchPath,
+                    effectiveRadius
+                );
+                if (gesture.cancelled) return;
+                if (result.status === 'failed') {
+                    gesture.failureReason = result.reason;
+                    setEraserPreview(null);
+                    console.warn('[LineEraser] Batch failed; gesture was not committed', {
+                        numericId: gesture.numericId,
+                        reason: result.reason,
+                        linePathCount: gesture.line.length,
+                        linePointCount: gesture.line.reduce((total, linePath) => {
+                            return total + linePath.length / 2;
+                        }, 0),
+                        eraserPointCount: batchPath.length / 2,
+                        effectiveRadius
+                    });
+                    toast.error(getLineEraseFailureMessage(result.reason), {
+                        id: `line-eraser-${gesture.numericId}-${result.reason}`
+                    });
+                    return;
+                }
+                if (result.status === 'unchanged') return;
+
+                gesture.line = result.paths;
+                gesture.didChange = true;
+                setEraserPreview({ numericId: gesture.numericId, line: result.paths });
+            } catch (error) {
+                if (gesture.cancelled) return;
+                gesture.failureReason = 'processing_failed';
+                setEraserPreview(null);
+                console.warn('[LineEraser] Batch failed; gesture was not committed', {
+                    numericId: gesture.numericId,
+                    reason: gesture.failureReason,
+                    error
+                });
+                toast.error(getLineEraseFailureMessage(gesture.failureReason), {
+                    id: `line-eraser-${gesture.numericId}-${gesture.failureReason}`
+                });
+            }
+        });
     };
 
-    const commitEraserGesture = () => {
+    const commitEraserGesture = async () => {
         const gesture = eraserGestureRef.current;
-        if (gesture && (eraserPathRef.current.length > 2 || !gesture.didProcessBatch)) {
+        if (!gesture || gesture.finalizing) return;
+        gesture.finalizing = true;
+        if (
+            !gesture.failureReason &&
+            (eraserPathRef.current.length > 2 || !gesture.didProcessBatch)
+        ) {
             processEraserBatch(eraserPathRef.current);
         }
-        if (gesture?.didChange) commitLineErase(gesture.numericId, gesture.line);
+        await gesture.processing;
+        if (gesture.cancelled) return;
+        if (gesture.didChange && !gesture.failureReason) {
+            commitLineErase(gesture.numericId, gesture.line);
+        }
 
-        resetEraserGesture();
+        if (eraserGestureRef.current === gesture) resetEraserGesture();
     };
 
     const autoScrollStageDuringDrag = useCallback((evt: Event) => {
@@ -1179,6 +1243,7 @@ export function EditorSlate() {
             setCurrentLine([]);
         }
         if (isErasing) {
+            if (eraserGestureRef.current?.finalizing) return;
             if (e.evt instanceof TouchEvent && e.evt.touches.length === 2) {
                 resetEraserGesture();
                 const stage = e.target.getStage();
@@ -1269,6 +1334,7 @@ export function EditorSlate() {
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
         if (isErasing) {
+            if (eraserGestureRef.current?.finalizing) return;
             if (!isTwoFingerTouch) {
                 const stage = e.target.getStage();
                 const point = stage?.getPointerPosition();
@@ -1332,15 +1398,7 @@ export function EditorSlate() {
                     point.y / stageScaleFactor
                 );
                 currentLineRef.current = nextLine;
-
-                if (nextLine.length / 2 >= LINE_PATH_MAX_POINTS) {
-                    const continuationPoint = nextLine.slice(-4);
-                    addCurrentLineLayer();
-                    currentLineRef.current = continuationPoint;
-                    setCurrentLine(continuationPoint);
-                } else {
-                    setCurrentLine(nextLine);
-                }
+                setCurrentLine(nextLine);
                 return;
             } else {
                 currentLineRef.current = [];
@@ -1436,7 +1494,7 @@ export function EditorSlate() {
                     parseInt(currentSelectedIds[0])
                 );
         }
-        if (isErasing) commitEraserGesture();
+        if (isErasing) void commitEraserGesture();
         else if (eraserGestureRef.current) resetEraserGesture();
         if (e.evt instanceof TouchEvent || e.type === 'mouseleave') {
             eraserPointRef.current = null;
@@ -1729,7 +1787,7 @@ export function EditorSlate() {
                                 if (layer.type === 'line') {
                                     const previewLayer =
                                         isErasing && eraserPreview?.numericId === layer.numericId
-                                            ? { ...layer, line: eraserPreview.line }
+                                            ? { ...layer, linePaths: eraserPreview.line }
                                             : layer;
                                     return (
                                         <KonvaLineSegments

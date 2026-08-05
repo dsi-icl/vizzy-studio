@@ -101,6 +101,7 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
 
     return (
         <div
+            data-editor-layer-id={layer.numericId}
             className={`group flex items-center rounded-md border px-2 py-1 transition-colors ${
                 isSelected
                     ? 'border-ring bg-accent text-accent-foreground'

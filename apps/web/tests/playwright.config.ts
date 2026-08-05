@@ -40,6 +40,15 @@ export default defineConfig({
     projects: [
         { name: 'chromium', use: { browserName: 'chromium' } },
         { name: 'firefox-smoke', grep: /@cross-browser/, use: { browserName: 'firefox' } },
-        { name: 'webkit-smoke', grep: /@cross-browser/, use: { browserName: 'webkit' } }
+        { name: 'webkit-smoke', grep: /@cross-browser/, use: { browserName: 'webkit' } },
+        {
+            name: 'webkit-touch',
+            grep: /@webkit-touch/,
+            use: {
+                browserName: 'webkit',
+                hasTouch: true,
+                viewport: { width: 834, height: 1_194 }
+            }
+        }
     ]
 });

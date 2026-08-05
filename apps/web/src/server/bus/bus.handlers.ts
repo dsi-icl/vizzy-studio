@@ -48,7 +48,14 @@ import {
 } from '~/lib/busState';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopeDirtyState';
-import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
+import {
+    GSMessageSchema,
+    HelloSchema,
+    makeScopeLabel,
+    normalizeLegacyLineLayer,
+    preserveLinePathsFromExisting,
+    type GSMessage
+} from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { ensureDeviceByPublicKey } from '~/server/devices';
@@ -176,11 +183,11 @@ handlers.set('clear_stage', ({ entry, scopeId }) => {
 });
 
 handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
-    let layer = data.layer;
+    let layer = normalizeLegacyLineLayer(data.layer);
     if (typeof layer?.numericId !== 'number') return;
 
     const isControllerTransientUpsert = data.origin === 'controller:add_line_layer';
-    let relayPayload = rawText;
+    let relayPayload = layer === data.layer ? rawText : JSON.stringify({ ...data, layer });
 
     if (scopeId !== null) {
         const scope = scopedState.get(scopeId);
@@ -190,7 +197,8 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                 if (entry.meta.specimen !== 'controller') return;
                 upsertControllerTransientLayer(entry.meta.wallId, layer);
             } else {
-                const isNewLayer = !scope.layers.has(layer.numericId);
+                const existing = scope.layers.get(layer.numericId);
+                const isNewLayer = !existing;
                 if (!isNewLayer && typeof data.createRequestId === 'string') {
                     try {
                         sendJSON(entry.peer, {
@@ -205,10 +213,14 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                     }
                     return;
                 }
+
+                layer = preserveLinePathsFromExisting(existing, layer);
+                if (layer !== data.layer) {
+                    relayPayload = JSON.stringify({ ...data, layer });
+                }
                 // Playback timeline is authoritative via video_play/pause/seek handlers.
                 // Generic upsert_layer must never override live playback state.
                 if (layer.type === 'video') {
-                    const existing = scope.layers.get(layer.numericId);
                     if (existing?.type === 'video' && existing.playback) {
                         layer = { ...layer, playback: existing.playback };
                         relayPayload = JSON.stringify({ ...data, layer });
@@ -305,7 +317,8 @@ handlers.set('seed_scope', ({ entry, data, scopeId }) => {
 
     // Replace all layers wholesale
     scope.layers.clear();
-    for (const layer of data.layers) {
+    for (const rawLayer of data.layers) {
+        const layer = normalizeLegacyLineLayer(rawLayer);
         if (typeof layer?.numericId === 'number') {
             scope.layers.set(layer.numericId, layer);
         }

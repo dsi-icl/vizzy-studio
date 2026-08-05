@@ -258,6 +258,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     </TipButton>
                     <TipButton
                         tip={canErase ? 'Eraser' : 'Select a line to erase'}
+                        aria-label="Eraser"
                         onClick={() => setErasing(!isErasing)}
                         variant={isErasing ? 'outline' : 'ghost'}
                         disabled={!canErase}
