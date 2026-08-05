@@ -227,13 +227,22 @@ export class EditorEngine {
     /** Track a layer creation until the server confirms it reached the commit. */
     private trackLayerCreate(createRequestId: string, numericId: number): void {
         const timer = setTimeout(() => {
-            this.pendingLayerCreates.delete(createRequestId);
-            toast.error(
+            this.failLayerCreate(
+                createRequestId,
                 `Layer ${numericId} was not confirmed as saved. Reloading the slide to avoid losing work.`
             );
-            this.sendJSON({ type: 'rehydrate_please' });
         }, LAYER_CREATE_ACK_TIMEOUT_MS);
         this.pendingLayerCreates.set(createRequestId, { numericId, timer });
+    }
+
+    /** Abandon a pending creation and recover the slide from the server. */
+    private failLayerCreate(createRequestId: string, message: string): void {
+        const pending = this.pendingLayerCreates.get(createRequestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pendingLayerCreates.delete(createRequestId);
+        toast.error(message);
+        this.sendJSON({ type: 'rehydrate_please' });
     }
 
     public static getInstance(): EditorEngine {
@@ -461,23 +470,37 @@ export class EditorEngine {
     public createLayer = (origin: string, layer: Layer): void => {
         const createRequestId = `create_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
         this.trackLayerCreate(createRequestId, layer.numericId);
-        this.sendJSON({
+
+        const message = {
             type: 'upsert_layer',
             origin,
             layer,
             createRequestId
-        } as GSMessage);
+        } as GSMessage;
+
+        if (this.sendJSON(message)) return;
+
+        // Socket not ready: wait for a reconnect rather than dropping the
+        // message and letting the acknowledgement time out.
+        void this.bus.waitUntilReady().then((ready) => {
+            if (!this.pendingLayerCreates.has(createRequestId)) return;
+            if (ready && this.sendJSON(message)) return;
+            this.failLayerCreate(
+                createRequestId,
+                `Layer ${layer.numericId} could not be sent. Reloading the slide to avoid losing work.`
+            );
+        });
     };
 
-    public sendJSON = (data: GSMessage) => {
+    /** Returns whether the message reached the socket. */
+    public sendJSON = (data: GSMessage): boolean => {
         // Protocol discipline:
         // Editor upsert_layer for video should never carry playback timeline fields.
         if (data.type === 'upsert_layer' && data.layer.type === 'video') {
             const { playback: _playback, ...layerWithoutPlayback } = data.layer;
-            this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
-            return;
+            return this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
         }
-        this.bus.sendJSON(data);
+        return this.bus.sendJSON(data);
     };
 
     public broadcastBinaryMove = throttle(

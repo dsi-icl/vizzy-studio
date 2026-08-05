@@ -59,6 +59,13 @@ export function CollaborativeEditor({
     }, []);
 
     const [hydration, setHydration] = useState<TextHydrationState>('connecting');
+    // Bumped to remount the collaboration plugin, which rebuilds the provider.
+    const [attempt, setAttempt] = useState(0);
+
+    const retryHydration = useCallback(() => {
+        setHydration('connecting');
+        setAttempt((current) => current + 1);
+    }, []);
 
     if (!user) return null;
 
@@ -82,27 +89,14 @@ export function CollaborativeEditor({
             unobserve();
             clearTimeout(timer);
         };
-    }, [textEditScope]);
+    }, [textEditScope, attempt]);
 
     return (
-        <div ref={containerRef} className="relative">
-            {hydration !== 'synced' && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-end p-2">
-                    <output
-                        aria-live="polite"
-                        className={`rounded-md px-2 py-1 text-xs backdrop-blur-sm ${
-                            hydration === 'error'
-                                ? 'text-destructive-foreground bg-destructive/80'
-                                : 'bg-muted/80 text-muted-foreground'
-                        }`}
-                    >
-                        {hydration === 'error' ? 'Text unavailable — retrying' : 'Loading text…'}
-                    </output>
-                </div>
-            )}
+        <div ref={containerRef}>
             <LexicalCollaboration>
                 <LexicalComposer initialConfig={editorConfig}>
                     <CollaborationPlugin
+                        key={`${textEditScope}:${attempt}`}
                         id={textEditScope}
                         providerFactory={providerFactory}
                         shouldBootstrap={false}
@@ -112,6 +106,8 @@ export function CollaborativeEditor({
                     />
                     <TextEditor
                         layerId={layerId}
+                        hydrationState={hydration}
+                        onRetryHydration={retryHydration}
                         onMeasuredHeight={(height) => {
                             latestHeightRef.current = height;
                             onMeasuredHeight?.(height);
