@@ -319,6 +319,9 @@ function CommitViewer() {
                                                                     offsetY={
                                                                         layer.config.height / 2
                                                                     }
+                                                                    cornerRadius={
+                                                                        layer.cornerRadius
+                                                                    }
                                                                     dash={layer.strokeDash}
                                                                 />
                                                             );

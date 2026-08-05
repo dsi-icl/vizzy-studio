@@ -1448,6 +1448,7 @@ export function EditorSlate() {
                                                 height={layer.config.height}
                                                 offsetX={layer.config.width / 2}
                                                 offsetY={layer.config.height / 2}
+                                                cornerRadius={layer.cornerRadius}
                                                 dash={layer.strokeDash}
                                                 dashOffset={(layer.strokeDash[0] ?? 0) / 2}
                                                 lineCap="round"

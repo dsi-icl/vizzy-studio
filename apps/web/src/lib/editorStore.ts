@@ -82,6 +82,7 @@ export const useEditorStore =
                   strokeDash: [],
                   shapeFill: '#ff0000',
                   shapeStroke: '#000000',
+                  rectangleCornerRadius: 0,
                   editingTextLayerId: null,
                   boundWallId: null,
                   wallNodeCounts: {},
