@@ -53,6 +53,7 @@ const DEFAULT_BG_COLOR = '#333333FF';
 const FONT_SIZE_MIN = 10;
 const FONT_SIZE_MAX = 1000;
 const DEFAULT_FONT_OPTION_ID = 'system-sans';
+const TOOLBAR_SELECTION_HIGHLIGHT = 'lexical-toolbar-selection';
 
 const SYSTEM_FONT_OPTIONS = [
     { id: 'system-sans', label: 'System Sans', css: 'system-ui, sans-serif' },
@@ -102,6 +103,7 @@ export default function TextEditorToolbar() {
     const [isFontSizeInputInvalid, setIsFontSizeInputInvalid] = useState(false);
     const pendingFontSizeCommitKeyRef = useRef<'Enter' | 'Tab' | null>(null);
     const fontSizeCommitInProgressRef = useRef(false);
+    const lastEditorSelectionRangeRef = useRef<Range | null>(null);
     const [fontFamilyOptionId, setFontFamilyOptionId] = useState(DEFAULT_FONT_OPTION_ID);
     const [fontFamilyMixed, setFontFamilyMixed] = useState(false);
     const projectId = useEditorStore((s) => s.projectId);
@@ -127,6 +129,61 @@ export default function TextEditorToolbar() {
         })),
         ...SYSTEM_FONT_OPTIONS.map((opt) => ({ label: opt.label, value: opt.id }))
     ];
+
+    const clearPreservedTextSelection = useCallback(() => {
+        CSS.highlights?.delete(TOOLBAR_SELECTION_HIGHLIGHT);
+    }, []);
+
+    const showPreservedTextSelection = useCallback(() => {
+        const rootElement = editor.getRootElement();
+        const range = lastEditorSelectionRangeRef.current;
+        if (
+            !rootElement ||
+            !range ||
+            range.collapsed ||
+            !rootElement.contains(range.commonAncestorContainer)
+        ) {
+            return;
+        }
+
+        CSS.highlights?.set(TOOLBAR_SELECTION_HIGHLIGHT, new Highlight(range.cloneRange()));
+    }, [editor]);
+
+    useEffect(() => {
+        const highlightStyle = document.createElement('style');
+        highlightStyle.textContent = `::highlight(${TOOLBAR_SELECTION_HIGHLIGHT}) {
+            color: inherit;
+            background-color: rgba(36, 36, 36);
+        }`;
+        document.head.appendChild(highlightStyle);
+
+        const rememberEditorSelection = () => {
+            const rootElement = editor.getRootElement();
+            const selection = window.getSelection();
+            if (!rootElement || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+                return;
+            }
+
+            const range = selection.getRangeAt(0);
+            if (rootElement.contains(range.commonAncestorContainer)) {
+                lastEditorSelectionRangeRef.current = range.cloneRange();
+            }
+        };
+
+        document.addEventListener('selectionchange', rememberEditorSelection);
+        const unregisterRootListener = editor.registerRootListener((rootElement, previousRoot) => {
+            previousRoot?.removeEventListener('focusin', clearPreservedTextSelection);
+            rootElement?.addEventListener('focusin', clearPreservedTextSelection);
+        });
+        rememberEditorSelection();
+
+        return () => {
+            highlightStyle.remove();
+            document.removeEventListener('selectionchange', rememberEditorSelection);
+            unregisterRootListener();
+            clearPreservedTextSelection();
+        };
+    }, [clearPreservedTextSelection, editor]);
 
     const $updateToolbar = useCallback(() => {
         const selection = $getSelection();
@@ -414,6 +471,8 @@ export default function TextEditorToolbar() {
                 value={color}
                 onChange={applyColor}
                 onTextCommit={() => editor.focus()}
+                onTextInputFocus={showPreservedTextSelection}
+                onTextInputBlur={clearPreservedTextSelection}
                 liveTextChange={false}
             >
                 <TextAUnderlineIcon size={32} style={{ color }} weight="fill" />
@@ -424,17 +483,14 @@ export default function TextEditorToolbar() {
                 value={bgColor}
                 onChange={applyBgColor}
                 onTextCommit={() => editor.focus()}
+                onTextInputFocus={showPreservedTextSelection}
+                onTextInputBlur={clearPreservedTextSelection}
                 liveTextChange={false}
             >
                 <HighlighterIcon size={32} style={{ color: bgColor }} weight="fill" />
             </ColorPickerPopover>
             <Separator orientation="vertical" className="mx-1 my-1 h-6" />
-            <div
-                className="flex min-w-56 items-center gap-2 px-1"
-                onPointerDownCapture={() => {
-                    editor.focus();
-                }}
-            >
+            <div className="flex min-w-56 items-center gap-2 px-1">
                 <span className="text-xs text-muted-foreground">Size</span>
                 <input
                     type="number"
@@ -447,6 +503,10 @@ export default function TextEditorToolbar() {
                     onFocus={() => {
                         setIsFontSizeInputEditing(true);
                         setIsFontSizeInputInvalid(false);
+                        showPreservedTextSelection();
+                    }}
+                    onDoubleClick={(e) => {
+                        e.currentTarget.select();
                     }}
                     onChange={(e) => {
                         setFontSizeMixed(false);
@@ -462,6 +522,7 @@ export default function TextEditorToolbar() {
                         } else {
                             setFontSizeInput(String(fontSizePx));
                         }
+                        clearPreservedTextSelection();
                     }}
                     onKeyDown={(e) => {
                         if (isExplicitCommitKey(e.key)) {
