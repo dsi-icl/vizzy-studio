@@ -17,6 +17,7 @@ function shapeLayer(
         strokeColor: '#000',
         strokeDash: [],
         strokeWidth: 1,
+        cornerRadius: 0,
         config: {
             cx,
             cy,
