@@ -1,10 +1,12 @@
 import '@tanstack/react-start/server-only';
 import { createHeadlessEditor } from '@lexical/headless';
-import { $generateHtmlFromNodes, $generateNodesFromDOM } from '@lexical/html';
+import { $generateHtmlFromNodes } from '@lexical/html';
 import { createBinding, syncLexicalUpdateToYjs, syncYjsChangesToLexical } from '@lexical/yjs';
 import { Window } from 'happy-dom';
-import { $createParagraphNode, $getRoot } from 'lexical';
+import { $getRoot } from 'lexical';
 import * as Y from 'yjs';
+
+import { $appendHtmlToRoot } from './lexicalHtml';
 
 // ── Lexical namespace ─────────────────────────────────────────────────────────
 
@@ -115,12 +117,7 @@ export async function htmlToYUpdate(html: string, docName: string): Promise<Uint
         editor.update(() => {
             const root = $getRoot();
             root.clear();
-            const nodes = $generateNodesFromDOM(editor, dom as unknown as Document);
-            if (nodes.length === 0) {
-                root.append($createParagraphNode());
-            } else {
-                root.append(...nodes);
-            }
+            $appendHtmlToRoot(root, dom.body as never);
         });
     });
 
