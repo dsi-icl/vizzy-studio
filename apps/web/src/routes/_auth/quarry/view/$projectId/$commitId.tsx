@@ -5,6 +5,7 @@ import {
     SlideshowIcon
 } from '@phosphor-icons/react';
 import { authSessionQueryOptions } from '@repo/auth/tanstack/queries';
+import { DEFAULT_STAGE_LAYOUT } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
 import {
@@ -15,7 +16,6 @@ import {
 import { Separator } from '@repo/ui/components/separator';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer as KonvaLayer, Rect, Circle, Line } from 'react-konva';
@@ -24,16 +24,12 @@ import { toast } from 'sonner';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
-import { getDOGridLines } from '~/lib/editorHelpers';
+import { getStageGridLines } from '~/lib/editorHelpers';
 import type { LayerWithEditorState } from '~/lib/types';
 import { $createBranchHead } from '~/server/projects.fns';
 import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
-const SCREEN_W = 1920;
-const SCREEN_H = 1080;
-const COLS = 16;
-const ROWS = 4;
 
 export const Route = createFileRoute('/_auth/quarry/view/$projectId/$commitId')({
     loader: async ({ context, params }) => {
@@ -56,9 +52,11 @@ function CommitViewer() {
     const { data: sessionData } = useQuery(authSessionQueryOptions());
     const { data: commit } = useSuspenseQuery(commitQueryOptions(commitId));
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
+    const stageLayout =
+        project.stages.find(({ id }) => id === commit.stageId)?.layout ?? DEFAULT_STAGE_LAYOUT;
+    const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const navigate = useNavigate();
     const stageSlot = useRef<HTMLDivElement>(null);
-    const stageInstance = useRef<Konva.Stage>(null);
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
     const [branching, setBranching] = useState(false);
@@ -103,7 +101,7 @@ function CommitViewer() {
         const slot = stageSlot.current;
         if (!slot) return;
 
-        const logicalHeight = SCREEN_H * ROWS;
+        const logicalHeight = screenHeight * rows;
         const minScale = 0.01;
 
         const recomputeScale = () => {
@@ -120,7 +118,7 @@ function CommitViewer() {
         observer.observe(slot);
 
         return () => observer.disconnect();
-    }, []);
+    }, [rows, screenHeight]);
 
     const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
         const slot = stageSlot.current;
@@ -134,8 +132,13 @@ function CommitViewer() {
     const handleEditFromVersion = async () => {
         setBranching(true);
         try {
-            if (commit.isMutableHead && project.headCommitId === commitId) {
-                // This IS the project head — just navigate to the editor
+            const stage = project.stages.find(({ id }) => id === commit.stageId);
+            if (!stage) {
+                toast.error('This commit no longer belongs to a project stage');
+                return;
+            }
+            if (commit.isMutableHead && stage.headCommitId === commitId) {
+                // This is the stage head — just navigate to the editor.
                 const firstSlideId = slides[0]?.id;
                 if (!firstSlideId) {
                     toast.error('No slides in this commit');
@@ -237,18 +240,17 @@ function CommitViewer() {
 
                                 <ViewerSlatePreview
                                     stageSlot={stageSlot}
-                                    stageInstance={stageInstance}
                                     stageScaleFactor={stageScaleFactor}
                                     layers={sortedLayers}
+                                    layout={stageLayout}
                                 />
                                 <div
                                     ref={stageSlot}
                                     className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-black"
                                 >
                                     <Stage
-                                        ref={stageInstance}
-                                        width={COLS * SCREEN_W * stageScaleFactor}
-                                        height={ROWS * SCREEN_H * stageScaleFactor}
+                                        width={columns * screenWidth * stageScaleFactor}
+                                        height={rows * screenHeight * stageScaleFactor}
                                         onWheel={handleStageWheel}
                                         scaleX={stageScaleFactor}
                                         scaleY={stageScaleFactor}
@@ -259,6 +261,7 @@ function CommitViewer() {
                                                     key={`bg_${backgroundLayer.numericId}`}
                                                     layer={backgroundLayer}
                                                     previewScale={1}
+                                                    layout={stageLayout}
                                                 />
                                             ) : null}
                                             {foregroundLayers
@@ -390,7 +393,7 @@ function CommitViewer() {
                                                         />
                                                     );
                                                 })}
-                                            {getDOGridLines(COLS * SCREEN_W, ROWS * SCREEN_H, 20)}
+                                            {getStageGridLines(stageLayout, 2)}
                                         </KonvaLayer>
                                     </Stage>
                                 </div>

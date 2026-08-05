@@ -1,6 +1,6 @@
 import type { Peer } from 'crossws';
 
-import { scopedState, wallBindings, type PeerEntry } from '~/lib/busState';
+import { scopedState, wallBindings, wallBindingSources, type PeerEntry } from '~/lib/busState';
 import { logAuditDenied } from '~/server/audit';
 import {
     buildRateLimitSubjectKey,
@@ -135,6 +135,20 @@ export function isWsMessageAuthorized(
     scopeId: number | null
 ): boolean {
     const type = data.type;
+
+    if (
+        entry.meta.specimen === 'controller' &&
+        wallBindingSources.get(entry.meta.wallId) === 'signage' &&
+        (type === 'bind_wall' ||
+            type === 'unbind_wall' ||
+            type === 'upsert_layer' ||
+            type === 'delete_layer' ||
+            type === 'video_play' ||
+            type === 'video_pause' ||
+            type === 'video_seek')
+    ) {
+        return false;
+    }
 
     if (type === 'leave_scope') {
         return entry.meta.specimen === 'editor';

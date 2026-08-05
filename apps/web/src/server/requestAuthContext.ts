@@ -248,6 +248,9 @@ export async function resolveAuthContextFromRequest(request: Request) {
                       trustedPublisher: Boolean(
                           (user as { trustedPublisher?: unknown }).trustedPublisher
                       ),
+                      canManageSignage: Boolean(
+                          (user as { canManageSignage?: unknown }).canManageSignage
+                      ),
                       ...(typeof impersonatedBy === 'string' && impersonatedBy.length > 0
                           ? { impersonatedBy }
                           : {})

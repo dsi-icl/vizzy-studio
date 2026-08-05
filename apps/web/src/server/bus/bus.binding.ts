@@ -25,6 +25,7 @@ import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
 export const BIND_OVERRIDE_TIMEOUT_MS = 20_000;
+const wallBindQueues = new Map<string, Promise<unknown>>();
 
 export interface PendingBindOverride {
     requestId: string;
@@ -194,7 +195,11 @@ export function broadcastProjectsChanged(projectId?: string) {
     }
 }
 
-export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
+export async function sendGalleryStateSnapshot(
+    peer: Peer,
+    wallId?: string,
+    includeWallLayout = false
+) {
     const candidateWallIds = new Set<string>();
     if (wallId) {
         candidateWallIds.add(wallId);
@@ -222,8 +227,22 @@ export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
     });
 
     let publishedProjects: Array<{ projectId: string; publishedCommitId: string | null }> = [];
+    let layout:
+        | { columns: number; rows: number; screenWidth: number; screenHeight: number }
+        | undefined;
     try {
         publishedProjects = await dbCol.projects.findPublishedCommitRefs();
+        if (wallId && includeWallLayout) {
+            const wall = await dbCol.walls.findByWallId(wallId);
+            if (wall?.layoutTemplate) {
+                layout = {
+                    columns: wall.layoutTemplate.columns,
+                    rows: wall.layoutTemplate.rows,
+                    screenWidth: wall.layoutTemplate.screenWidth,
+                    screenHeight: wall.layoutTemplate.screenHeight
+                };
+            }
+        }
     } catch (error) {
         console.warn('[WS] gallery_state: failed to read published projects snapshot', error);
     }
@@ -231,23 +250,49 @@ export async function sendGalleryStateSnapshot(peer: Peer, wallId?: string) {
     sendJSON(peer, {
         type: 'gallery_state',
         ...(wallId ? { wallId } : {}),
+        ...(layout ? { layout } : {}),
         walls,
         publishedProjects
     });
 }
 
-export async function performLiveBind(
+export function broadcastGalleryStateSnapshot(wallId: string) {
+    for (const entry of galleriesByWallId.get(wallId) ?? []) {
+        const role = entry.meta.authContext?.user?.role;
+        const isAssignedGallery =
+            entry.meta.authContext?.device?.kind === 'gallery' &&
+            entry.meta.authContext.device.wallId === wallId;
+        const canReceiveWallLayout = isAssignedGallery || role === 'admin' || role === 'operator';
+        void sendGalleryStateSnapshot(entry.peer, wallId, canReceiveWallLayout);
+    }
+}
+
+export async function isWallTargetedBySignage(wallId: string): Promise<boolean> {
+    if (process.__SIGNAGE_IS_TARGET_WALL__?.(wallId)) return true;
+    return Boolean(await dbCol.signageSlideshows.findEnabledByTargetWall(wallId));
+}
+
+async function performLiveBindNow(
     wallId: string,
     projectId: string,
     commitId: string,
     requestedSlideId: string,
-    source: 'live' | 'gallery' = 'live'
+    source: 'live' | 'gallery' | 'signage' = 'live',
+    signageLease = false
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
     try {
         cancelWallUnbindGrace(wallId);
-        const [resolvedSlideId, project, wallExists] = await Promise.all([
+        if (source !== 'signage' && (await isWallTargetedBySignage(wallId))) {
+            const editorLease =
+                source === 'live' &&
+                signageLease &&
+                process.__SIGNAGE_IS_WALL_SUPPRESSED__?.(wallId) === true;
+            if (!editorLease) return { ok: false, error: 'signage_owned' };
+        }
+        const [resolvedSlideId, project, commit, wallExists] = await Promise.all([
             resolveBoundSlideId(projectId, commitId, requestedSlideId),
             dbCol.projects.findById(projectId),
+            dbCol.commits.findById(commitId),
             dbCol.walls.findOne({ wallId })
         ]);
         if (!wallExists) {
@@ -256,6 +301,11 @@ export async function performLiveBind(
         if (!resolvedSlideId) {
             return { ok: false, error: 'invalid_slide' };
         }
+        if (!project || !commit || commit.projectId !== projectId) {
+            return { ok: false, error: 'invalid_commit' };
+        }
+        const stage = project.stages.find(({ id }) => id === commit.stageId);
+        if (!stage) return { ok: false, error: 'invalid_stage' };
 
         const scopeId = internScope(projectId, commitId, resolvedSlideId);
         const scope = getOrCreateScope(
@@ -265,13 +315,24 @@ export async function performLiveBind(
             resolvedSlideId,
             project?.customRenderUrl ?? undefined,
             project?.customRenderCompat,
-            project?.customRenderProxy
+            project?.customRenderProxy,
+            stage.layout,
+            stage.id
         );
-        bindWall(wallId, scopeId, source);
 
         if (scope.layers.size === 0) {
             await seedScopeFromDb(scopeId);
         }
+
+        // Persist authorization metadata before telling wall clients to request
+        // the newly bound project's assets.
+        await dbCol.walls.updateByWallId(wallId, {
+            boundProjectId: projectId,
+            boundCommitId: commitId,
+            boundSlideId: resolvedSlideId,
+            boundSource: source
+        });
+        bindWall(wallId, scopeId, source);
 
         notifyControllers(
             wallId,
@@ -292,13 +353,6 @@ export async function performLiveBind(
             );
         }
 
-        await dbCol.walls.updateByWallId(wallId, {
-            boundProjectId: projectId,
-            boundCommitId: commitId,
-            boundSlideId: resolvedSlideId,
-            boundSource: source
-        });
-
         broadcastWallBindingToEditors(wallId);
         broadcastWallBindingToGalleries(wallId);
         broadcastWallNodeCountToEditors(wallId);
@@ -313,5 +367,28 @@ export async function performLiveBind(
             err
         );
         return { ok: false, error: 'bind_failed' };
+    }
+}
+
+/** Serialize all binds for one wall so an older async bind cannot win a race. */
+export async function performLiveBind(
+    wallId: string,
+    projectId: string,
+    commitId: string,
+    requestedSlideId: string,
+    source: 'live' | 'gallery' | 'signage' = 'live',
+    signageLease = false
+): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
+    const previous = wallBindQueues.get(wallId) ?? Promise.resolve();
+    const next = previous
+        .catch(() => undefined)
+        .then(() =>
+            performLiveBindNow(wallId, projectId, commitId, requestedSlideId, source, signageLease)
+        );
+    wallBindQueues.set(wallId, next);
+    try {
+        return await next;
+    } finally {
+        if (wallBindQueues.get(wallId) === next) wallBindQueues.delete(wallId);
     }
 }

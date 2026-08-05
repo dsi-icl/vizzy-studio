@@ -4,12 +4,13 @@ import { ObjectId as OID } from 'mongodb';
 
 import type { CommitDocument } from '../documents';
 import { type MigrationMap, type PublicDoc, toEpoch, BaseCollection } from './_base';
+import { migrateCommitV2ToV3 } from './stageMigrations';
 
 type CommitInsertData = Omit<CommitDocument, '_id' | 'id' | 'createdAt' | 'updatedAt' | '_version'>;
 
 export class CommitsCollection extends BaseCollection<CommitDocument> {
     readonly collectionName = 'commits';
-    readonly currentVersion = 2;
+    readonly currentVersion = 3;
 
     protected readonly migrations: MigrationMap = {
         0: (doc) => ({
@@ -17,7 +18,8 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
             createdAt: toEpoch(doc.createdAt ?? Date.now()),
             ...(doc.updatedAt != null ? { updatedAt: toEpoch(doc.updatedAt) } : {})
         }),
-        1: (doc) => doc
+        1: (doc) => doc,
+        2: migrateCommitV2ToV3
     };
 
     constructor(db: Db) {
@@ -62,8 +64,31 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
         return this.find({ projectId: new OID(projectId) }, options);
     }
 
-    async findMutableHead(projectId: string | ObjectId): Promise<PublicDoc<CommitDocument> | null> {
-        return this.findOne({ projectId: new OID(projectId), isMutableHead: true });
+    async findByProjectStage(
+        projectId: string | ObjectId,
+        stageId: string,
+        options?: FindOptions
+    ): Promise<PublicDoc<CommitDocument>[]> {
+        const stageFilter =
+            stageId === 'main'
+                ? { $or: [{ stageId }, { stageId: { $exists: false } }] }
+                : { stageId };
+        return this.find({ projectId: new OID(projectId), ...stageFilter }, options);
+    }
+
+    async findMutableHead(
+        projectId: string | ObjectId,
+        stageId: string
+    ): Promise<PublicDoc<CommitDocument> | null> {
+        const stageFilter =
+            stageId === 'main'
+                ? { $or: [{ stageId }, { stageId: { $exists: false } }] }
+                : { stageId };
+        return this.findOne({
+            projectId: new OID(projectId),
+            isMutableHead: true,
+            ...stageFilter
+        });
     }
 
     /**
@@ -93,5 +118,66 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
                 }
             }
         );
+    }
+
+    /**
+     * Persist the derived HTML projection for one text layer without replacing
+     * the surrounding slide/layer arrays. A lower Yjs revision can never
+     * overwrite a projection already written by a newer collaborator/worker.
+     */
+    async updateTextLayerProjection(input: {
+        commitId: string;
+        slideId: string;
+        layerId: number;
+        textHtml: string;
+        textRevision: number;
+        textStateHash: string;
+        textBindingVersion: string;
+    }): Promise<boolean> {
+        const result = await this.raw.updateOne(
+            {
+                _id: new OID(input.commitId),
+                'content.slides': {
+                    $elemMatch: {
+                        id: input.slideId,
+                        layers: {
+                            $elemMatch: {
+                                numericId: input.layerId,
+                                type: 'text',
+                                $or: [
+                                    { textRevision: { $exists: false } },
+                                    { textRevision: { $lte: input.textRevision } }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                $set: {
+                    'content.slides.$[slide].layers.$[layer].textHtml': input.textHtml,
+                    'content.slides.$[slide].layers.$[layer].textRevision': input.textRevision,
+                    'content.slides.$[slide].layers.$[layer].textStateHash': input.textStateHash,
+                    'content.slides.$[slide].layers.$[layer].textBindingVersion':
+                        input.textBindingVersion,
+                    updatedAt: Date.now(),
+                    _version: this.currentVersion
+                }
+            },
+            {
+                arrayFilters: [
+                    { 'slide.id': input.slideId },
+                    {
+                        'layer.numericId': input.layerId,
+                        'layer.type': 'text',
+                        $or: [
+                            { 'layer.textRevision': { $exists: false } },
+                            { 'layer.textRevision': { $lte: input.textRevision } }
+                        ]
+                    }
+                ]
+            }
+        );
+        return result.matchedCount === 1;
     }
 }

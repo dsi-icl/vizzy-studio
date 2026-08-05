@@ -1,6 +1,7 @@
 'use client';
 
 import { TriangleDashedIcon } from '@phosphor-icons/react';
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 import { createFileRoute } from '@tanstack/react-router';
 import QRCode from 'qrcode';
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
@@ -10,7 +11,6 @@ import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { signedFetch } from '~/lib/signedFetch';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import type { LayerWithWallComponentState } from '~/lib/types';
@@ -30,6 +30,7 @@ type HydrateStagePayload = {
     customRenderUrl?: string;
     customRenderCompat: boolean;
     customRenderProxy: boolean;
+    layout: StageLayout;
 } & HydrateScopeContext;
 
 export const Route = createFileRoute('/wall/')({
@@ -44,6 +45,12 @@ function WallApp() {
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProxy, setCustomRenderProxy] = useState(false);
+    const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
+    const { columns, rows, screenWidth, screenHeight } = stageLayout;
+    const [physicalViewport, setPhysicalViewport] = useState({
+        width: screenWidth,
+        height: screenHeight
+    });
     const [blackOverlayOpacity, setBlackOverlayOpacity] = useState(1);
     const [iframeGateCycle, setIframeGateCycle] = useState(0);
 
@@ -78,6 +85,8 @@ function WallApp() {
         return !searchParams.has('w') || !searchParams.has('c') || !searchParams.has('r');
     }, [searchParams]);
     const showVisualDebugger = useMemo(() => searchParams?.get('m') === 'dev', [searchParams]);
+    const col = useMemo(() => Number.parseInt(searchParams?.get('c') || '0'), [searchParams]);
+    const row = useMemo(() => Number.parseInt(searchParams?.get('r') || '0'), [searchParams]);
 
     useEffect(() => {
         const html = document.documentElement;
@@ -92,13 +101,25 @@ function WallApp() {
         };
     }, []);
 
-    const myViewport = useMemo<Viewport>(() => {
-        if (!searchParams) return { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H };
-        const col = parseInt(searchParams.get('c') || '0');
-        const row = parseInt(searchParams.get('r') || '0');
+    useEffect(() => {
+        const updatePhysicalViewport = () =>
+            setPhysicalViewport({
+                width: Math.max(1, window.innerWidth),
+                height: Math.max(1, window.innerHeight)
+            });
+        updatePhysicalViewport();
+        window.addEventListener('resize', updatePhysicalViewport);
+        return () => window.removeEventListener('resize', updatePhysicalViewport);
+    }, []);
 
-        return { x: col * SCREEN_W, y: row * SCREEN_H, w: SCREEN_W, h: SCREEN_H };
-    }, [searchParams]);
+    const myViewport = useMemo<Viewport>(() => {
+        return {
+            x: col * screenWidth,
+            y: row * screenHeight,
+            w: screenWidth,
+            h: screenHeight
+        };
+    }, [col, row, screenHeight, screenWidth]);
 
     // Initialize Engine with this screen's specific physical location
     const engine = useMemo(
@@ -150,6 +171,7 @@ function WallApp() {
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
         setCustomRenderProxy(next.customRenderProxy);
+        setStageLayout(next.layout);
         lastHydrateContextRef.current = {
             hasContent: hasHydrateContent(next),
             projectId: next.projectId,
@@ -289,6 +311,7 @@ function WallApp() {
                     customRenderUrl: data.customRender?.url,
                     customRenderCompat: Boolean(data.customRender?.compat),
                     customRenderProxy: Boolean(data.customRender?.proxy),
+                    layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
                     slideId: data.slideId
@@ -779,15 +802,15 @@ function WallApp() {
         if (!customRenderUrl) return stage;
         const iframeSrc = new URL(customRenderUrl);
         if (!customRenderCompat) {
-            iframeSrc.searchParams.set('c', String(myViewport.x / SCREEN_W));
-            iframeSrc.searchParams.set('r', String(myViewport.y / SCREEN_H));
+            iframeSrc.searchParams.set('c', String(col));
+            iframeSrc.searchParams.set('r', String(row));
         }
         const finalSrc =
             customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
                 ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
                 : iframeSrc.toString();
-        const worldWidth = SCREEN_W * COLS;
-        const worldHeight = SCREEN_H * ROWS;
+        const worldWidth = screenWidth * columns;
+        const worldHeight = screenHeight * rows;
         return (
             <iframe
                 key={`custom-render:${iframeGateCycle}`}
@@ -798,8 +821,8 @@ function WallApp() {
                     position: 'absolute',
                     top: customRenderCompat ? `${-myViewport.y}px` : 0,
                     left: customRenderCompat ? `${-myViewport.x}px` : 0,
-                    width: customRenderCompat ? `${worldWidth}px` : `${SCREEN_W}px`,
-                    height: customRenderCompat ? `${worldHeight}px` : `${SCREEN_H}px`,
+                    width: customRenderCompat ? `${worldWidth}px` : `${screenWidth}px`,
+                    height: customRenderCompat ? `${worldHeight}px` : `${screenHeight}px`,
                     cursor: 'none',
                     pointerEvents: 'none',
                     border: 'none'
@@ -819,27 +842,49 @@ function WallApp() {
         (l): l is Extract<LayerWithWallComponentState, { type: 'background' }> =>
             l.type === 'background' && l.config.visible
     );
+    const physicalScale = Math.min(
+        physicalViewport.width / Math.max(1, screenWidth),
+        physicalViewport.height / Math.max(1, screenHeight)
+    );
+    const physicalLeft = (physicalViewport.width - screenWidth * physicalScale) / 2;
+    const physicalTop = (physicalViewport.height - screenHeight * physicalScale) / 2;
 
     return (
-        <div className="absolute z-50 m-0 block min-h-screen min-w-screen cursor-none overflow-hidden bg-black">
-            {/* Visual Debugger: Shows the Screen ID in the corner */}
-            {showVisualDebugger ? (
-                <div
-                    className="min-blend-plus-lighter absolute top-2 left-2 z-1000000 border-2 border-red-800 p-2 font-mono text-gray-500"
-                    style={{ width: `${SCREEN_W - 2 * 10}px`, height: `${SCREEN_H - 2 * 10}px` }}
-                >
-                    SCREEN&gt; C:{myViewport.x / SCREEN_W} R:{myViewport.y / SCREEN_H}
-                </div>
-            ) : null}
-            {backgroundLayer && (
-                <WallBackgroundCanvas
-                    layer={backgroundLayer}
-                    col={myViewport.x / SCREEN_W}
-                    row={myViewport.y / SCREEN_H}
-                    getNow={engine ? () => engine.getServerTime() : Date.now}
-                />
-            )}
-            {stageContent}
+        <div className="absolute inset-0 z-50 m-0 cursor-none overflow-hidden bg-black">
+            <div
+                className="absolute overflow-hidden bg-black"
+                style={{
+                    left: physicalLeft,
+                    top: physicalTop,
+                    width: screenWidth,
+                    height: screenHeight,
+                    transform: `scale(${physicalScale})`,
+                    transformOrigin: 'top left'
+                }}
+            >
+                {/* Visual Debugger: Shows the Screen ID in the corner */}
+                {showVisualDebugger ? (
+                    <div
+                        className="min-blend-plus-lighter absolute top-2 left-2 z-1000000 border-2 border-red-800 p-2 font-mono text-gray-500"
+                        style={{
+                            width: `${screenWidth - 2 * 10}px`,
+                            height: `${screenHeight - 2 * 10}px`
+                        }}
+                    >
+                        SCREEN&gt; C:{col} R:{row}
+                    </div>
+                ) : null}
+                {backgroundLayer && (
+                    <WallBackgroundCanvas
+                        layer={backgroundLayer}
+                        col={col}
+                        row={row}
+                        layout={stageLayout}
+                        getNow={engine ? () => engine.getServerTime() : Date.now}
+                    />
+                )}
+                {stageContent}
+            </div>
             <div
                 className="pointer-events-none absolute inset-0 z-1000001 bg-black"
                 style={{

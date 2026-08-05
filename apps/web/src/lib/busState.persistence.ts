@@ -1,7 +1,15 @@
 import type { CommitDocument } from '@repo/db/documents';
+import * as Y from 'yjs';
 
 import type { Layer, ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
+import { yDocToHtml } from '~/server/yjs/lexical';
+import {
+    binaryToUint8Array,
+    hashBytes,
+    hashText,
+    LEXICAL_YJS_BINDING_VERSION
+} from '~/server/yjs/yjs.doc';
 
 import {
     clearActiveVideosForScope,
@@ -209,7 +217,20 @@ export async function buildSlidesSnapshot(
     const updatedSlides = existingSlides.map((slide) => {
         if (slide.id === scope.slideId) {
             slideFound = true;
-            return { ...slide, layers: currentLayers };
+            const persistedById = new Map(slide.layers.map((layer) => [layer.numericId, layer]));
+            const revisionSafeLayers = currentLayers.map((layer) => {
+                const persisted = persistedById.get(layer.numericId);
+                if (layer.type !== 'text' || persisted?.type !== 'text') return layer;
+                if ((persisted.textRevision ?? 0) <= (layer.textRevision ?? 0)) return layer;
+                return {
+                    ...layer,
+                    textHtml: persisted.textHtml,
+                    textRevision: persisted.textRevision,
+                    textStateHash: persisted.textStateHash,
+                    textBindingVersion: persisted.textBindingVersion
+                };
+            });
+            return { ...slide, layers: revisionSafeLayers };
         }
         return slide;
     });
@@ -224,6 +245,59 @@ export async function buildSlidesSnapshot(
     }
 
     return updatedSlides;
+}
+
+/**
+ * Whole-scope autosaves can race a Yjs projection written by another worker.
+ * Re-applying the latest revisioned snapshots after the broad write makes the
+ * last operation safe regardless of which side won the write ordering race.
+ */
+async function reconcileYjsTextProjections(
+    projectId: string,
+    commitId: string,
+    slides: Array<{ id: string; layers: Layer[] }>
+): Promise<void> {
+    for (const slide of slides) {
+        for (const layer of slide.layers) {
+            if (layer.type !== 'text') continue;
+            const docName = `${projectId}_${commitId}_${slide.id}_${layer.numericId}`;
+            const persisted = await dbCol.ydocs.findStateByScope(docName);
+            if (
+                !persisted ||
+                persisted.revision <= 0 ||
+                persisted.bindingVersion !== LEXICAL_YJS_BINDING_VERSION
+            ) {
+                continue;
+            }
+            const update = binaryToUint8Array(persisted.data);
+            if (!update) continue;
+            const stateHash = persisted.stateHash ?? hashBytes(update);
+            if (
+                layer.textRevision === persisted.revision &&
+                layer.textStateHash === stateHash &&
+                layer.textBindingVersion === persisted.bindingVersion &&
+                persisted.htmlHash === hashText(layer.textHtml)
+            ) {
+                continue;
+            }
+            const doc = new Y.Doc();
+            try {
+                Y.applyUpdate(doc, update);
+                const textHtml = await yDocToHtml(doc, docName);
+                await dbCol.commits.updateTextLayerProjection({
+                    commitId,
+                    slideId: slide.id,
+                    layerId: layer.numericId,
+                    textHtml,
+                    textRevision: persisted.revision,
+                    textStateHash: stateHash,
+                    textBindingVersion: persisted.bindingVersion
+                });
+            } finally {
+                doc.destroy();
+            }
+        }
+    }
 }
 
 export async function saveScope(
@@ -242,8 +316,9 @@ export async function saveScope(
             headId = scope.commitId;
         } else {
             const project = await dbCol.projects.findById(scope.projectId);
-            if (!project?.headCommitId) return { success: false, error: 'No HEAD commit' };
-            headId = project.headCommitId;
+            const stage = project?.stages.find(({ id }) => id === project.defaultStageId);
+            if (!stage?.headCommitId) return { success: false, error: 'No HEAD commit' };
+            headId = stage.headCommitId;
         }
 
         const updatedSlides = await buildSlidesSnapshot(scope, headId);
@@ -254,6 +329,11 @@ export async function saveScope(
                 message,
                 content: { slides: updatedSlides as CommitDocument['content']['slides'] }
             });
+            await reconcileYjsTextProjections(
+                scope.projectId,
+                headId,
+                updatedSlides as Array<{ id: string; layers: Layer[] }>
+            );
 
             scope.dirty = false;
             return { success: true };
@@ -262,9 +342,11 @@ export async function saveScope(
         // Manual save: create immutable snapshot, then pointer-swap HEAD's parentId
         // Preserve HEAD's current parentId chain on the snapshot
         const currentHead = await dbCol.commits.findById(headId);
+        if (!currentHead) return { success: false, error: 'HEAD commit not found' };
         const snapshot = await dbCol.commits.insert({
             projectId: scope.projectId,
-            parentId: currentHead?.parentId ?? null,
+            stageId: currentHead.stageId,
+            parentId: currentHead.parentId ?? null,
             authorEmail:
                 typeof authorEmail === 'string' && authorEmail.trim().length > 0
                     ? authorEmail.trim()

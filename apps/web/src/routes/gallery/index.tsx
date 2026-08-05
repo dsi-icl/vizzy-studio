@@ -1,5 +1,6 @@
 import { TriangleDashedIcon } from '@phosphor-icons/react';
 import { useAuth } from '@repo/auth/tanstack/hooks';
+import { stageLayoutsEqual, type StageLayout } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import type { Project } from '@repo/ui/components/project-card';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,7 +51,7 @@ type WallListEntry = {
     boundProjectId?: string | null;
     boundCommitId?: string | null;
     boundSlideId?: string | null;
-    boundSource?: 'live' | 'gallery' | null;
+    boundSource?: 'live' | 'gallery' | 'signage' | null;
 };
 
 function HomePage() {
@@ -62,6 +63,10 @@ function HomePage() {
     const [liveSessionRevision, setLiveSessionRevision] = useState(0);
     const [syncedCloseRevision, setSyncedCloseRevision] = useState(0);
     const [syncedCloseProjectId, setSyncedCloseProjectId] = useState<string | null>(null);
+    const [wallLayoutSnapshot, setWallLayoutSnapshot] = useState<{
+        wallId: string;
+        layout: StageLayout;
+    } | null>(null);
     const { data: publishedProjects = [] } = useQuery(publishedProjectsQueryOptions());
     const { data: walls = [] } = useQuery({
         ...wallsQueryOptions(),
@@ -69,6 +74,10 @@ function HomePage() {
     });
     const queryClient = useQueryClient();
     const searchStr = useLocation({ select: (location) => location.searchStr });
+    const requestedWallId = useMemo(
+        () => new URLSearchParams(searchStr).get('w') || null,
+        [searchStr]
+    );
     const [pendingOverride, setPendingOverride] = useState<{
         requestId: string;
         wallId: string;
@@ -84,6 +93,8 @@ function HomePage() {
     const lastGalleryBoundProjectRef = useRef<string | null>(null);
 
     const wallId = useGalleryStore((s) => s.wallId);
+    const assignedWallLayout =
+        wallId && wallLayoutSnapshot?.wallId === wallId ? wallLayoutSnapshot.layout : null;
     const deviceEnrollmentId = useGalleryStore((s) => s.deviceEnrollmentId);
     const enrollmentModeEnabled = useGalleryStore((s) => s.enrollmentModeEnabled);
 
@@ -128,7 +139,7 @@ function HomePage() {
         const handleLiveBindingStatus = (
             nextWallId: string,
             bound: boolean,
-            source?: 'live' | 'gallery',
+            source?: 'live' | 'gallery' | 'signage',
             projectId?: string
         ) => {
             if (!wallId || nextWallId !== wallId) return;
@@ -153,7 +164,7 @@ function HomePage() {
                       projectId?: string;
                       commitId?: string;
                       slideId?: string;
-                      source?: 'live' | 'gallery';
+                      source?: 'live' | 'gallery' | 'signage';
                   }
                 | {
                       wallId: string;
@@ -161,7 +172,7 @@ function HomePage() {
                       boundProjectId: string | null;
                       boundCommitId: string | null;
                       boundSlideId: string | null;
-                      boundSource: 'live' | 'gallery' | null;
+                      boundSource: 'live' | 'gallery' | 'signage' | null;
                   }
         ) => {
             queryClient.setQueryData<WallListEntry[]>(wallsQueryKey, (current) => {
@@ -211,6 +222,12 @@ function HomePage() {
 
         const unsubs = [
             galleryEngine.onGalleryState((snapshot) => {
+                const currentWallId = useGalleryStore.getState().wallId;
+                setWallLayoutSnapshot(
+                    currentWallId && snapshot.wallId === currentWallId && snapshot.layout
+                        ? { wallId: currentWallId, layout: snapshot.layout }
+                        : null
+                );
                 queryClient.setQueryData<WallListEntry[]>(wallsQueryKey, (current) => {
                     const byWallId = new Map(
                         (Array.isArray(current) ? current : []).map((wall) => [wall.wallId, wall])
@@ -229,7 +246,6 @@ function HomePage() {
                     }
                     return Array.from(byWallId.values());
                 });
-                const currentWallId = useGalleryStore.getState().wallId;
                 if (currentWallId) {
                     const targetWall = snapshot.walls.find((wall) => wall.wallId === currentWallId);
                     if (targetWall) {
@@ -433,45 +449,61 @@ function HomePage() {
 
     const projectsData: ProjectWithId[] = useMemo(
         () =>
-            publishedProjects.map((p) => ({
-                id: p.id,
-                name: p.name,
-                author: p.authorOrganisation,
-                description: p.description,
-                tags: p.tags,
-                publishedCommitId: p.publishedCommitId,
-                customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
-                customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
-                imageUrl: p.heroImages[0] ?? '',
-                blurhash: (p as { heroImageBlurhash?: string }).heroImageBlurhash,
-                sizes: (p as { heroImageSizes?: number[] }).heroImageSizes,
-                images: (() => {
-                    const heroImages = Array.isArray(p.heroImages) ? p.heroImages : [];
-                    const metaBySrc = new Map(
-                        (
+            publishedProjects.flatMap((p) => {
+                const defaultStage = p.stages.find(({ id }) => id === p.defaultStageId);
+                const matchingStages = assignedWallLayout
+                    ? p.stages.filter(
+                          (stage) =>
+                              !stage.archivedAt &&
+                              stageLayoutsEqual(stage.layout, assignedWallLayout)
+                      )
+                    : [];
+                const presentedStage = assignedWallLayout
+                    ? matchingStages.length === 1
+                        ? matchingStages[0]
+                        : null
+                    : defaultStage;
+                if (!presentedStage?.publishedCommitId) return [];
+                return {
+                    id: p.id,
+                    name: p.name,
+                    author: p.authorOrganisation,
+                    description: p.description,
+                    tags: p.tags,
+                    publishedCommitId: presentedStage.publishedCommitId,
+                    customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
+                    customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
+                    imageUrl: p.heroImages[0] ?? '',
+                    blurhash: (p as { heroImageBlurhash?: string }).heroImageBlurhash,
+                    sizes: (p as { heroImageSizes?: number[] }).heroImageSizes,
+                    images: (() => {
+                        const heroImages = Array.isArray(p.heroImages) ? p.heroImages : [];
+                        const metaBySrc = new Map(
                             (
-                                p as {
-                                    heroImageMeta?: Array<{
-                                        src: string;
-                                        blurhash?: string;
-                                        sizes?: number[];
-                                    }>;
-                                }
-                            ).heroImageMeta ?? []
-                        ).map((entry) => [entry.src, entry])
-                    );
+                                (
+                                    p as {
+                                        heroImageMeta?: Array<{
+                                            src: string;
+                                            blurhash?: string;
+                                            sizes?: number[];
+                                        }>;
+                                    }
+                                ).heroImageMeta ?? []
+                            ).map((entry) => [entry.src, entry])
+                        );
 
-                    return heroImages.map((src) => {
-                        const meta = metaBySrc.get(src);
-                        return {
-                            src,
-                            blurhash: meta?.blurhash,
-                            sizes: meta?.sizes
-                        };
-                    });
-                })()
-            })),
-        [publishedProjects]
+                        return heroImages.map((src) => {
+                            const meta = metaBySrc.get(src);
+                            return {
+                                src,
+                                blurhash: meta?.blurhash,
+                                sizes: meta?.sizes
+                            };
+                        });
+                    })()
+                } satisfies ProjectWithId;
+            }),
+        [assignedWallLayout, publishedProjects]
     );
 
     const allTags = useMemo(() => {
@@ -508,16 +540,21 @@ function HomePage() {
     };
 
     const filteredProjects = useMemo(() => {
-        if (!activeTag) return projectsData;
-        return projectsData.filter((p) => p.tags.includes(activeTag));
+        const list = activeTag
+            ? projectsData.filter((p) => p.tags.includes(activeTag))
+            : projectsData;
+        return [...list].sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true })
+        );
     }, [activeTag, projectsData]);
 
     const autoOpenProjectId = useMemo(() => {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
         if (!targetWall?.boundProjectId) return null;
-        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | null }).boundSource;
-        if (boundSource === 'live') return null;
+        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | 'signage' | null })
+            .boundSource;
+        if (boundSource !== 'gallery') return null;
         return targetWall.boundProjectId;
     }, [wallId, walls]);
 
@@ -525,8 +562,9 @@ function HomePage() {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
         if (!targetWall?.boundProjectId) return null;
-        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | null }).boundSource;
-        if (boundSource === 'live') return null;
+        const boundSource = (targetWall as { boundSource?: 'live' | 'gallery' | 'signage' | null })
+            .boundSource;
+        if (boundSource !== 'gallery') return null;
         const withCommit = targetWall as {
             boundCommitId?: string | null;
             boundSlideId?: string | null;
@@ -627,6 +665,13 @@ function HomePage() {
                     className="w-full shrink-0 md:flex md:min-h-0 md:w-1/5 md:flex-col"
                 >
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
+                    <p className="mb-3 text-xs text-muted-foreground">
+                        {assignedWallLayout
+                            ? `${assignedWallLayout.columns}×${assignedWallLayout.rows} stages · ${assignedWallLayout.screenWidth}×${assignedWallLayout.screenHeight}px panels`
+                            : wallId || requestedWallId
+                              ? 'Main stages · no wall layout template configured'
+                              : 'Main stages'}
+                    </p>
                     <div className="grid grid-cols-3 gap-1">
                         <Button
                             variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}

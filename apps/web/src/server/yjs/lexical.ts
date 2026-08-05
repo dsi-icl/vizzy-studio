@@ -166,7 +166,12 @@ export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
 }
 
 /** Apply an HTML string directly to an existing YJS document. */
-export async function applyHtmlToDoc(doc: Y.Doc, html: string, docName: string): Promise<void> {
+export async function applyHtmlToDoc(
+    doc: Y.Doc,
+    html: string,
+    docName: string,
+    origin?: unknown
+): Promise<void> {
     const update = await htmlToYUpdate(html, docName);
-    Y.applyUpdate(doc, update);
+    Y.applyUpdate(doc, update, origin);
 }

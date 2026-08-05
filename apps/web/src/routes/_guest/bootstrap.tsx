@@ -215,7 +215,11 @@ function BootstrapPage() {
                 {view === 'welcome' && (
                     <SlidePanel key="welcome" direction={direction}>
                         <div className="flex flex-col items-center gap-4 text-center">
-                            <Link to="/" className="flex flex-col items-center gap-2 font-medium">
+                            <Link
+                                to="/"
+                                aria-label="Vizzy Studio home"
+                                className="flex flex-col items-center gap-2 font-medium"
+                            >
                                 <div className="flex h-12 w-12 items-center justify-center rounded-md">
                                     <DiscoBallIcon className="size-12" />
                                 </div>

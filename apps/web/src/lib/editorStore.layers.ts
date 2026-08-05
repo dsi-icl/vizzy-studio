@@ -1,7 +1,6 @@
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
 import type { Layer, LayerWithEditorState } from './types';
 
 type SliceSet = (
@@ -315,12 +314,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         },
 
         addTextLayer: () => {
-            const { allocateId, allocateZIndex, insertionCenter, insertionViewport } = get();
+            const { allocateId, allocateZIndex, insertionCenter, insertionViewport, stageLayout } =
+                get();
             const numericId = allocateId();
             const zIndex = allocateZIndex();
             const fitted = fitSizeToViewport(
-                1920,
-                1080,
+                stageLayout.screenWidth,
+                stageLayout.screenHeight,
                 insertionViewport.width,
                 insertionViewport.height
             );
@@ -503,14 +503,14 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         },
 
         addBackgroundLayer: () => {
-            const { layers } = get();
+            const { layers, stageLayout } = get();
             // Singleton: if one already exists, do nothing (settings accessible via toolbar popover)
             const existing = Array.from(layers.values()).find((l) => l.type === 'background');
             if (existing) return;
 
             const numericId = helpers.allocateId();
-            const wallW = COLS * SCREEN_W;
-            const wallH = ROWS * SCREEN_H;
+            const wallW = stageLayout.columns * stageLayout.screenWidth;
+            const wallH = stageLayout.rows * stageLayout.screenHeight;
 
             const newLayer: LayerWithEditorState = {
                 numericId,

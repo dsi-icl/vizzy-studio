@@ -31,6 +31,7 @@ import {
     touchPing,
     unbindWall,
     unregisterPeer,
+    wallBindingSources,
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
@@ -62,6 +63,7 @@ import {
 import { handleEditorScopeVacated, recomputePeerAuthContexts } from '~/server/bus/bus.peers';
 import { dbCol } from '~/server/collections';
 import { markDeviceDisconnectedById } from '~/server/devices';
+import { startSignageRunner } from '~/server/signageRunner';
 
 // ── Binary opcodes ──────────────────────────────────────────────────────────
 
@@ -321,6 +323,12 @@ const hooks = defineHooks({
                 scheduleWallUnbindGrace(meta.wallId, () => {
                     // Wall may have reconnected during grace period.
                     if (getWallNodeCount(meta.wallId) > 0) return;
+                    if (
+                        wallBindingSources.get(meta.wallId) === 'signage' ||
+                        process.__SIGNAGE_IS_TARGET_WALL__?.(meta.wallId)
+                    ) {
+                        return;
+                    }
 
                     unbindWall(meta.wallId);
                     hydrateWallNodes(meta.wallId);
@@ -446,7 +454,10 @@ process.__BROADCAST_WALL_BINDING_CHANGED__ = (wallId: string) => {
 
 process.__BROADCAST_PROJECTS_CHANGED__ = (projectId?: string) => {
     broadcastProjectsChanged(projectId);
+    process.__SIGNAGE_CONFIG_CHANGED__?.();
 };
+
+startSignageRunner();
 
 process.__DISCONNECT_DEVICE__ = (deviceId: string) => {
     const normalized = deviceId.trim();
@@ -519,19 +530,41 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textRevision: number;
+    textStateHash: string;
+    textBindingVersion: string;
     fallbackLayer?: Extract<Layer, { type: 'text' }>;
 }) => {
     try {
-        const { projectId, commitId, slideId, layerId, textHtml, fallbackLayer } = payload;
+        const {
+            projectId,
+            commitId,
+            slideId,
+            layerId,
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion,
+            fallbackLayer
+        } = payload;
         const scopeId = internScope(projectId, commitId, slideId);
         const scope = getOrCreateScope(scopeId, projectId, commitId, slideId);
 
         const existing = scope.layers.get(layerId);
+        if (existing?.type === 'text' && (existing.textRevision ?? 0) > textRevision) {
+            return true;
+        }
+        const yjsProjection = {
+            textHtml,
+            textRevision,
+            textStateHash,
+            textBindingVersion
+        };
         const nextLayer =
             existing?.type === 'text'
-                ? { ...existing, textHtml }
+                ? { ...existing, ...yjsProjection }
                 : fallbackLayer
-                  ? { ...fallbackLayer, textHtml }
+                  ? { ...fallbackLayer, ...yjsProjection }
                   : null;
 
         if (!nextLayer || nextLayer.type !== 'text') {

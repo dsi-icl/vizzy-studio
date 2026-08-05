@@ -4,6 +4,7 @@ import { createSmtpTransport } from '@repo/auth/smtp';
 import { getSmtpConfig, listConfigEntries, setConfigValue } from '@repo/db/config';
 import type { AuthContext } from '@repo/db/documents';
 import type { CollaboratorRole } from '@repo/db/schema';
+import { StageLayout } from '@repo/db/schema';
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server';
 import { ObjectId } from 'mongodb';
 
@@ -19,8 +20,10 @@ import {
 } from '~/lib/busState';
 import type { AuditExecutionContextInput } from '~/server/audit';
 import { logAuditSuccess } from '~/server/audit';
+import { broadcastGalleryStateSnapshot } from '~/server/bus/bus.binding';
 import { dbCol, collections } from '~/server/collections';
 import { adminEnrollDeviceBySignature, adminListDevices } from '~/server/devices';
+import { getStageLayoutLimits } from '~/server/projects';
 
 let prevCpuUsage = process.cpuUsage();
 let prevCpuAt = process.hrtime.bigint();
@@ -188,6 +191,7 @@ export async function adminListAuditsPage(input: {
         | 'config'
         | 'smtp'
         | 'scope'
+        | 'signage_slideshow'
         | 'unknown'
     >;
     operation?: string;
@@ -347,9 +351,32 @@ export async function adminGetWall(wallId: string) {
     if (!targetWallId) throw new Error('Wall ID is required');
     const wall = await findWallById(targetWallId);
     if (!wall) throw new Error('Wall not found');
+    const connectedPeers = Array.from(wallsByWallId.get(String(wall.wallId)) ?? []).flatMap(
+        (entry) =>
+            entry.meta.specimen === 'wall' ? [{ col: entry.meta.col, row: entry.meta.row }] : []
+    );
+    const observedColumns =
+        connectedPeers.length > 0
+            ? Math.max(...connectedPeers.map((entry) => entry.col)) + 1
+            : null;
+    const observedRows =
+        connectedPeers.length > 0
+            ? Math.max(...connectedPeers.map((entry) => entry.row)) + 1
+            : null;
     return {
         wallId: String(wall.wallId ?? targetWallId),
-        name: wall.name ? String(wall.name) : null
+        name: wall.name ? String(wall.name) : null,
+        site: wall.site ?? null,
+        notes: wall.notes ?? null,
+        layoutTemplate: wall.layoutTemplate ?? null,
+        observedLayout:
+            observedColumns && observedRows
+                ? {
+                      columns: observedColumns,
+                      rows: observedRows,
+                      connectedNodes: connectedPeers.length
+                  }
+                : null
     };
 }
 
@@ -387,6 +414,9 @@ export async function adminDeleteWall(wallId: string) {
     const existing = await findWallById(targetWallId);
     if (!existing) throw new Error('Wall not found');
     const resolvedWallId = String(existing.wallId ?? targetWallId).trim();
+    if (await dbCol.signageSlideshows.findEnabledByTargetWall(resolvedWallId)) {
+        throw new Error('Remove this wall from its enabled slideshow before deleting it');
+    }
 
     unbindWall(resolvedWallId);
     hydrateWallNodes(resolvedWallId);
@@ -403,6 +433,41 @@ export async function adminDeleteWall(wallId: string) {
     });
 
     process.__BROADCAST_WALL_BINDING_CHANGED__?.(resolvedWallId);
+}
+
+export async function adminUpdateWallLayoutTemplate(input: {
+    wallId: string;
+    layout: StageLayout | null;
+    actorEmail: string;
+}) {
+    const existing = await findWallById(input.wallId);
+    if (!existing) throw new Error('Wall not found');
+    let layoutTemplate = null;
+    if (input.layout) {
+        const layout = StageLayout.parse(input.layout);
+        const limits = await getStageLayoutLimits();
+        if (layout.columns > limits.maxColumns || layout.rows > limits.maxRows) {
+            throw new Error(
+                `Wall template grid cannot exceed ${limits.maxColumns}×${limits.maxRows}`
+            );
+        }
+        layoutTemplate = {
+            ...layout,
+            configuredAt: Date.now(),
+            configuredBy: input.actorEmail
+        };
+    }
+    const updated = await dbCol.walls.update(existing.id, { layoutTemplate });
+    if (!updated) throw new Error('Wall not found');
+    broadcastGalleryStateSnapshot(input.wallId);
+    await logAuditSuccess({
+        action: 'WALL_LAYOUT_TEMPLATE_UPDATED',
+        actorId: input.actorEmail,
+        resourceType: 'wall',
+        resourceId: String(existing.wallId),
+        changes: { layoutTemplate }
+    });
+    return updated.layoutTemplate ?? null;
 }
 
 export async function adminListDevicesForWall(wallId: string) {
@@ -462,6 +527,9 @@ export async function adminGetWallBindingMeta(input: {
 }
 
 export async function adminUnbindWall(wallId: string) {
+    if (await dbCol.signageSlideshows.findEnabledByTargetWall(wallId)) {
+        throw new Error('Remove this wall from its enabled slideshow before unbinding it');
+    }
     unbindWall(wallId);
     hydrateWallNodes(wallId);
     notifyControllers(wallId, false);
@@ -722,6 +790,62 @@ export async function adminSetUserTrustedPublisher(input: {
         resourceType: 'user',
         resourceId: betterAuthUserId ?? String(user._id),
         changes: { trustedPublisher: input.trustedPublisher }
+    });
+}
+
+export async function adminSetUserCanManageSignage(input: {
+    userId: string;
+    canManageSignage: boolean;
+    actorEmail: string;
+}) {
+    const userId = input.userId.trim();
+    if (!userId) throw new Error('User ID is required');
+
+    let user = await collections.users.findOne(
+        { id: userId },
+        { projection: { _id: 1, email: 1, id: 1, canManageSignage: 1 } }
+    );
+    if (!user && /^[0-9a-f]{24}$/i.test(userId)) {
+        user = await collections.users.findOne(
+            { _id: new ObjectId(userId) },
+            { projection: { _id: 1, email: 1, id: 1, canManageSignage: 1 } }
+        );
+    }
+    if (!user) throw new Error('User not found');
+    if (user.canManageSignage === input.canManageSignage) return;
+
+    const headers = getRequest().headers;
+    const betterAuthUserId =
+        typeof user.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : null;
+    if (betterAuthUserId) {
+        await auth.api.adminUpdateUser({
+            headers,
+            body: {
+                userId: betterAuthUserId,
+                data: { canManageSignage: input.canManageSignage }
+            }
+        });
+    } else {
+        await collections.users.updateOne(
+            { _id: user._id },
+            {
+                $set: {
+                    canManageSignage: input.canManageSignage,
+                    updatedAt: new Date()
+                }
+            }
+        );
+    }
+
+    if (typeof user.email === 'string' && user.email.length > 0) {
+        await adminRecomputeBusAuthContext({ email: user.email });
+    }
+    await logAuditSuccess({
+        action: 'ADMIN_USER_SIGNAGE_ACCESS_UPDATED',
+        actorId: input.actorEmail,
+        resourceType: 'user',
+        resourceId: betterAuthUserId ?? String(user._id),
+        changes: { canManageSignage: input.canManageSignage }
     });
 }
 

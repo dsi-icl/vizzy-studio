@@ -6,6 +6,7 @@ import type { GalleryEngine } from '~/lib/galleryEngine';
 import type { GalleryStateCreator } from '~/lib/galleryStore';
 import type { GSMessage, Layer, ScopeKey, ScopeState } from '~/lib/types';
 import type { WallEngine } from '~/lib/wallEngine';
+import type { YCrossws } from '~/server/yjs/yjs.session';
 
 export {};
 
@@ -33,6 +34,11 @@ declare global {
             __BROADCAST_ASSET_ADDED__?: (projectId: string, asset: Record<string, unknown>) => void;
             __BROADCAST_WALL_BINDING_CHANGED__?: (wallId: string) => void;
             __BROADCAST_PROJECTS_CHANGED__?: (projectId?: string) => void;
+            __SIGNAGE_CONFIG_CHANGED__?: (slideshowId?: string) => void;
+            __SIGNAGE_IS_TARGET_WALL__?: (wallId: string) => boolean;
+            __SIGNAGE_IS_WALL_SUPPRESSED__?: (wallId: string) => boolean;
+            __SIGNAGE_SUPPRESS_WALL__?: (wallId: string) => void;
+            __SIGNAGE_RESUME_WALL__?: (wallId: string) => void;
             __BUS_RECOMPUTE_AUTH_CONTEXT__?: (payload: { email?: string }) => Promise<unknown>;
             __YJS_RECOMPUTE_AUTH_CONTEXT__?: (payload: { email?: string }) => Promise<unknown>;
             __DISCONNECT_DEVICE__?: (deviceId: string) => number;
@@ -44,8 +50,12 @@ declare global {
                 slideId: string;
                 layerId: number;
                 textHtml: string;
+                textRevision: number;
+                textStateHash: string;
+                textBindingVersion: string;
                 fallbackLayer?: Extract<Layer, { type: 'text' }>;
             }) => boolean | Promise<boolean>;
+            __YJS_SERVER__?: YCrossws;
             __VSYNC_INTERVAL__?: ReturnType<typeof setInterval>;
             __AUTO_SAVE_INTERVAL__?: ReturnType<typeof setInterval>;
             __REAPER_INTERVAL__?: ReturnType<typeof setInterval>;

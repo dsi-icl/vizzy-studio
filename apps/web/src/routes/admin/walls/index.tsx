@@ -77,15 +77,18 @@ function AdminWalls() {
                             </div>
                         )}
                     </form.Field>
-                    <Button
-                        disabled={
-                            createWallMutation.isPending ||
-                            form.getFieldValue('wallId').trim().length === 0
-                        }
-                        onClick={() => form.handleSubmit()}
-                    >
-                        Add Wall
-                    </Button>
+                    <form.Subscribe selector={(state) => state.values.wallId}>
+                        {(wallId) => (
+                            <Button
+                                disabled={
+                                    createWallMutation.isPending || wallId.trim().length === 0
+                                }
+                                onClick={() => form.handleSubmit()}
+                            >
+                                Add Wall
+                            </Button>
+                        )}
+                    </form.Subscribe>
                 </div>
             </div>
             {walls.length === 0 ? (
@@ -190,13 +193,18 @@ function AdminWalls() {
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        disabled={unbindMutation.isPending}
+                                                        disabled={
+                                                            unbindMutation.isPending ||
+                                                            wall.boundSource === 'signage'
+                                                        }
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             unbindMutation.mutate(wall.wallId);
                                                         }}
                                                     >
-                                                        Unbind
+                                                        {wall.boundSource === 'signage'
+                                                            ? 'Signage managed'
+                                                            : 'Unbind'}
                                                     </Button>
                                                 )}
                                             </div>

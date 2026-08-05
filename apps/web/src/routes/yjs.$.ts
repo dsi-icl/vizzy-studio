@@ -3,7 +3,9 @@ import { defineHooks } from 'crossws';
 
 import { YCrossws } from '~/server/yjs/yjs.session';
 
-const yc = new YCrossws();
+// Route modules can be evaluated more than once during HMR. Keep one owner per
+// process so peers never land in independent in-memory document registries.
+const yc = (process.__YJS_SERVER__ ??= new YCrossws());
 
 const hooks = defineHooks({
     async open(peer) {

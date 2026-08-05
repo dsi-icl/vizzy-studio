@@ -5,6 +5,7 @@ import {
 } from '@repo/auth/tanstack/middleware';
 import type { AuthContext } from '@repo/db/documents';
 import { Collaborator } from '@repo/db/schema';
+import { StageLayout } from '@repo/db/schema';
 import { createServerFn } from '@tanstack/react-start';
 
 import { z } from '~/lib/zod';
@@ -29,12 +30,14 @@ import {
     adminListWalls,
     adminSetUserBanStatus,
     adminSetUserTrustedPublisher,
+    adminSetUserCanManageSignage,
     adminSetUserRole,
     adminImpersonateUser,
     adminStopImpersonation,
     adminSendSmtpTest,
     adminSetConfig,
     adminUpdateWallMetadata,
+    adminUpdateWallLayoutTemplate,
     adminUnbindWall
 } from './admin';
 import { logAuditSuccess } from './audit';
@@ -99,6 +102,7 @@ const AuditResourceTypeEnum = z.enum([
     'config',
     'smtp',
     'scope',
+    'signage_slideshow',
     'unknown'
 ]);
 const AuditSurfaceEnum = z.enum(['http', 'serverfn', 'ws', 'yjs', 'job', 'system', 'unknown']);
@@ -186,6 +190,22 @@ export const $adminUpdateWallMetadata = createServerFn({ method: 'POST' })
             name: data.name ?? null,
             site: data.site ?? null,
             notes: data.notes ?? null
+        })
+    );
+
+export const $adminUpdateWallLayoutTemplate = createServerFn({ method: 'POST' })
+    .middleware([adminMiddleware])
+    .validator(
+        z.object({
+            wallId: z.string(),
+            layout: StageLayout.nullable()
+        })
+    )
+    .handler(({ data, context }) =>
+        adminUpdateWallLayoutTemplate({
+            wallId: data.wallId,
+            layout: data.layout,
+            actorEmail: context.user.email
         })
     );
 
@@ -346,6 +366,22 @@ export const $adminSetUserTrustedPublisher = createServerFn({ method: 'POST' })
         adminSetUserTrustedPublisher({
             userId: data.userId,
             trustedPublisher: data.trustedPublisher,
+            actorEmail: context.user.email
+        })
+    );
+
+export const $adminSetUserCanManageSignage = createServerFn({ method: 'POST' })
+    .middleware([adminMiddleware])
+    .validator(
+        z.object({
+            userId: z.string(),
+            canManageSignage: z.boolean()
+        })
+    )
+    .handler(async ({ data, context }) =>
+        adminSetUserCanManageSignage({
+            userId: data.userId,
+            canManageSignage: data.canManageSignage,
             actorEmail: context.user.email
         })
     );
