@@ -1,4 +1,5 @@
 import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
@@ -12,6 +13,37 @@ import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import TextEditorToolbar from './TextEditorToolbar';
 import type { TextHydrationState } from './textHydrationState';
 
+/**
+ * How tall the document actually is, in layer pixels.
+ *
+ * `scrollHeight` cannot answer this: the content editable is stretched to fill
+ * the layer box, so it never reports less than the box it sits in. Block
+ * children are measured instead, through `offsetTop`/`offsetHeight` rather than
+ * bounding rects — the editor renders under a CSS scale that rects would fold
+ * into the number, while offsets stay in layout pixels.
+ */
+function measureDocumentHeight(editorInput: HTMLElement): number {
+    const styles = window.getComputedStyle(editorInput);
+    const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+
+    let contentBottom = 0;
+    let measuredAny = false;
+    for (const child of Array.from(editorInput.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        // `offsetTop` already carries the container's top padding and every
+        // preceding sibling's margin; only the trailing margin is left to add.
+        const marginBottom = Number.parseFloat(window.getComputedStyle(child).marginBottom) || 0;
+        contentBottom = Math.max(
+            contentBottom,
+            child.offsetTop + child.offsetHeight + marginBottom
+        );
+        measuredAny = true;
+    }
+
+    if (!measuredAny) return Math.round(editorInput.scrollHeight);
+    return Math.round(contentBottom + paddingBottom);
+}
+
 export function TextEditor({
     layerId,
     onMeasuredHeight,
@@ -24,6 +56,7 @@ export function TextEditor({
     onRetryHydration: () => void;
 }) {
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const [editor] = useLexicalComposerContext();
     const layerMetrics = useEditorStore(
         useShallow((s) => {
             const layer = s.layers.get(layerId);
@@ -85,15 +118,21 @@ export function TextEditor({
         if (!editorInput) return;
 
         const notify = () => {
-            const measured = Math.max(40, Math.round(editorInput.scrollHeight));
-            onMeasuredHeight?.(measured);
+            onMeasuredHeight?.(Math.max(40, measureDocumentHeight(editorInput)));
         };
 
         notify();
+        // Two triggers, because neither covers the other: the input is stretched
+        // to the box, so typing never resizes it and the observer stays silent,
+        // while a box that changes width reflows the document without an edit.
+        const unregisterUpdates = editor.registerUpdateListener(() => notify());
         const ro = new ResizeObserver(() => notify());
         ro.observe(editorInput);
-        return () => ro.disconnect();
-    }, [onMeasuredHeight, safeWidth, safeHeight]);
+        return () => {
+            unregisterUpdates();
+            ro.disconnect();
+        };
+    }, [editor, onMeasuredHeight, safeWidth, safeHeight]);
 
     const isSynced = hydrationState === 'synced';
 
