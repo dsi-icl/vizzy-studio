@@ -13,6 +13,13 @@ const MOTION_TIME_SCALE = 4_600;
 const VALLEY_WIDTH = COLS * SCREEN_W * 0.46;
 const VERTICAL_DENSITY_BOOST = 0.4;
 const CLOUD_OPACITY = 0.5;
+// Floors so a heavily downscaled preview keeps the graph legible — features
+// this small would otherwise land under one device pixel and vanish.
+const MIN_LINE_PX = 0.75;
+const MIN_NODE_RADIUS_PX = 0.6;
+// Cloud sample budget, held constant while the raster tracks the world span's
+// aspect ratio. Resolves to exactly 240x135 for a single 16:9 panel.
+const NOISE_SAMPLE_BUDGET = 240 * 135;
 
 type ParticleState = {
     id: number;
@@ -137,10 +144,28 @@ export function renderBackgroundParticle(
     const motionT = t * MOTION_TIME_SCALE;
     const timeShift = t * NOISE_TIME_SHIFT;
 
+    // Particle positions, link distances and node sizes are all authored in
+    // world pixels. The wall path draws one panel at native resolution so this
+    // is exactly 1; the preview rasters the whole wall into a smaller,
+    // aspect-preserving canvas and needs the conversion.
+    const pxScale = w / worldSpanX;
+    const maxDistPx = MAX_DIST * pxScale;
+
     const bg = hexToRgba(layer.backgroundColor);
     const atm = hexToRgba(layer.atmosphereColor);
     const motif1 = hexToRgba(layer.motifColor1);
     const motif2 = hexToRgba(layer.motifColor2);
+
+    // Track the world span's aspect so cloud samples stay square. A fixed
+    // raster would smear the full-wall preview horizontally (its span is 7.1:1,
+    // not 16:9). Same budget either way, so cost is unchanged.
+    const noiseW = Math.max(
+        1,
+        Math.round(Math.sqrt(NOISE_SAMPLE_BUDGET * (worldSpanX / worldSpanY)))
+    );
+    const noiseH = Math.max(1, Math.round(NOISE_SAMPLE_BUDGET / noiseW));
+    if (noiseCanvas.width !== noiseW) noiseCanvas.width = noiseW;
+    if (noiseCanvas.height !== noiseH) noiseCanvas.height = noiseH;
 
     const noiseImage = noiseCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
     const noiseData = noiseImage.data;
@@ -177,8 +202,8 @@ export function renderBackgroundParticle(
     ctx.drawImage(noiseCanvas, 0, 0, w, h);
     ctx.globalCompositeOperation = 'source-over';
 
-    const margin = MAX_DIST;
-    const gridCellSize = MAX_DIST;
+    const margin = maxDistPx;
+    const gridCellSize = maxDistPx;
     const gridCols = Math.ceil(w / gridCellSize) + 2;
     const gridRows = Math.ceil(h / gridCellSize) + 2;
     const grid = Array.from({ length: gridCols * gridRows }, () => [] as number[]);
@@ -200,8 +225,8 @@ export function renderBackgroundParticle(
             continue;
         }
 
-        p.lx = p.worldX - worldStartX;
-        p.ly = p.worldY - worldStartY;
+        p.lx = (p.worldX - worldStartX) * pxScale;
+        p.ly = (p.worldY - worldStartY) * pxScale;
         p.isVisible = p.lx > -margin && p.lx < w + margin && p.ly > -margin && p.ly < h + margin;
         if (!p.isVisible) continue;
 
@@ -215,8 +240,8 @@ export function renderBackgroundParticle(
     const lineR = Math.round(atm[0] * 0.45 + motif2[0] * 0.55);
     const lineG = Math.round(atm[1] * 0.45 + motif2[1] * 0.55);
     const lineB = Math.round(atm[2] * 0.45 + motif2[2] * 0.55);
-    const distSqLimit = MAX_DIST * MAX_DIST;
-    ctx.lineWidth = LINE_THICKNESS;
+    const distSqLimit = maxDistPx * maxDistPx;
+    ctx.lineWidth = Math.max(MIN_LINE_PX, LINE_THICKNESS * pxScale);
 
     for (let gy = 0; gy < gridRows; gy++) {
         for (let gx = 0; gx < gridCols; gx++) {
@@ -236,7 +261,7 @@ export function renderBackgroundParticle(
                         const dy = p1.ly - p2.ly;
                         const d2 = dx * dx + dy * dy;
                         if (d2 >= distSqLimit) continue;
-                        const opacity = (1 - Math.sqrt(d2) / MAX_DIST) * 0.25;
+                        const opacity = (1 - Math.sqrt(d2) / maxDistPx) * 0.25;
                         ctx.strokeStyle = `rgba(${lineR} ${lineG} ${lineB} / ${clamp01(opacity)})`;
                         ctx.beginPath();
                         ctx.moveTo(p1.lx, p1.ly);
@@ -247,6 +272,8 @@ export function renderBackgroundParticle(
             }
         }
     }
+
+    const nodeRadius = Math.max(MIN_NODE_RADIUS_PX, NODE_SIZE * pxScale);
 
     for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
@@ -273,7 +300,7 @@ export function renderBackgroundParticle(
 
         ctx.fillStyle = toCssRgba(nodeColor as [number, number, number, number]);
         ctx.beginPath();
-        ctx.arc(p.lx, p.ly, NODE_SIZE, 0, Math.PI * 2);
+        ctx.arc(p.lx, p.ly, nodeRadius, 0, Math.PI * 2);
         ctx.fill();
     }
 }
