@@ -219,9 +219,11 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                 // Anything reading it from the commit — the Yjs text session
                 // does — would fail for that whole window, so make it durable
                 // now. Updates to an existing layer can wait for the tick.
+                const createRequestId =
+                    typeof data.createRequestId === 'string' ? data.createRequestId : null;
+                const numericId = layer.numericId;
+
                 if (isNewLayer) {
-                    const createRequestId = data.createRequestId;
-                    const numericId = layer.numericId;
                     persistScopeNow(scopeId, 'Layer added', (result) => {
                         if (!createRequestId) return;
                         sendJSON(entry.peer, {
@@ -231,6 +233,18 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                             success: result.success,
                             error: result.error
                         });
+                    });
+                } else if (createRequestId) {
+                    // Already present, so this is a resend after a reconnect or
+                    // a scope reseeded from the commit. The layer is durable
+                    // either way. Without this the editor waits out its timeout
+                    // and rehydrates the slide, discarding unsaved work over a
+                    // create that actually succeeded.
+                    sendJSON(entry.peer, {
+                        type: 'layer_create_response',
+                        createRequestId,
+                        numericId,
+                        success: true
                     });
                 }
             }
