@@ -793,9 +793,16 @@ export function EditorSlate() {
             const textAnchor = activeAnchor ?? '';
             const isHorizontalEdge = textAnchor === 'middle-left' || textAnchor === 'middle-right';
             const isVerticalEdge = textAnchor === 'top-center' || textAnchor === 'bottom-center';
-            const isReflowEdge = isHorizontalEdge || isVerticalEdge;
-            const mode: 'reflow' | 'corner' = isReflowEdge ? 'reflow' : 'corner';
+            const isCorner = Boolean(textAnchor) && !isHorizontalEdge && !isVerticalEdge;
+            // Corners resize the box and reflow like the edge handles; holding Alt
+            // opts into scaling the glyphs instead. Read per-event so the mode
+            // follows the key being pressed or released mid-drag.
+            const scaleRequested = isCorner && Boolean((e.evt as MouseEvent | undefined)?.altKey);
+            const mode: 'reflow' | 'corner' = scaleRequested ? 'corner' : 'reflow';
             node.setAttr('textTransformMode', mode);
+            // A corner reflow drives both axes; edge handles stay single-axis.
+            const reflowWidth = isHorizontalEdge || (isCorner && !scaleRequested);
+            const reflowHeight = isVerticalEdge || (isCorner && !scaleRequested);
 
             if (mode === 'reflow') {
                 const oldAbsTransform = node.getAbsoluteTransform().copy();
@@ -805,14 +812,14 @@ export function EditorSlate() {
                 let nextWidth = node.width();
                 let nextHeight = node.height();
 
-                if (isHorizontalEdge) {
+                if (reflowWidth) {
                     const effectiveScaleX = node.scaleX();
                     nextWidth = Math.max(
                         MIN_LAYER_DIMENSION,
                         (node.width() * effectiveScaleX) / oldScaleX
                     );
                 }
-                if (isVerticalEdge) {
+                if (reflowHeight) {
                     const effectiveScaleY = node.scaleY();
                     nextHeight = Math.max(
                         MIN_LAYER_DIMENSION,

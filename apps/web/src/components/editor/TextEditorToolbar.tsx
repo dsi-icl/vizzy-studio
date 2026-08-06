@@ -151,9 +151,12 @@ export default function TextEditorToolbar() {
 
     useEffect(() => {
         const highlightStyle = document.createElement('style');
+        // Highlights paint above the run's own background, so an opaque fill
+        // would hide any font background colour underneath. Keep it translucent
+        // and matched to the native ::selection rule in textEditor.css.
         highlightStyle.textContent = `::highlight(${TOOLBAR_SELECTION_HIGHLIGHT}) {
             color: inherit;
-            background-color: rgba(36, 36, 36);
+            background-color: rgb(36 36 36 / 0.35);
         }`;
         document.head.appendChild(highlightStyle);
 
