@@ -846,6 +846,14 @@ export function EditorSlate() {
                     node.position({ x: node.x() + localDelta.x, y: node.y() + localDelta.y });
                 }
 
+                // The mirror below moves the stored config to the live position on
+                // every frame, which leaves `handleTransformEnd` with nothing to
+                // compare against — it would read the drag as a no-op and never
+                // persist it. Keep the pre-drag geometry for it to diff against.
+                if (!node.getAttr('preTransformConfig')) {
+                    node.setAttr('preTransformConfig', layer.config);
+                }
+
                 // TODO See if this can be further optimised so that we can propagate to the other editors too
                 // It is s goo compromise for now
                 // Immediate local mirror update for live reflow while dragging.
@@ -927,10 +935,18 @@ export function EditorSlate() {
         (e: Pick<KonvaEventObject<Event>, 'target' | 'type'>, numericId: number) => {
             if (!engine) return;
             const node = e.target as Konva.Shape;
+            const endInteraction = () => {
+                node.setAttr('textTransformMode', undefined);
+                node.setAttr('lastActiveAnchor', undefined);
+                node.setAttr('preTransformConfig', undefined);
+            };
 
             // Must use layersRef — has binary-updated positions
             const layerToUpdate = layersRef.current.get(numericId);
-            if (!layerToUpdate) return;
+            if (!layerToUpdate) {
+                endInteraction();
+                return;
+            }
             const textMode = node.getAttr('textTransformMode') as 'reflow' | 'corner' | undefined;
 
             if (isSnapping && layerToUpdate.type !== 'line') {
@@ -1026,7 +1042,12 @@ export function EditorSlate() {
                 node.scaleY(updatedConfig.scaleY);
             }
 
-            const prevConfig = layerToUpdate.config;
+            // A text reflow has already mirrored the live geometry onto the stored
+            // config, so that copy is no baseline; fall back to it only when no
+            // mirror ran, where it is still the pre-interaction geometry.
+            const prevConfig =
+                (node.getAttr('preTransformConfig') as Layer['config'] | undefined) ??
+                layerToUpdate.config;
             const configChanged =
                 prevConfig.cx !== updatedConfig.cx ||
                 prevConfig.cy !== updatedConfig.cy ||
@@ -1036,8 +1057,7 @@ export function EditorSlate() {
                 prevConfig.scaleY !== updatedConfig.scaleY ||
                 prevConfig.rotation !== updatedConfig.rotation;
             if (!configChanged) {
-                node.setAttr('textTransformMode', undefined);
-                node.setAttr('lastActiveAnchor', undefined);
+                endInteraction();
                 return;
             }
 
@@ -1056,8 +1076,7 @@ export function EditorSlate() {
 
             // Shadow mutation for binary fast-path
             layerToUpdate.config = updatedConfig;
-            node.setAttr('textTransformMode', undefined);
-            node.setAttr('lastActiveAnchor', undefined);
+            endInteraction();
 
             const store = useEditorStore.getState();
             store.updateLayerConfig(numericId, updatedConfig);
