@@ -82,6 +82,7 @@ export const useEditorStore =
                   strokeWidth: 10,
                   strokeDash: [],
                   shapeFill: '#ff0000',
+                  recentColours: [],
                   shapeStroke: '#000000',
                   rectangleCornerRadius: 0,
                   editingTextLayerId: null,

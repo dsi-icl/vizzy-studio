@@ -31,6 +31,8 @@ export interface EditorState {
     strokeWidth: number;
     strokeDash: number[];
     shapeFill: string;
+    /** Shared project palette, most recent first. Server-owned. */
+    recentColours: string[];
     shapeStroke: string;
     rectangleCornerRadius: number;
     editingTextLayerId: number | null;

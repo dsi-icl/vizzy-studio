@@ -36,6 +36,21 @@ export interface PeerEntry {
     lastPointerAt?: number;
 }
 
+/**
+ * Project-scoped state shared by every editor on a project, held in memory and
+ * written back on the autosave tick rather than on each change.
+ *
+ * Separate from `ScopeState`, which is per slide. Only durable settings belong
+ * here: anything ephemeral would drag the dirty flag with it.
+ */
+export interface ProjectContextState {
+    projectId: string;
+    /** Most recent first, capped by RECENT_COLOUR_LIMIT. */
+    recentColours: string[];
+    dirty: boolean;
+    mutationRevision?: number;
+}
+
 const _hmr = (process as any).__BUS_HMR__ ?? {
     scopedState: new Map<ScopeId, ScopeState>(),
     scopeKeyToId: new Map<string, ScopeId>(),
@@ -59,8 +74,12 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     lastPingSeen: new Map<string, number>(),
     scopeCleanupTimers: new Map<ScopeId, ReturnType<typeof setTimeout>>(),
     wallUnbindTimers: new Map<string, ReturnType<typeof setTimeout>>(),
-    controllerTransientByWallId: new Map<string, Map<number, Layer>>()
+    controllerTransientByWallId: new Map<string, Map<number, Layer>>(),
+    projectContexts: new Map<string, ProjectContextState>()
 };
+if (!_hmr.projectContexts) {
+    _hmr.projectContexts = new Map<string, ProjectContextState>();
+}
 if (!_hmr.controllerTransientByWallId) {
     _hmr.controllerTransientByWallId = new Map<string, Map<number, Layer>>();
 }
@@ -85,6 +104,7 @@ export const scopedState: Map<ScopeId, ScopeState> = _hmr.scopedState;
 export const scopeKeyToId: Map<string, ScopeId> = _hmr.scopeKeyToId;
 export const scopeIdToKey: Map<ScopeId, string> = _hmr.scopeIdToKey;
 export const commitToScopeIds: Map<string, Set<ScopeId>> = _hmr.commitToScopeIds;
+export const projectContexts: Map<string, ProjectContextState> = _hmr.projectContexts;
 
 const _telemetry = (process as any).__BUS_TELEMETRY__ ?? {
     incomingJson: 0,

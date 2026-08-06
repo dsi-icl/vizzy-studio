@@ -29,6 +29,7 @@ export const WS_MUTATION_MESSAGE_TYPES = new Set([
     'reboot',
     'stage_dirty',
     'stage_save',
+    'record_colour',
     'switch_scope',
     'bind_wall',
     'request_bind_wall',
@@ -54,6 +55,7 @@ export const EDIT_PROJECT_MESSAGE_TYPES = new Set([
     'update_slides',
     'stage_dirty',
     'stage_save',
+    'record_colour',
     'request_bind_wall'
 ]);
 

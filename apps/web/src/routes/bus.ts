@@ -34,6 +34,7 @@ import {
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
+import { persistDirtyProjectContexts } from '~/lib/busState.projectContext';
 import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, makeScopeLabel, type GSMessage, type Layer } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
@@ -638,6 +639,12 @@ process.__AUTO_SAVE_INTERVAL__ = setInterval(() => {
             });
         }
     }
+
+    // Project-scoped state rides the same tick. Independent of scopes: a
+    // project can be dirty while every one of its slides is clean.
+    void persistDirtyProjectContexts().catch((err) => {
+        console.error('[Bus] Auto-save failed for project contexts:', err);
+    });
 }, AUTO_SAVE_INTERVAL);
 
 if (process.__REAPER_INTERVAL__) clearInterval(process.__REAPER_INTERVAL__);

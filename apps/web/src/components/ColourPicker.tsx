@@ -8,7 +8,10 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
 import { HexAlphaColorPicker } from 'react-colorful';
 
+import { EditorEngine } from '~/lib/editorEngine';
 import { isExplicitCommitKey, normalizeHexColor } from '~/lib/explicitInputCommit';
+
+import { RecentColourSwatches } from './RecentColourSwatches';
 
 interface ColorPickerProps extends PropsWithChildren {
     value: string;
@@ -61,6 +64,29 @@ export function ColorPicker({
         if (normalized !== inputValue) setInputValue(normalized);
     }, [value, localValue, inputValue, isTyping]);
 
+    /**
+     * Remember only the colour the picker was left on.
+     *
+     * onChange fires on every frame of a drag, and even a debounce would record
+     * each pause while the user hunts for a shade — filling the palette with
+     * near-misses and pushing out the colours they actually chose. So the
+     * candidate is held here and committed when the picker unmounts, which is
+     * what closing either popover does.
+     */
+    const pendingRecordRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        return () => {
+            const colour = pendingRecordRef.current;
+            if (!colour) return;
+            try {
+                EditorEngine.getInstance().sendJSON({ type: 'record_colour', colour });
+            } catch {
+                // No engine outside an editor session; the palette is optional.
+            }
+        };
+    }, []);
+
     const commitColor = useCallback(
         (next: string, options?: { syncInput?: boolean }) => {
             const syncInput = options?.syncInput ?? true;
@@ -68,6 +94,7 @@ export function ColorPicker({
             setLocalValue(next);
             if (syncInput) setInputValue(next);
             onChange(next);
+            pendingRecordRef.current = next;
         },
         [onChange]
     );
@@ -79,6 +106,7 @@ export function ColorPicker({
             lastUserEditAtRef.current = Date.now();
             lastTypingLiveCommitRef.current = next;
             onChange(next);
+            pendingRecordRef.current = next;
         },
         [onChange]
     );
@@ -120,6 +148,9 @@ export function ColorPicker({
                 onChange(next);
             }
             lastTypingLiveCommitRef.current = null;
+            // Typing a hex and committing is a primary way to pick a colour, and
+            // this path bypasses commitColor entirely.
+            pendingRecordRef.current = next;
             onTextCommit?.(next);
         },
         [clearTypingLiveCommit, onChange, onTextCommit]
@@ -236,6 +267,7 @@ export function ColorPicker({
                     </Button>
                 )}
             </div>
+            <RecentColourSwatches onPick={(colour) => commitColor(colour)} />
         </div>
     );
 }

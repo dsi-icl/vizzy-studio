@@ -47,6 +47,12 @@ import {
     wallBindingSources,
     type PeerEntry
 } from '~/lib/busState';
+import {
+    broadcastProjectContext,
+    getOrLoadProjectContext,
+    projectContextPayload,
+    recordProjectColour
+} from '~/lib/busState.projectContext';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
@@ -936,8 +942,22 @@ export async function handleSwitchScope(peer: Peer, data: Record<string, any>) {
     });
     if (!registered) return;
 
+    // Seed the project's shared state and hand it to the joining editor.
+    const context = await getOrLoadProjectContext(parsed.projectId);
+    sendJSON(peer as unknown as PeerEntry['peer'], projectContextPayload(context));
+
     console.log(
         `[WS] Editor switched scope=${makeScopeLabel(parsed.projectId, parsed.commitId, parsed.slideId)}`
     );
     logPeerCounts();
 }
+
+handlers.set('record_colour', ({ entry, data }) => {
+    if (entry.meta.specimen !== 'editor') return;
+    const projectId = entry.meta.scope?.projectId;
+    if (!projectId || typeof data.colour !== 'string') return;
+
+    // Only a change is broadcast, so re-picking the leading colour costs nothing.
+    const context = recordProjectColour(projectId, data.colour);
+    if (context) broadcastProjectContext(context);
+});

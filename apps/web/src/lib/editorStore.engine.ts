@@ -16,6 +16,9 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
         const s = store.getState();
         if (data.type === 'hydrate') {
             s.hydrate(data.layers);
+        } else if (data.type === 'project_context') {
+            // Server-owned: the palette is never edited locally, only replaced.
+            store.setState({ recentColours: data.recentColours });
         } else if (data.type === 'upsert_layer') {
             s.upsertLayer(data.layer);
         } else if (data.type === 'delete_layer') {

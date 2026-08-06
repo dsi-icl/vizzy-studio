@@ -284,6 +284,21 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         success: z.boolean(),
         error: z.string().optional()
     }),
+    z.object({
+        /** Editor → server: remember a colour the user picked. */
+        type: z.literal('record_colour'),
+        colour: z.string()
+    }),
+    z.object({
+        /**
+         * Server → editors: durable project-scoped state. Sent on join and
+         * whenever it changes. Carries no ephemeral data — presence and counts
+         * have their own messages so they cannot drive persistence.
+         */
+        type: z.literal('project_context'),
+        projectId: z.string(),
+        recentColours: z.array(z.string())
+    }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
     z.object({
         type: z.literal('video_play'),
