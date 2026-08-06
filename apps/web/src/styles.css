@@ -1,10 +1,13 @@
 @import '@repo/ui/styles/base.css';
+@import './fonts.css';
 @import './textEditor.css';
 
 @source './';
 
 @theme inline {
-    --font-sans: 'Inter Variable', sans-serif;
+    /* Matches the family declared in fonts.css. It previously read
+       'Inter Variable', which nothing declared, so it silently fell back. */
+    --font-sans: 'Inter', sans-serif;
 }
 
 @property --wave-pos {

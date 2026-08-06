@@ -1,7 +1,11 @@
 export const TEXT_BASE_FONT_SIZE_PX = 48;
 export const TEXT_BASE_LINE_HEIGHT = 1.3;
 export const TEXT_BASE_PADDING_PX = 16;
-export const TEXT_BASE_FONT_FAMILY = 'sans-serif';
+/**
+ * Bundled rather than a generic family: `sans-serif` resolves per OS, so the
+ * same layer measured differently on an editor, a wall and a controller.
+ */
+export const TEXT_BASE_FONT_FAMILY = 'Inter';
 
 /** A compact, single-line starting size for newly inserted text layers. */
 export const TEXT_DEFAULT_LAYER_WIDTH_PX = 640;

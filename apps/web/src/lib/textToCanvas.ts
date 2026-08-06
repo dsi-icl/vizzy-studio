@@ -2,6 +2,7 @@
  * Converts HTML content to an HTMLImageElement via foreignObject SVG.
  * Used to render text layer previews in the Konva canvas.
  */
+import { buildEmbeddedFontFaces } from '~/lib/textFontEmbedding';
 import {
     TEXT_BASE_FONT_FAMILY,
     TEXT_BASE_FONT_SIZE_PX,
@@ -36,11 +37,16 @@ export async function textHtmlToImage(
         .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;')
         .replace(/<br\s*\/?>/gi, '<br/>');
 
+    // This SVG is rasterised through an Image, so it cannot see the page's
+    // fonts. Anything it should render in a bundled family has to travel with
+    // it, limited to the families and subsets this fragment actually uses.
+    const fontFaces = await buildEmbeddedFontFaces(html, TEXT_BASE_FONT_FAMILY);
+
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
         <foreignObject width="100%" height="100%">
             <div xmlns="http://www.w3.org/1999/xhtml"
                  style="width:${width}px;height:${height}px;overflow:hidden;color:white;font-family:${TEXT_BASE_FONT_FAMILY};font-size:${TEXT_BASE_FONT_SIZE_PX}px;line-height:${TEXT_BASE_LINE_HEIGHT};padding:${TEXT_BASE_PADDING_PX}px;box-sizing:border-box;">
-                <style>${LEXICAL_CSS}</style>
+                <style>${fontFaces}${LEXICAL_CSS}</style>
                 ${escaped}
             </div>
         </foreignObject>

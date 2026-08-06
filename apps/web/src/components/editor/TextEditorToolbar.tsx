@@ -42,6 +42,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useFonts } from '~/hooks/useFonts';
+import { BUNDLED_FONTS } from '~/lib/bundledFonts.generated';
 import { useEditorStore } from '~/lib/editorStore';
 import { isExplicitCommitKey, parseBoundedNumber } from '~/lib/explicitInputCommit';
 import { emToVirtualPx, TEXT_BASE_FONT_SIZE_PX, virtualPxToEm } from '~/lib/textRenderConfig';
@@ -52,14 +53,19 @@ const DEFAULT_FONT_COLOR = '#FFFFFFFF';
 const DEFAULT_BG_COLOR = '#333333FF';
 const FONT_SIZE_MIN = 10;
 const FONT_SIZE_MAX = 1000;
-const DEFAULT_FONT_OPTION_ID = 'system-sans';
+const DEFAULT_FONT_OPTION_ID = 'Inter';
 const TOOLBAR_SELECTION_HIGHLIGHT = 'lexical-toolbar-selection';
 
-const SYSTEM_FONT_OPTIONS = [
-    { id: 'system-sans', label: 'System Sans', css: 'system-ui, sans-serif' },
-    { id: 'system-serif', label: 'System Serif', css: 'ui-serif, serif' },
-    { id: 'system-mono', label: 'System Mono', css: 'ui-monospace, monospace' }
-];
+/**
+ * Bundled families only. The previous options were `system-ui`, `ui-serif` and
+ * `ui-monospace`, which each OS resolves to a different face, so the same
+ * layer measured differently on an editor, a wall and a controller.
+ */
+const SYSTEM_FONT_OPTIONS = BUNDLED_FONTS.map((font) => ({
+    id: font.family,
+    label: font.family,
+    css: font.css
+}));
 
 function clampFontSize(px: number): number {
     return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, px));
