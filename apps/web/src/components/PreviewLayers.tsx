@@ -56,6 +56,8 @@ export function PreviewMediaLayer({
                 y={shape.config.cy * stageScaleFactor}
                 width={shape.config.width * stageScaleFactor}
                 height={shape.config.height * stageScaleFactor}
+                scaleX={shape.config.scaleX}
+                scaleY={shape.config.scaleY}
                 offsetX={(shape.config.width * stageScaleFactor) / 2}
                 offsetY={(shape.config.height * stageScaleFactor) / 2}
                 rotation={shape.config.rotation}
@@ -80,6 +82,8 @@ export function PreviewMediaLayer({
                 y={shape.config.cy * stageScaleFactor}
                 width={shape.config.width * stageScaleFactor}
                 height={shape.config.height * stageScaleFactor}
+                scaleX={shape.config.scaleX}
+                scaleY={shape.config.scaleY}
                 offsetX={(shape.config.width * stageScaleFactor) / 2}
                 offsetY={(shape.config.height * stageScaleFactor) / 2}
                 rotation={shape.config.rotation}
@@ -94,6 +98,8 @@ export function PreviewMediaLayer({
             y={shape.config.cy * stageScaleFactor}
             width={shape.config.width * stageScaleFactor}
             height={shape.config.height * stageScaleFactor}
+            scaleX={shape.config.scaleX}
+            scaleY={shape.config.scaleY}
             offsetX={(shape.config.width * stageScaleFactor) / 2}
             offsetY={(shape.config.height * stageScaleFactor) / 2}
             rotation={shape.config.rotation}
@@ -140,6 +146,8 @@ export function PreviewTextLayer({
                 y={shape.config.cy * stageScaleFactor}
                 width={shape.config.width * stageScaleFactor}
                 height={shape.config.height * stageScaleFactor}
+                scaleX={shape.config.scaleX}
+                scaleY={shape.config.scaleY}
                 offsetX={(shape.config.width * stageScaleFactor) / 2}
                 offsetY={(shape.config.height * stageScaleFactor) / 2}
                 rotation={shape.config.rotation}
@@ -154,6 +162,8 @@ export function PreviewTextLayer({
             y={shape.config.cy * stageScaleFactor}
             width={shape.config.width * stageScaleFactor}
             height={shape.config.height * stageScaleFactor}
+            scaleX={shape.config.scaleX}
+            scaleY={shape.config.scaleY}
             offsetX={(shape.config.width * stageScaleFactor) / 2}
             offsetY={(shape.config.height * stageScaleFactor) / 2}
             rotation={shape.config.rotation}
