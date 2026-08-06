@@ -13,7 +13,12 @@
     "dependencies": {
         "@dnd-kit/modifiers": "catalog:",
         "@dnd-kit/sortable": "catalog:",
+        "@fontsource-variable/ibm-plex-sans": "catalog:",
         "@fontsource-variable/inter": "catalog:",
+        "@fontsource-variable/jetbrains-mono": "catalog:",
+        "@fontsource-variable/source-serif-4": "catalog:",
+        "@fontsource/ibm-plex-mono": "catalog:",
+        "@fontsource/ibm-plex-serif": "catalog:",
         "@lexical/code": "catalog:",
         "@lexical/code-shiki": "catalog:",
         "@lexical/headless": "catalog:",
