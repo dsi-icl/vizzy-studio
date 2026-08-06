@@ -29,7 +29,10 @@ async function prepareEditor(page: Page, path: string) {
         )
         .toBe('connected');
 
-    await page.getByRole('button', { name: 'Editable harness layer', exact: true }).click();
+    await page
+        .getByRole('button', { name: 'Editable harness layer', exact: true })
+        .getByText('Editable harness layer', { exact: true })
+        .click();
     await page.getByRole('button', { name: 'Parameters' }).click();
     const x = page.getByRole('textbox', { name: 'X' });
     const y = page.getByRole('textbox', { name: 'Y' });

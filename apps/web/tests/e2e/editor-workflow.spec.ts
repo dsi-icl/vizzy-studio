@@ -21,7 +21,10 @@ test.describe('editor workflow', () => {
         await waitForFonts(page);
         await waitForCanvasReady(page, '#slate canvas');
 
-        await page.getByRole('button', { name: 'Editable harness layer', exact: true }).click();
+        await page
+            .getByRole('button', { name: 'Editable harness layer', exact: true })
+            .getByText('Editable harness layer', { exact: true })
+            .click();
         await page.getByRole('button', { name: 'Parameters' }).click();
         const xPosition = page.getByRole('textbox', { name: 'X' });
         const yPosition = page.getByRole('textbox', { name: 'Y' });
