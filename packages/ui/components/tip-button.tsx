@@ -11,6 +11,10 @@ function TipButton({
 >) {
     return (
         <Tooltip>
+            {/* Deliberately no aria-label from `tip`: these buttons are often
+                nested inside a larger button whose accessible name is composed
+                from its descendants, so labelling them all would rename the
+                ancestor. Set aria-label per button where it is needed. */}
             <TooltipTrigger render={<Button variant="ghost" size="icon-sm" {...props} />}>
                 {children}
             </TooltipTrigger>

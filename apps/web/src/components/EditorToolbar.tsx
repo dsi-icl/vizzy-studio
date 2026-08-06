@@ -229,7 +229,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                             </div>
                         </PopoverContent>
                     </Popover>
-                    <TipButton tip="Add text layer" onClick={addTextLayer}>
+                    <TipButton
+                        tip="Add text layer"
+                        aria-label="Add text layer"
+                        onClick={addTextLayer}
+                    >
                         <TextTIcon />
                     </TipButton>
                     {/* TODO: Switcher to guarding by "tester" role once multi-role is implemented */}
