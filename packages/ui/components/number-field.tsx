@@ -32,6 +32,10 @@ function SideButtonNumberField({
                     <MinusIcon />
                 </NumberField.Decrement>
                 <NumberField.Input
+                    // The visible label is bound to Root, not to this input, so
+                    // without this the field reaches assistive tech — and test
+                    // selectors — with no name.
+                    aria-label={label}
                     className="h-10 w-24 border-t border-b text-center text-base tabular-nums focus:z-1 focus:outline-2 focus:-outline-offset-1"
                     onKeyDownCapture={(event) => event.stopPropagation()}
                     onKeyUpCapture={(event) => event.stopPropagation()}
