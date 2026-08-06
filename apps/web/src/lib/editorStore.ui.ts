@@ -11,6 +11,9 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
         allocateId: helpers.allocateId,
         allocateZIndex: helpers.allocateZIndex,
 
+        setHoveredLayerId: (hoveredLayerId: string | null) =>
+            set((s) => (s.hoveredLayerId === hoveredLayerId ? s : { hoveredLayerId })),
+
         setStrokeColor: (strokeColor: string) => {
             set((s) => {
                 const newState: Partial<EditorState> = { strokeColor };

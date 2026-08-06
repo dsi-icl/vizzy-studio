@@ -67,6 +67,7 @@ export const useEditorStore =
                   parentSaveMessage: null,
                   layers: new Map(),
                   selectedLayerIds: [],
+                  hoveredLayerId: null,
                   layerClipboard: null,
                   slides: [],
                   activeSlideId: null,

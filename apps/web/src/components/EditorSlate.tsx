@@ -70,6 +70,8 @@ export function EditorSlate() {
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
     const toggleLayerSelection = useEditorStore((s) => s.toggleLayerSelection);
     const deselectAllLayers = useEditorStore((s) => s.deselectAllLayers);
+    const hoveredLayerId = useEditorStore((s) => s.hoveredLayerId);
+    const setHoveredLayerId = useEditorStore((s) => s.setHoveredLayerId);
     const startTextEditing = useEditorStore((s) => s.startTextEditing);
     const showGrid = useEditorStore((s) => s.showGrid);
     const isDrawing = useEditorStore((s) => s.isDrawing);
@@ -88,7 +90,6 @@ export function EditorSlate() {
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
-    const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -116,8 +117,15 @@ export function EditorSlate() {
         [sortedLayers]
     );
     const selectedLayerIdSet = useMemo(() => new Set(selectedLayerIds), [selectedLayerIds]);
+    const hoveredLayer = hoveredLayerId
+        ? layers.get(Number.parseInt(hoveredLayerId, 10))
+        : undefined;
     const hoverHintLayerId =
-        hoveredLayerId && !selectedLayerIdSet.has(hoveredLayerId) && !isDrawing && !isPinching
+        hoveredLayerId &&
+        hoveredLayer?.config.visible &&
+        !selectedLayerIdSet.has(hoveredLayerId) &&
+        !isDrawing &&
+        !isPinching
             ? hoveredLayerId
             : null;
     const selectedOutlineLayers = useMemo(
@@ -1168,9 +1176,7 @@ export function EditorSlate() {
                     : null;
             const nextHoveredLayerId =
                 targetId && !currentSelectedIds.includes(targetId) ? targetId : null;
-            setHoveredLayerId((current) =>
-                current === nextHoveredLayerId ? current : nextHoveredLayerId
-            );
+            setHoveredLayerId(nextHoveredLayerId);
         }
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
         if (isDrawing) {

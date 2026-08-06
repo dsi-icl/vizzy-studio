@@ -68,7 +68,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     mergedLayers.reduce((max, l) => Math.max(max, l.config.zIndex), 0) + 5
                 );
 
-                return { layers: new Map(mergedLayers.map((l) => [l.numericId, l])) };
+                return {
+                    layers: new Map(mergedLayers.map((l) => [l.numericId, l])),
+                    hoveredLayerId: null
+                };
             });
         },
 
@@ -102,7 +105,11 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 newLayers.delete(numericId);
                 return {
                     layers: newLayers,
-                    selectedLayerIds: s.selectedLayerIds.filter((id) => id !== numericId.toString())
+                    selectedLayerIds: s.selectedLayerIds.filter(
+                        (id) => id !== numericId.toString()
+                    ),
+                    hoveredLayerId:
+                        s.hoveredLayerId === numericId.toString() ? null : s.hoveredLayerId
                 };
             });
             const engine = EditorEngine.getInstance();
@@ -682,7 +689,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         clearStage: () => {
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'clear_stage' });
-            set({ layers: new Map(), selectedLayerIds: [] });
+            set({ layers: new Map(), selectedLayerIds: [], hoveredLayerId: null });
             get().markDirty();
         },
 

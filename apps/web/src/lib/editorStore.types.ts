@@ -16,6 +16,7 @@ export interface EditorState {
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
     selectedLayerIds: string[];
+    hoveredLayerId: string | null;
     layerClipboard: LayerClipboard | null;
     slides: Slide[];
     activeSlideId: string | null;
@@ -62,6 +63,7 @@ export interface EditorState {
     toggleLayerVisibility: (numericId: number) => void;
     deselectAllLayers: () => void;
     toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
+    setHoveredLayerId: (id: string | null) => void;
     copySelectedLayers: () => number;
     copyLayer: (numericId: number) => boolean;
     pasteLayers: () => string[];

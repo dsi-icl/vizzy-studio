@@ -17,6 +17,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                 projectId,
                 commitId,
                 layers: new Map(),
+                hoveredLayerId: null,
                 slides: [],
                 activeSlideId: null,
                 saveStatus: 'idle',
@@ -80,7 +81,12 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
             if (!projectId || !commitId || slideId === activeSlideId) return;
 
             const engine = EditorEngine.getInstance();
-            set({ loading: true, layers: new Map(), activeSlideId: slideId });
+            set({
+                loading: true,
+                layers: new Map(),
+                hoveredLayerId: null,
+                activeSlideId: slideId
+            });
 
             engine.clearBufferedHydration();
             engine.joinScope(projectId, commitId, slideId);
