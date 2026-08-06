@@ -29,11 +29,18 @@ import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
+import { PeerCursors } from '~/components/PeerCursors';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
+import {
+    applyKeyboardArrowTransform,
+    broadcastKeyboardLayerTransform,
+    isEditorArrowKey
+} from '~/lib/editorKeyboardMovement';
+import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset } from '~/lib/mediaUtils';
+import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -64,6 +71,8 @@ export function EditorSlate() {
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
     const toggleLayerSelection = useEditorStore((s) => s.toggleLayerSelection);
     const deselectAllLayers = useEditorStore((s) => s.deselectAllLayers);
+    const hoveredLayerId = useEditorStore((s) => s.hoveredLayerId);
+    const setHoveredLayerId = useEditorStore((s) => s.setHoveredLayerId);
     const startTextEditing = useEditorStore((s) => s.startTextEditing);
     const showGrid = useEditorStore((s) => s.showGrid);
     const isDrawing = useEditorStore((s) => s.isDrawing);
@@ -72,6 +81,12 @@ export function EditorSlate() {
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
+
+    // Peer cursors are per-slide; remounting on scope change drops the previous
+    // slide's cursors instead of leaving them to age out.
+    const peerCursorScopeKey = useEditorStore(
+        (s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`
+    );
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
@@ -84,6 +99,7 @@ export function EditorSlate() {
     const stageWrapper = useRef<HTMLDivElement>(null);
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
+    const hoverTrRef = useRef<Konva.Transformer>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
@@ -102,6 +118,23 @@ export function EditorSlate() {
         [sortedLayers]
     );
     const selectedLayerIdSet = useMemo(() => new Set(selectedLayerIds), [selectedLayerIds]);
+    const singleSelectedLayer =
+        selectedLayerIds.length === 1
+            ? layers.get(Number.parseInt(selectedLayerIds[0], 10))
+            : undefined;
+    const isSingleSelectedLayerLocked = Boolean(singleSelectedLayer?.config.locked);
+    const hoveredLayer = hoveredLayerId
+        ? layers.get(Number.parseInt(hoveredLayerId, 10))
+        : undefined;
+    const isHoveredLayerLocked = Boolean(hoveredLayer?.config.locked);
+    const hoverHintLayerId =
+        hoveredLayerId &&
+        hoveredLayer?.config.visible &&
+        !selectedLayerIdSet.has(hoveredLayerId) &&
+        !isDrawing &&
+        !isPinching
+            ? hoveredLayerId
+            : null;
     const selectedOutlineLayers = useMemo(
         () =>
             selectedLayerIds
@@ -248,8 +281,14 @@ export function EditorSlate() {
                 anchorServerTime: engine.getServerTime()
             };
 
+            const layerName = makeUniqueMediaLayerName(
+                asset.name,
+                useEditorStore.getState().layers.values()
+            );
+
             const layerBase = {
                 numericId,
+                name: layerName,
                 url: `/api/assets/${asset.url}`,
                 config,
                 isUploading: false,
@@ -275,11 +314,7 @@ export function EditorSlate() {
             store.upsertLayer(layer);
             store.toggleLayerSelection(numericId.toString(), false, false);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:asset_library_drop',
-                layer
-            });
+            engine.createLayer('editor:asset_library_drop', layer);
             store.markDirty();
         },
         [engine]
@@ -486,31 +521,48 @@ export function EditorSlate() {
             if (isEditingInput) return;
             if (editingTextLayerId !== null) return;
             const store = useEditorStore.getState();
+            const shortcutKey = e.key.toLowerCase();
+            const isClipboardShortcut = (e.ctrlKey || e.metaKey) && !e.altKey;
+
+            if (isClipboardShortcut && shortcutKey === 'c') {
+                const browserSelection = window.getSelection();
+                if (browserSelection && !browserSelection.isCollapsed) return;
+                if (store.copySelectedLayers() > 0) e.preventDefault();
+                return;
+            }
+            if (isClipboardShortcut && shortcutKey === 'v') {
+                if (store.pasteLayers().length > 0) e.preventDefault();
+                return;
+            }
+
             if (!store.selectedLayerIds.length) return;
 
-            if (e.key === 'Delete') store.deleteSelectedLayer();
-            if (e.key === 'Escape') store.deselectAllLayers();
-            const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
-            if (!currentSelected) return;
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                store.deleteSelectedLayer();
+                return;
+            }
+            if (e.key === 'Escape') {
+                store.deselectAllLayers();
+                return;
+            }
+            if (!isEditorArrowKey(e.key)) return;
 
-            const newLayerState = { ...currentSelected, config: { ...currentSelected.config } };
-            if (e.key === 'ArrowLeft') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation - 1);
-                else newLayerState.config.cx -= isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowRight') {
-                if (e.shiftKey)
-                    newLayerState.config.rotation = Math.round(newLayerState.config.rotation + 1);
-                else newLayerState.config.cx += isSnapping ? SNAP_GRID : 10;
-            }
-            if (e.key === 'ArrowUp') newLayerState.config.cy -= isSnapping ? SNAP_GRID : 10;
-            if (e.key === 'ArrowDown') newLayerState.config.cy += isSnapping ? SNAP_GRID : 10;
-            store.updateLayerConfig(currentSelected.numericId, newLayerState.config);
+            const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
+            if (!currentSelected || currentSelected.config.locked) return;
+
+            e.preventDefault();
+            const updatedLayer = applyKeyboardArrowTransform(
+                currentSelected,
+                e.key,
+                e.shiftKey,
+                isSnapping ? SNAP_GRID : 10
+            );
+            store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
+            if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [editingTextLayerId, isSnapping]);
+    }, [editingTextLayerId, engine, isSnapping]);
 
     // ── Upload handler (stays here — complex async + file APIs) ───────────
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -601,9 +653,13 @@ export function EditorSlate() {
         };
 
         // 2. OPTIMISTIC UPDATE — mount immediately
+
+        const layerName = makeUniqueMediaLayerName(file.name, store.layers.values());
+
         const optimisticLayer = {
             numericId,
             type: isImage ? 'image' : 'video',
+            name: layerName,
             url: previewDataUrl,
             playback: defaultPlayback,
             config,
@@ -690,17 +746,19 @@ export function EditorSlate() {
             useEditorStore.getState().upsertLayer(finalizedLayer);
             engine.setPlayback(numericId, defaultPlayback);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:handle_upload',
-                layer: {
-                    numericId,
-                    type: finalizedLayer.type,
-                    playback: defaultPlayback,
-                    url: assetUrl,
-                    config: freshestLayer.config
-                } as LayerWithEditorState
-            });
+            // First time this layer reaches the server, so it goes through the
+            // acknowledged path and a failed write surfaces to the user.
+            engine.createLayer('editor:handle_upload', {
+                numericId,
+                type: finalizedLayer.type,
+                name: layerName,
+                playback: defaultPlayback,
+                url: assetUrl,
+                config: freshestLayer.config
+            } as LayerWithEditorState);
+            // Without this the project never looks dirty after an upload, so the
+            // manual save shortcut silently does nothing.
+            useEditorStore.getState().markDirty();
             URL.revokeObjectURL(localUrl);
 
             // Asset record is created server-side in onUploadFinish
@@ -722,9 +780,17 @@ export function EditorSlate() {
         e: Pick<KonvaEventObject<Event>, 'target' | 'evt'>,
         numericId: number
     ) => {
+        // Konva mutes stage pointermove while dragging or transforming, so this
+        // is the only place presence keeps flowing during a manipulation.
+        broadcastPointerPosition();
+
         const node = e.target as Konva.Shape;
         const layer = layersRef.current.get(numericId);
         if (!node || !layer) return;
+        if (layer.config.locked) {
+            if (node.isDragging()) node.stopDrag();
+            return;
+        }
 
         const isTransformerActive = trRef.current?.isTransforming() ?? false;
         if (node.isDragging() || isTransformerActive) {
@@ -738,9 +804,16 @@ export function EditorSlate() {
             const textAnchor = activeAnchor ?? '';
             const isHorizontalEdge = textAnchor === 'middle-left' || textAnchor === 'middle-right';
             const isVerticalEdge = textAnchor === 'top-center' || textAnchor === 'bottom-center';
-            const isReflowEdge = isHorizontalEdge || isVerticalEdge;
-            const mode: 'reflow' | 'corner' = isReflowEdge ? 'reflow' : 'corner';
+            const isCorner = Boolean(textAnchor) && !isHorizontalEdge && !isVerticalEdge;
+            // Corners resize the box and reflow like the edge handles; holding Alt
+            // opts into scaling the glyphs instead. Read per-event so the mode
+            // follows the key being pressed or released mid-drag.
+            const scaleRequested = isCorner && Boolean((e.evt as MouseEvent | undefined)?.altKey);
+            const mode: 'reflow' | 'corner' = scaleRequested ? 'corner' : 'reflow';
             node.setAttr('textTransformMode', mode);
+            // A corner reflow drives both axes; edge handles stay single-axis.
+            const reflowWidth = isHorizontalEdge || (isCorner && !scaleRequested);
+            const reflowHeight = isVerticalEdge || (isCorner && !scaleRequested);
 
             if (mode === 'reflow') {
                 const oldAbsTransform = node.getAbsoluteTransform().copy();
@@ -750,14 +823,14 @@ export function EditorSlate() {
                 let nextWidth = node.width();
                 let nextHeight = node.height();
 
-                if (isHorizontalEdge) {
+                if (reflowWidth) {
                     const effectiveScaleX = node.scaleX();
                     nextWidth = Math.max(
                         MIN_LAYER_DIMENSION,
                         (node.width() * effectiveScaleX) / oldScaleX
                     );
                 }
-                if (isVerticalEdge) {
+                if (reflowHeight) {
                     const effectiveScaleY = node.scaleY();
                     nextHeight = Math.max(
                         MIN_LAYER_DIMENSION,
@@ -782,6 +855,14 @@ export function EditorSlate() {
                     parentTransform.invert();
                     const localDelta = parentTransform.point({ x: dx, y: dy });
                     node.position({ x: node.x() + localDelta.x, y: node.y() + localDelta.y });
+                }
+
+                // The mirror below moves the stored config to the live position on
+                // every frame, which leaves `handleTransformEnd` with nothing to
+                // compare against — it would read the drag as a no-op and never
+                // persist it. Keep the pre-drag geometry for it to diff against.
+                if (!node.getAttr('preTransformConfig')) {
+                    node.setAttr('preTransformConfig', layer.config);
                 }
 
                 // TODO See if this can be further optimised so that we can propagate to the other editors too
@@ -865,10 +946,22 @@ export function EditorSlate() {
         (e: Pick<KonvaEventObject<Event>, 'target' | 'type'>, numericId: number) => {
             if (!engine) return;
             const node = e.target as Konva.Shape;
+            const endInteraction = () => {
+                node.setAttr('textTransformMode', undefined);
+                node.setAttr('lastActiveAnchor', undefined);
+                node.setAttr('preTransformConfig', undefined);
+            };
 
             // Must use layersRef — has binary-updated positions
             const layerToUpdate = layersRef.current.get(numericId);
-            if (!layerToUpdate) return;
+            if (!layerToUpdate) {
+                endInteraction();
+                return;
+            }
+            if (layerToUpdate.config.locked) {
+                endInteraction();
+                return;
+            }
             const textMode = node.getAttr('textTransformMode') as 'reflow' | 'corner' | undefined;
 
             if (isSnapping && layerToUpdate.type !== 'line') {
@@ -964,7 +1057,12 @@ export function EditorSlate() {
                 node.scaleY(updatedConfig.scaleY);
             }
 
-            const prevConfig = layerToUpdate.config;
+            // A text reflow has already mirrored the live geometry onto the stored
+            // config, so that copy is no baseline; fall back to it only when no
+            // mirror ran, where it is still the pre-interaction geometry.
+            const prevConfig =
+                (node.getAttr('preTransformConfig') as Layer['config'] | undefined) ??
+                layerToUpdate.config;
             const configChanged =
                 prevConfig.cx !== updatedConfig.cx ||
                 prevConfig.cy !== updatedConfig.cy ||
@@ -974,8 +1072,7 @@ export function EditorSlate() {
                 prevConfig.scaleY !== updatedConfig.scaleY ||
                 prevConfig.rotation !== updatedConfig.rotation;
             if (!configChanged) {
-                node.setAttr('textTransformMode', undefined);
-                node.setAttr('lastActiveAnchor', undefined);
+                endInteraction();
                 return;
             }
 
@@ -994,8 +1091,7 @@ export function EditorSlate() {
 
             // Shadow mutation for binary fast-path
             layerToUpdate.config = updatedConfig;
-            node.setAttr('textTransformMode', undefined);
-            node.setAttr('lastActiveAnchor', undefined);
+            endInteraction();
 
             const store = useEditorStore.getState();
             store.updateLayerConfig(numericId, updatedConfig);
@@ -1012,6 +1108,10 @@ export function EditorSlate() {
 
     const flushNodeState = (idToFlush: string) => {
         if (!trRef.current) return;
+        const layer = useEditorStore.getState().layers.get(Number.parseInt(idToFlush, 10));
+        // Lines draw from absolute points, while locked layers cannot have pending
+        // transforms. Neither should be flushed back into stored geometry.
+        if (layer?.type === 'line' || layer?.config.locked) return;
         const stage = trRef.current.getStage();
         const node = stage?.findOne<Konva.Shape>(`#${idToFlush}`);
         if (node)
@@ -1024,8 +1124,27 @@ export function EditorSlate() {
             );
     };
 
+    // Composite layers (video) put the layer id on a wrapping Group, so the event
+    // target is an inner node with no id of its own. Walk up to the nearest
+    // ancestor that maps to a layer.
+    const resolveLayerIdFromTarget = (target: Konva.Node) => {
+        let node: Konva.Node | null = target;
+        while (node && node !== node.getStage()) {
+            const id = node.id();
+            if (id && layers.has(parseInt(id))) return id;
+            node = node.getParent();
+        }
+        return null;
+    };
+
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (e.evt instanceof TouchEvent || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
+            setHoveredLayerId(null);
+        }
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
+        const currentSelectedLayer = currentSelectedIds[0]
+            ? useEditorStore.getState().layers.get(Number.parseInt(currentSelectedIds[0], 10))
+            : undefined;
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches?.length === 2;
         if (isDrawing && isTwoFingerTouch) {
             setCurrentLine([]);
@@ -1038,13 +1157,29 @@ export function EditorSlate() {
             if (clickedOnEmpty && currentSelectedIds.length) {
                 flushNodeState(currentSelectedIds[0]);
                 deselectAllLayers();
+            } else if (!clickedOnEmpty) {
+                const hasModifier = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
+                const targetId = resolveLayerIdFromTarget(e.target);
+                const targetLayer = targetId
+                    ? layers.get(Number.parseInt(targetId, 10))
+                    : undefined;
+                if (
+                    !hasModifier &&
+                    targetId &&
+                    targetLayer &&
+                    !currentSelectedIds.includes(targetId)
+                ) {
+                    if (currentSelectedIds.length) flushNodeState(currentSelectedIds[0]);
+                    toggleLayerSelection(targetId, false, false);
+                }
             }
             if (!isDrawing) return;
         }
         if (
             e.evt instanceof TouchEvent &&
             e.evt.touches?.length === 2 &&
-            currentSelectedIds.length > 0
+            currentSelectedIds.length > 0 &&
+            !currentSelectedLayer?.config.locked
         ) {
             flushNodeState(currentSelectedIds[0]);
             setIsPinching(true);
@@ -1068,9 +1203,34 @@ export function EditorSlate() {
         }
     };
 
+    // Presence is stage-only: pointer motion elsewhere in the UI is not shared.
+    // Sent in stage-logical units so peers at other zoom levels agree.
+    //
+    // Read from the stage rather than the event: Konva suppresses stage
+    // pointermove for the duration of a drag or transform, but it still keeps
+    // the stage's pointer position current, so this stays live throughout.
+    const broadcastPointerPosition = useCallback(() => {
+        const point = stageInstance.current?.getPointerPosition();
+        if (!point) return;
+        engine?.sendPointer(point.x / stageScaleFactor, point.y / stageScaleFactor);
+    }, [engine, stageScaleFactor]);
+
     const handleTouchMove = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         e.evt.preventDefault();
+        broadcastPointerPosition();
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
+        const currentSelectedLayer = currentSelectedIds[0]
+            ? useEditorStore.getState().layers.get(Number.parseInt(currentSelectedIds[0], 10))
+            : undefined;
+        if (e.evt instanceof MouseEvent) {
+            const targetId =
+                !isDrawing && e.evt.buttons === 0 && !trRef.current?.isTransforming()
+                    ? resolveLayerIdFromTarget(e.target)
+                    : null;
+            const nextHoveredLayerId =
+                targetId && !currentSelectedIds.includes(targetId) ? targetId : null;
+            setHoveredLayerId(nextHoveredLayerId);
+        }
         const isTwoFingerTouch = e.evt instanceof TouchEvent && e.evt.touches.length >= 2;
         if (isDrawing) {
             if (!isTwoFingerTouch) {
@@ -1090,6 +1250,7 @@ export function EditorSlate() {
             e.evt instanceof TouchEvent &&
             e.evt.touches.length === 2 &&
             currentSelectedIds.length > 0 &&
+            !currentSelectedLayer?.config.locked &&
             trRef.current
         ) {
             const stage = trRef.current.getStage();
@@ -1185,6 +1346,14 @@ export function EditorSlate() {
         lastCenter.current = null;
     };
 
+    const handleStageMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
+        setHoveredLayerId(null);
+        // Stops the presence heartbeat, so peers age this cursor out instead of
+        // holding it at the edge of the stage indefinitely.
+        engine?.stopPointerBroadcast();
+        handleTouchEnd(e);
+    };
+
     const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
         const slot = stageSlot.current;
         if (!slot) return;
@@ -1196,7 +1365,15 @@ export function EditorSlate() {
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
-            const node = trRef.current.getStage()?.findOne(`#${selectedLayerIds[0]}`);
+            // Unlocked lines are selectable but not transformable. A locked line still
+            // attaches so the Transformer can provide its dashed, handle-free outline.
+            const selectedLayer = useEditorStore
+                .getState()
+                .layers.get(Number.parseInt(selectedLayerIds[0], 10));
+            const node =
+                selectedLayer?.type === 'line' && !selectedLayer.config.locked
+                    ? undefined
+                    : trRef.current.getStage()?.findOne(`#${selectedLayerIds[0]}`);
             if (node) {
                 trRef.current.nodes([node]);
                 trRef.current.getLayer()?.batchDraw();
@@ -1208,7 +1385,18 @@ export function EditorSlate() {
             trRef.current.nodes([]);
             trRef.current.getLayer()?.batchDraw();
         }
-    }, [selectedLayerIds]);
+    }, [isSingleSelectedLayerLocked, selectedLayerIds]);
+
+    useEffect(() => {
+        const transformer = hoverTrRef.current;
+        if (!transformer) return;
+
+        const node = hoverHintLayerId
+            ? transformer.getStage()?.findOne(`#${hoverHintLayerId}`)
+            : undefined;
+        transformer.nodes(node ? [node] : []);
+        transformer.getLayer()?.batchDraw();
+    }, [hoverHintLayerId, layers]);
 
     return (
         <>
@@ -1237,7 +1425,7 @@ export function EditorSlate() {
                         onMouseDown={handleStageInteractionStart}
                         onMouseMove={handleTouchMove}
                         onMouseUp={handleTouchEnd}
-                        onMouseLeave={handleTouchEnd}
+                        onMouseLeave={handleStageMouseLeave}
                         onWheel={handleStageWheel}
                         onTouchStart={handleStageInteractionStart}
                         onTouchMove={handleTouchMove}
@@ -1287,6 +1475,7 @@ export function EditorSlate() {
                                 const isSelected = selectedLayerIdSet.has(
                                     layer.numericId.toString()
                                 );
+                                const isLocked = Boolean(layer.config.locked);
                                 if (isHidden && !isSelected) return null;
 
                                 const hiddenOpacity = isHidden ? 0.3 : 1;
@@ -1295,14 +1484,20 @@ export function EditorSlate() {
                                     listening: !isDrawing,
                                     isDrawing,
                                     isPinching,
+                                    isLocked,
                                     opacity: hiddenOpacity,
                                     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
                                         if (e.evt instanceof MouseEvent && e.evt.button !== 0)
                                             return;
+                                        const selectionModifiers = getCanvasSelectionModifiers(
+                                            e.evt,
+                                            isLocked
+                                        );
+                                        if (!selectionModifiers) return;
                                         toggleLayerSelection(
                                             layer.numericId.toString(),
-                                            e.evt.shiftKey,
-                                            e.evt.ctrlKey || e.evt.metaKey
+                                            selectionModifiers.isShiftClick,
+                                            selectionModifiers.isCtrlClick
                                         );
                                     },
                                     onTransform: (e: KonvaEventObject<Event>) =>
@@ -1335,9 +1530,13 @@ export function EditorSlate() {
                                             layer={layer}
                                             isDrawing={props.isDrawing}
                                             isPinching={props.isPinching}
+                                            isLocked={props.isLocked}
                                             opacity={hiddenOpacity}
                                             onSelect={props.onSelect}
-                                            onDblClick={() => startTextEditing(layer.numericId)}
+                                            onDblClick={() => {
+                                                if (!props.isLocked)
+                                                    startTextEditing(layer.numericId);
+                                            }}
                                             onTransform={props.onTransform}
                                             onTransformEnd={props.onTransformEnd}
                                         />
@@ -1361,7 +1560,11 @@ export function EditorSlate() {
                                             rotation={layer.config.rotation}
                                             opacity={hiddenOpacity}
                                             listening={props.listening}
-                                            draggable={!props.isDrawing && !props.isPinching}
+                                            draggable={
+                                                !props.isDrawing &&
+                                                !props.isPinching &&
+                                                !props.isLocked
+                                            }
                                             onClick={props.onSelect}
                                             onTap={props.onSelect}
                                             onDragMove={props.onTransform}
@@ -1390,7 +1593,10 @@ export function EditorSlate() {
                                         scaleY: layer.config.scaleY,
                                         opacity: hiddenOpacity,
                                         listening: props.listening,
-                                        draggable: !props.isDrawing && !props.isPinching,
+                                        draggable:
+                                            !props.isDrawing &&
+                                            !props.isPinching &&
+                                            !props.isLocked,
                                         onClick: props.onSelect,
                                         onTap: props.onSelect,
                                         onDragMove: props.onTransform,
@@ -1411,6 +1617,7 @@ export function EditorSlate() {
                                                 height={layer.config.height}
                                                 offsetX={layer.config.width / 2}
                                                 offsetY={layer.config.height / 2}
+                                                cornerRadius={layer.cornerRadius}
                                                 dash={layer.strokeDash}
                                                 dashOffset={(layer.strokeDash[0] ?? 0) / 2}
                                                 lineCap="round"
@@ -1437,8 +1644,11 @@ export function EditorSlate() {
                                     return (
                                         <Line
                                             key={`lin_${layer.numericId}`}
+                                            id={layer.numericId.toString()}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}
+                                            onClick={props.onSelect}
+                                            onTap={props.onSelect}
                                             points={layer.line}
                                             stroke={layer.strokeColor}
                                             strokeWidth={layer.strokeWidth}
@@ -1446,7 +1656,9 @@ export function EditorSlate() {
                                             dashEnabled={true}
                                             tension={0.4}
                                             shadowForStrokeEnabled={
-                                                selectedLayerIds[0] === layer.numericId.toString()
+                                                selectedLayerIds[0] ===
+                                                    layer.numericId.toString() &&
+                                                !layer.config.locked
                                             }
                                             shadowColor="#00a1ff"
                                             shadowBlur={10}
@@ -1473,6 +1685,17 @@ export function EditorSlate() {
                                     lineJoin="round"
                                 />
                             )}
+                            <Transformer
+                                ref={hoverTrRef}
+                                listening={false}
+                                resizeEnabled={false}
+                                rotateEnabled={false}
+                                enabledAnchors={[]}
+                                borderStroke="rgba(148, 163, 184, 0.65)"
+                                borderStrokeWidth={1}
+                                borderDash={isHoveredLayerLocked ? [20, 12] : []}
+                                padding={0}
+                            />
                             {selectedOutlineLayers.length > 1
                                 ? selectedOutlineLayers.map((layer) => (
                                       <Rect
@@ -1488,6 +1711,7 @@ export function EditorSlate() {
                                           scaleY={layer.config.scaleY}
                                           stroke="#00a1ff"
                                           strokeWidth={6}
+                                          dash={layer.config.locked ? [20, 12] : []}
                                           opacity={1}
                                           listening={false}
                                       />
@@ -1497,9 +1721,14 @@ export function EditorSlate() {
                             <Transformer
                                 ref={trRef}
                                 flipEnabled={false}
+                                listening={!isSingleSelectedLayerLocked}
+                                resizeEnabled={!isSingleSelectedLayerLocked}
+                                rotateEnabled={!isSingleSelectedLayerLocked}
                                 anchorCornerRadius={10}
                                 anchorSize={20}
+                                borderDash={isSingleSelectedLayerLocked ? [20, 12] : []}
                                 enabledAnchors={(() => {
+                                    if (isSingleSelectedLayerLocked) return [];
                                     const selectedId = selectedLayerIds[0];
                                     if (!selectedId) return undefined;
                                     const selected = layers.get(parseInt(selectedId, 10));
@@ -1522,6 +1751,7 @@ export function EditorSlate() {
                                 }}
                             />
                         </KonvaLayer>
+                        <PeerCursors key={peerCursorScopeKey} stageScaleFactor={stageScaleFactor} />
                     </Stage>
                 </div>
             </div>

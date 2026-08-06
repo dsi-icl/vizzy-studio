@@ -1,10 +1,12 @@
 import '@tanstack/react-start/server-only';
 import { createHeadlessEditor } from '@lexical/headless';
-import { $generateHtmlFromNodes, $generateNodesFromDOM } from '@lexical/html';
+import { $generateHtmlFromNodes } from '@lexical/html';
 import { createBinding, syncLexicalUpdateToYjs, syncYjsChangesToLexical } from '@lexical/yjs';
 import { Window } from 'happy-dom';
-import { $createParagraphNode, $getRoot } from 'lexical';
+import { $getRoot } from 'lexical';
 import * as Y from 'yjs';
+
+import { $appendHtmlToRoot } from './lexicalHtml';
 
 // ── Lexical namespace ─────────────────────────────────────────────────────────
 
@@ -86,8 +88,11 @@ async function delay(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Convert an HTML string to a YJS binary state update. */
-export async function htmlToYUpdate(html: string, docName: string): Promise<Uint8Array> {
+/** Build a YJS state update from whatever `apply` writes into a fresh editor. */
+async function editorToYUpdate(
+    docName: string,
+    apply: (editor: ReturnType<typeof createHeadlessEditor>) => void
+): Promise<Uint8Array> {
     const doc = new Y.Doc();
     const docMap = new Map<string, Y.Doc>([[docName, doc]]);
     const provider = createNoopProvider();
@@ -109,29 +114,72 @@ export async function htmlToYUpdate(html: string, docName: string): Promise<Uint
         }
     );
 
-    withLexicalDomGlobals(() => {
-        const parser = new lexicalWindow.DOMParser();
-        const dom = parser.parseFromString(html || '<p></p>', 'text/html');
-        editor.update(() => {
-            const root = $getRoot();
-            root.clear();
-            const nodes = $generateNodesFromDOM(editor, dom as unknown as Document);
-            if (nodes.length === 0) {
-                root.append($createParagraphNode());
-            } else {
-                root.append(...nodes);
-            }
-        });
-    });
-
-    await delay(0);
-    unobserve();
-    binding.root.destroy(binding as any);
+    try {
+        apply(editor);
+        await delay(0);
+    } finally {
+        unobserve();
+        binding.root.destroy(binding as any);
+    }
     return Y.encodeStateAsUpdate(doc);
 }
 
-/** Render a YJS document back to an HTML string via Lexical. */
-export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
+/** Convert an HTML string to a YJS binary state update. */
+export async function htmlToYUpdate(html: string, docName: string): Promise<Uint8Array> {
+    return editorToYUpdate(docName, (editor) => {
+        withLexicalDomGlobals(() => {
+            const parser = new lexicalWindow.DOMParser();
+            const dom = parser.parseFromString(html || '<p></p>', 'text/html');
+            editor.update(() => {
+                const root = $getRoot();
+                root.clear();
+                $appendHtmlToRoot(root, dom.body as never);
+            });
+        });
+    });
+}
+
+/**
+ * Convert a serialized Lexical editor state to a YJS binary state update.
+ * Throws if the payload is malformed or references unknown nodes — callers are
+ * expected to fall back to the HTML projection.
+ */
+export async function lexicalStateToYUpdate(state: string, docName: string): Promise<Uint8Array> {
+    return editorToYUpdate(docName, (editor) => {
+        editor.setEditorState(editor.parseEditorState(state));
+    });
+}
+
+export type TextProjection = {
+    /** Derived render artifact. */
+    html: string;
+    /** Serialized Lexical editor state — lossless, unlike the HTML. */
+    state: string;
+};
+
+/**
+ * Project a YJS document to both representations in a single pass, so the HTML
+ * and the serialized state can never describe different content.
+ */
+export async function yDocToProjection(doc: Y.Doc, docName: string): Promise<TextProjection> {
+    return yDocToLexical(doc, docName, (editor) => {
+        const html = withLexicalDomGlobals(() => {
+            let out = '';
+            editor.getEditorState().read(() => {
+                out = $generateHtmlFromNodes(editor);
+            });
+            return out;
+        });
+        return { html: html || '<p></p>', state: JSON.stringify(editor.getEditorState().toJSON()) };
+    });
+}
+
+/** Hydrate a throwaway Lexical editor from a YJS document and read from it. */
+async function yDocToLexical<Result>(
+    doc: Y.Doc,
+    docName: string,
+    read: (editor: ReturnType<typeof createHeadlessEditor>) => Result
+): Promise<Result> {
     const sourceUpdate = Y.encodeStateAsUpdate(doc);
     const tempDoc = new Y.Doc();
     const docMap = new Map<string, Y.Doc>([[docName, tempDoc]]);
@@ -153,20 +201,31 @@ export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
     await delay(0);
     binding.root.getSharedType().unobserveDeep(observer);
 
-    const html = withLexicalDomGlobals(() => {
-        let out = '';
-        editor.getEditorState().read(() => {
-            out = $generateHtmlFromNodes(editor);
-        });
-        return out;
-    });
+    try {
+        return read(editor);
+    } finally {
+        binding.root.destroy(binding as any);
+    }
+}
 
-    binding.root.destroy(binding as any);
-    return html || '<p></p>';
+/** Render a YJS document back to an HTML string via Lexical. */
+export async function yDocToHtml(doc: Y.Doc, docName: string): Promise<string> {
+    const projection = await yDocToProjection(doc, docName);
+    return projection.html;
 }
 
 /** Apply an HTML string directly to an existing YJS document. */
 export async function applyHtmlToDoc(doc: Y.Doc, html: string, docName: string): Promise<void> {
     const update = await htmlToYUpdate(html, docName);
+    Y.applyUpdate(doc, update);
+}
+
+/** Apply a serialized Lexical editor state directly to an existing YJS document. */
+export async function applyLexicalStateToDoc(
+    doc: Y.Doc,
+    state: string,
+    docName: string
+): Promise<void> {
+    const update = await lexicalStateToYUpdate(state, docName);
     Y.applyUpdate(doc, update);
 }

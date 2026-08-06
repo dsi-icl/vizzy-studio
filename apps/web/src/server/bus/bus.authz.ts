@@ -29,6 +29,7 @@ export const WS_MUTATION_MESSAGE_TYPES = new Set([
     'reboot',
     'stage_dirty',
     'stage_save',
+    'record_colour',
     'switch_scope',
     'bind_wall',
     'request_bind_wall',
@@ -54,6 +55,7 @@ export const EDIT_PROJECT_MESSAGE_TYPES = new Set([
     'update_slides',
     'stage_dirty',
     'stage_save',
+    'record_colour',
     'request_bind_wall'
 ]);
 
@@ -158,6 +160,13 @@ export function isWsMessageAuthorized(
     const payloadProjectId = typeof data.projectId === 'string' ? data.projectId : null;
     const scopeProjectId = getScopeProjectId(scopeId);
     const projectId = payloadProjectId ?? scopeProjectId;
+
+    if (type === 'pointer') {
+        // Presence is editor-only and carries a peer email, so viewers qualify
+        // but unscoped or unauthorised peers must not reach the relay.
+        if (entry.meta.specimen !== 'editor' || !projectId) return false;
+        return Boolean(getCachedEditorPermission(entry, projectId)?.canView);
+    }
 
     if (EDIT_PROJECT_MESSAGE_TYPES.has(type)) {
         if (

@@ -3,6 +3,12 @@ import type { Layer, LayerWithEditorState, Slide } from './types';
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
+export interface LayerClipboard {
+    projectId: string;
+    layers: LayerWithEditorState[];
+    pasteCount: number;
+}
+
 export interface EditorState {
     // ── State ──
     projectId: string | null;
@@ -10,6 +16,8 @@ export interface EditorState {
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
     selectedLayerIds: string[];
+    hoveredLayerId: string | null;
+    layerClipboard: LayerClipboard | null;
     slides: Slide[];
     activeSlideId: string | null;
     selectedSlides: string[];
@@ -23,7 +31,10 @@ export interface EditorState {
     strokeWidth: number;
     strokeDash: number[];
     shapeFill: string;
+    /** Shared project palette, most recent first. Server-owned. */
+    recentColours: string[];
     shapeStroke: string;
+    rectangleCornerRadius: number;
     editingTextLayerId: number | null;
 
     // ── Wall binding ──
@@ -52,8 +63,13 @@ export interface EditorState {
     updateProgress: (numericId: number, progress: number) => void;
     updateLayerConfig: (numericId: number, config: Layer['config']) => void;
     toggleLayerVisibility: (numericId: number) => void;
+    toggleLayerLock: (numericId: number) => void;
     deselectAllLayers: () => void;
     toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
+    setHoveredLayerId: (id: string | null) => void;
+    copySelectedLayers: () => number;
+    copyLayer: (numericId: number) => boolean;
+    pasteLayers: () => string[];
     deleteSelectedLayer: () => void;
     bringToFront: () => void;
     sendToBack: () => void;
@@ -76,6 +92,7 @@ export interface EditorState {
     setStrokeWidth: (width: number) => void;
     setStrokeDash: (dash: number[]) => void;
     setShapeFill: (fill: string) => void;
+    setRectangleCornerRadius: (radius: number) => void;
     setInsertionCenter: (x: number, y: number) => void;
     setInsertionViewport: (width: number, height: number) => void;
     markDirty: () => void;

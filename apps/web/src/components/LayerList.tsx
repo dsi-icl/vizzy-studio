@@ -18,6 +18,7 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
     const reorderLayers = useEditorStore((s) => s.reorderLayers);
     const toggleLayerSelection = useEditorStore((s) => s.toggleLayerSelection);
+    const setHoveredLayerId = useEditorStore((s) => s.setHoveredLayerId);
 
     const sortedLayers = Array.from(layers.values()).sort(
         (a, b) => b.config.zIndex - a.config.zIndex
@@ -27,6 +28,7 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
     const bgLayers = sortedLayers.filter((l) => l.type === 'background');
 
     const toggleCollapse = () => {
+        setHoveredLayerId(null);
         if (collapsed) onExpand?.();
         else onCollapse?.();
     };
@@ -93,6 +95,8 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
                         }}
                         onSelect={toggleLayerSelection}
                         onItemDoubleClick={(item) => goToLayer(item.id)}
+                        onItemHover={(item) => setHoveredLayerId(item?.id ?? null)}
+                        isItemDisabled={(item) => Boolean(item.config.locked)}
                         itemRenderer={(layer, { isSelected }) => (
                             <LayerItem layer={layer} isSelected={isSelected} />
                         )}

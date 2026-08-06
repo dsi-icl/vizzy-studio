@@ -14,6 +14,9 @@ const BEARING_B = 6;
 const BEARING_K = 0;
 // Base gain in row-space; per-line curve scales this progressively.
 const BEARING_GAIN_ROWS_BASE = 0.3;
+// Lower bound on the ribbon stroke scale, so heavily downscaled previews
+// still resolve individual lines (0.375 => 0.75px..1.13px strokes).
+const MIN_STROKE_SCALE = 0.375;
 
 function seededRandom(seed: number): () => number {
     let s = seed >>> 0;
@@ -79,13 +82,23 @@ export function renderBackgroundWaves(
 
     // Dense ribbon bundle (>=10 lines), packed tightly.
     const waveCount = 60;
-    const xStep = 15;
     const phaseT = t * 160;
 
     const worldStartCol = col;
     const worldStartRow = row;
     const worldSpanCol = Math.max(1e-6, colSpan);
     const worldSpanRow = Math.max(1e-6, rowSpan);
+
+    // Every displacement below is authored in the wall's native pixel space
+    // (one SCREEN_W x SCREEN_H panel).  The full-wall preview rasters many
+    // screens into one small canvas, so convert to that raster's pixels.
+    // Both factors are exactly 1 on the per-screen wall path.
+    const pxScale = h / worldSpanRow / SCREEN_H;
+    const xStep = Math.max(1, Math.round(15 * (w / worldSpanCol / SCREEN_W)));
+    // Strokes are the one term that cannot shrink linearly: under ~1 device
+    // pixel the ribbons fade out entirely.  Floor the factor so downscaled
+    // previews stay visible, while keeping the near/far thickness ratio.
+    const strokeScale = Math.max(pxScale, MIN_STROKE_SCALE);
 
     for (let i = 0; i < waveCount; i++) {
         const depth = i / Math.max(1, waveCount - 1);
@@ -101,7 +114,7 @@ export function renderBackgroundWaves(
         const waveAlpha =
             lerp(0.4, 0.92, smoothstep(depth)) * (0.55 + (atmosphere[3] / 255) * 0.45);
         ctx.strokeStyle = toCssRgba(rowColor, waveAlpha);
-        ctx.lineWidth = lerp(2, 3, depth);
+        ctx.lineWidth = lerp(2, 3, depth) * strokeScale;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.beginPath();
@@ -159,8 +172,11 @@ export function renderBackgroundWaves(
             const contourNoise =
                 noise3D(worldX * 0.72 + 31, worldYRows * 0.58 + 13, t * 0.9) * lerp(5, 2, depth);
 
-            const y =
-                yBase - leftLift - staticLeftLowFreq + s1 + s2 + s3 + low1 + low2 + contourNoise;
+            // yBase is already span-normalised; everything else is native
+            // wall pixels, so it scales as one block.
+            const displacement =
+                -leftLift - staticLeftLowFreq + s1 + s2 + s3 + low1 + low2 + contourNoise;
+            const y = yBase + displacement * pxScale;
             if (x === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         }

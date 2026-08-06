@@ -5,6 +5,7 @@ import {
     broadcastToControllersByWallRaw,
     broadcastToEditors,
     broadcastToEditorsByCommit,
+    broadcastToEditorsRaw,
     broadcastToScope,
     broadcastToScopeRaw,
     broadcastToWallNodesRaw,
@@ -27,6 +28,7 @@ import {
     notifyControllers,
     notifyControllersByCommit,
     peers,
+    persistScopeNow,
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
@@ -45,7 +47,14 @@ import {
     wallBindingSources,
     type PeerEntry
 } from '~/lib/busState';
+import {
+    broadcastProjectContext,
+    getOrLoadProjectContext,
+    projectContextPayload,
+    recordProjectColour
+} from '~/lib/busState.projectContext';
 import { validatePortalToken } from '~/lib/portalTokens';
+import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -88,6 +97,12 @@ export interface HandlerCtx {
 export type Handler = (ctx: HandlerCtx) => void;
 
 export const handlers = new Map<string, Handler>();
+
+/**
+ * Floor between two pointer relays from the same connection. Sits well under
+ * the client's send interval so ordinary jitter is never mistaken for abuse.
+ */
+const POINTER_RELAY_FLOOR_MS = 50;
 
 const lastPlaybackCommandAt = new Map<string, number>();
 
@@ -157,7 +172,7 @@ handlers.set('clear_stage', ({ entry, scopeId }) => {
             clearPlaybackCommand(scopeId, numericId);
         }
         scope.layers.clear();
-        scope.dirty = true;
+        markScopeDirty(scope);
     }
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -202,9 +217,42 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                         relayPayload = JSON.stringify({ ...data, layer });
                     }
                 }
+                const isNewLayer = !scope.layers.has(layer.numericId);
                 scope.layers.set(layer.numericId, layer);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 invalidateHydrateCache(scopeId);
+                // A new layer exists only in memory until the 30s autosave tick.
+                // Anything reading it from the commit — the Yjs text session
+                // does — would fail for that whole window, so make it durable
+                // now. Updates to an existing layer can wait for the tick.
+                const createRequestId =
+                    typeof data.createRequestId === 'string' ? data.createRequestId : null;
+                const numericId = layer.numericId;
+
+                if (isNewLayer) {
+                    persistScopeNow(scopeId, 'Layer added', (result) => {
+                        if (!createRequestId) return;
+                        sendJSON(entry.peer, {
+                            type: 'layer_create_response',
+                            createRequestId,
+                            numericId,
+                            success: result.success,
+                            error: result.error
+                        });
+                    });
+                } else if (createRequestId) {
+                    // Already present, so this is a resend after a reconnect or
+                    // a scope reseeded from the commit. The layer is durable
+                    // either way. Without this the editor waits out its timeout
+                    // and rehydrates the slide, discarding unsaved work over a
+                    // create that actually succeeded.
+                    sendJSON(entry.peer, {
+                        type: 'layer_create_response',
+                        createRequestId,
+                        numericId,
+                        success: true
+                    });
+                }
             }
         }
         // recomputeLayerNodes(layer.numericId, layer, scopeId);
@@ -236,7 +284,7 @@ handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
             deletedPersistentLayer = scope.layers.delete(data.numericId);
             if (deletedPersistentLayer) {
                 clearPlaybackCommand(scopeId, data.numericId);
-                scope.dirty = true;
+                markScopeDirty(scope);
                 deleteYDocForLayer(scopeId, data.numericId);
             }
             deletedControllerTransient = deleteControllerTransientLayerForScope(
@@ -272,7 +320,7 @@ handlers.set('seed_scope', ({ entry, data, scopeId }) => {
             scope.layers.set(layer.numericId, layer);
         }
     }
-    scope.dirty = true;
+    markScopeDirty(scope);
 
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
@@ -320,7 +368,40 @@ handlers.set('reboot', ({ scopeId, rawText }) => {
 handlers.set('stage_dirty', ({ scopeId }) => {
     if (scopeId === null) return;
     const scope = scopedState.get(scopeId);
-    if (scope) scope.dirty = true;
+    if (scope) markScopeDirty(scope);
+});
+
+/**
+ * Pointer presence is a pure relay: no scope state, no peer registry, no
+ * lifecycle. Receivers age cursors out on their own, so a peer that leaves,
+ * navigates or drops simply stops being echoed and fades.
+ */
+handlers.set('pointer', ({ entry, data, scopeId }) => {
+    if (scopeId === null || entry.meta.specimen !== 'editor') return;
+    const { x, y } = data;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    // Clients throttle to POINTER_BROADCAST_INTERVAL_MS; this floor keeps a
+    // modified client from turning one socket into an unbounded fanout.
+    const now = Date.now();
+    if (entry.lastPointerAt !== undefined && now - entry.lastPointerAt < POINTER_RELAY_FLOOR_MS) {
+        return;
+    }
+    entry.lastPointerAt = now;
+
+    broadcastToEditorsRaw(
+        scopeId,
+        JSON.stringify({
+            type: 'pointer',
+            // Per-connection, so one user in two tabs shows as two cursors.
+            peerId: entry.peer.id,
+            email: entry.meta.authContext?.user?.email ?? '',
+            x,
+            y
+        } satisfies GSMessage),
+        // Exclude the sending connection, not the sending user.
+        entry
+    );
 });
 
 handlers.set('leave_scope', ({ entry }) => {
@@ -861,8 +942,22 @@ export async function handleSwitchScope(peer: Peer, data: Record<string, any>) {
     });
     if (!registered) return;
 
+    // Seed the project's shared state and hand it to the joining editor.
+    const context = await getOrLoadProjectContext(parsed.projectId);
+    sendJSON(peer as unknown as PeerEntry['peer'], projectContextPayload(context));
+
     console.log(
         `[WS] Editor switched scope=${makeScopeLabel(parsed.projectId, parsed.commitId, parsed.slideId)}`
     );
     logPeerCounts();
 }
+
+handlers.set('record_colour', ({ entry, data }) => {
+    if (entry.meta.specimen !== 'editor') return;
+    const projectId = entry.meta.scope?.projectId;
+    if (!projectId || typeof data.colour !== 'string') return;
+
+    // Only a change is broadcast, so re-picking the leading colour costs nothing.
+    const context = recordProjectColour(projectId, data.colour);
+    if (context) broadcastProjectContext(context);
+});

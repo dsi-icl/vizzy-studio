@@ -8,11 +8,14 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 
 import type { PeerMeta } from '~/lib/busState';
+import { TEXT_FORMAT_VERSION } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { canEditProject } from '~/server/projectAuthz';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
 
-import { applyHtmlToDoc, yDocToHtml } from './lexical';
+import { DocumentRegistry } from './documentRegistry';
+import { applyHtmlToDoc, applyLexicalStateToDoc, yDocToProjection } from './lexical';
+import { chooseSeedSource, type SeedSource } from './seedSource';
 import {
     messageSync,
     messageAwareness,
@@ -43,6 +46,8 @@ type BridgePayload = {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textState: string;
+    textFormat: number;
     fallbackLayer?: TextLayer;
 };
 
@@ -54,6 +59,37 @@ function debugLog(...args: unknown[]) {
 
 function sha1(input: string): string {
     return createHash('sha1').update(input).digest('hex');
+}
+
+/**
+ * Seed a fresh document from the most faithful source the layer offers.
+ *
+ * The persisted Yjs snapshot is preferred by the caller — it is the live CRDT
+ * state. Failing that, the serialized Lexical state round-trips losslessly,
+ * whereas the HTML projection cannot represent everything Lexical can. A state
+ * written by a newer deploy is deliberately ignored rather than guessed at.
+ */
+export async function seedDocFromLayer(
+    doc: SharedDoc,
+    layer: TextLayer,
+    docName: string
+): Promise<SeedSource> {
+    const source = chooseSeedSource({
+        hasTextState: Boolean(layer.textState),
+        textFormat: layer.textFormat,
+        supportedFormat: TEXT_FORMAT_VERSION
+    });
+
+    if (source === 'state' && layer.textState) {
+        try {
+            await applyLexicalStateToDoc(doc, layer.textState, docName);
+            return 'state';
+        } catch (error) {
+            console.warn(`[YJS] Unusable textState for ${docName}, falling back to HTML:`, error);
+        }
+    }
+    await applyHtmlToDoc(doc, layer.textHtml, docName);
+    return 'html';
 }
 
 export function getYjsPeerState(peer: Peer): YjsPeerState | null {
@@ -122,8 +158,7 @@ export function parseScope(docName: string): DocScope {
 
 export class YCrossws {
     persistence: Persistence;
-    docs: Map<string, SharedDoc> = new Map();
-    initializing: Map<string, Promise<SharedDoc>> = new Map();
+    private readonly registry = new DocumentRegistry<SharedDoc>();
     peers: Set<Peer> = new Set();
 
     constructor() {
@@ -314,13 +349,16 @@ export class YCrossws {
         awarenessProtocol.removeAwarenessStates(doc.awareness, [...controlledIds], undefined);
 
         if (doc.peerIds.size === 0) {
-            doc.stopSyncLoop();
-            await this.flushDoc(doc);
-            await this.persistence.writeState(doc.name, doc).catch((err) => {
-                console.error('[YJS] Failed to persist doc on close:', err);
+            // Held behind the registry so a reconnect arriving mid-teardown
+            // rebuilds rather than resolving onto a document being destroyed.
+            await this.registry.release(doc.name, doc, async () => {
+                doc.stopSyncLoop();
+                await this.flushDoc(doc);
+                await this.persistence.writeState(doc.name, doc).catch((err) => {
+                    console.error('[YJS] Failed to persist doc on close:', err);
+                });
+                doc.destroy();
             });
-            doc.destroy();
-            this.docs.delete(doc.name);
         }
     }
 
@@ -345,8 +383,8 @@ export class YCrossws {
             doc.dirty = false;
             await this.persistence.writeState(doc.name, doc);
 
-            const html = await yDocToHtml(doc, doc.name);
-            const nextHash = sha1(html);
+            const projection = await yDocToProjection(doc, doc.name);
+            const nextHash = sha1(projection.html);
             if (doc.lastHtmlHash === nextHash) return;
             doc.lastHtmlHash = nextHash;
 
@@ -355,7 +393,9 @@ export class YCrossws {
                 commitId: doc.scope.commitId,
                 slideId: doc.scope.slideId,
                 layerId: doc.scope.layerId,
-                textHtml: html,
+                textHtml: projection.html,
+                textState: projection.state,
+                textFormat: TEXT_FORMAT_VERSION,
                 fallbackLayer: doc.fallbackLayer ?? undefined
             };
 
@@ -377,7 +417,8 @@ export class YCrossws {
         const scope = parseScope(docName);
         const doc = new SharedDoc(docName, scope, this);
         doc.gc = true;
-        this.docs.set(docName, doc);
+        // Deliberately not registered yet — the registry publishes it only once
+        // this resolves, so no peer can observe a half-hydrated document.
 
         try {
             const layer = await loadTextLayer(scope);
@@ -385,14 +426,19 @@ export class YCrossws {
 
             const hydrated = await this.persistence.bindState(docName, doc);
             if (!hydrated) {
-                await applyHtmlToDoc(doc, layer.textHtml, docName);
-                doc.dirty = true;
-                await this.flushDoc(doc);
+                await seedDocFromLayer(doc, layer, docName);
+                // Seeding is a read, not an edit. Persist the snapshot so later
+                // opens use the faithful CRDT state, but leave the layer alone —
+                // a seed can narrow content it cannot model (a heading becomes a
+                // paragraph), and a read must never write that narrowing back.
+                // The first real edit upgrades the record.
+                doc.lastHtmlHash = sha1(layer.textHtml);
+                doc.dirty = false;
+                await this.persistence.writeState(docName, doc);
             }
             doc.startSyncLoop();
             return doc;
         } catch (error) {
-            this.docs.delete(docName);
             doc.stopSyncLoop();
             doc.destroy();
             throw error;
@@ -408,19 +454,7 @@ export class YCrossws {
         if (state.doc) return state.doc;
 
         const docName = getDocName(peer);
-        let doc = this.docs.get(docName);
-        if (!doc) {
-            let pending = this.initializing.get(docName);
-            if (!pending) {
-                pending = this.createDoc(docName);
-                this.initializing.set(docName, pending);
-            }
-            try {
-                doc = await pending;
-            } finally {
-                this.initializing.delete(docName);
-            }
-        }
+        const doc = await this.registry.acquire(docName, () => this.createDoc(docName));
 
         if (!doc.peerIds.has(peer)) doc.peerIds.set(peer, new Set());
         setYjsPeerState(peer, { ...state, doc });

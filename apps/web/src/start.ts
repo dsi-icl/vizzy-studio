@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { createMiddleware, createStart } from '@tanstack/react-start';
+import { createMiddleware, createStart, createCsrfMiddleware } from '@tanstack/react-start';
 import { setResponseHeader } from '@tanstack/react-start/server';
 
 import { buildBaseCsp, serializeCsp } from '~/lib/csp';
@@ -99,6 +99,10 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
     });
 });
 
+const csrfMiddleware = createCsrfMiddleware({
+    filter: (ctx) => ctx.handlerType === 'serverFn'
+});
+
 const authContextMiddleware = createMiddleware().server(async ({ next, request, context }) => {
     const { authContext } = await resolveRequestAuthContext(request);
     touchUserLastSeenThrottled(authContext.user?.email);
@@ -113,6 +117,11 @@ const authContextMiddleware = createMiddleware().server(async ({ next, request, 
 
 export const startInstance = createStart(() => {
     return {
-        requestMiddleware: [startRateLimitMiddleware, cspMiddleware, authContextMiddleware]
+        requestMiddleware: [
+            startRateLimitMiddleware,
+            csrfMiddleware,
+            cspMiddleware,
+            authContextMiddleware
+        ]
     };
 });

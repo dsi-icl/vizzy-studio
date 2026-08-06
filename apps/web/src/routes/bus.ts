@@ -34,6 +34,8 @@ import {
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
+import { persistDirtyProjectContexts } from '~/lib/busState.projectContext';
+import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, makeScopeLabel, type GSMessage, type Layer } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import {
@@ -519,19 +521,33 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     slideId: string;
     layerId: number;
     textHtml: string;
+    textState?: string;
+    textFormat?: number;
     fallbackLayer?: Extract<Layer, { type: 'text' }>;
 }) => {
     try {
-        const { projectId, commitId, slideId, layerId, textHtml, fallbackLayer } = payload;
+        const {
+            projectId,
+            commitId,
+            slideId,
+            layerId,
+            textHtml,
+            textState,
+            textFormat,
+            fallbackLayer
+        } = payload;
         const scopeId = internScope(projectId, commitId, slideId);
         const scope = getOrCreateScope(scopeId, projectId, commitId, slideId);
 
+        // textState and textHtml are projected together, so they are written
+        // together or not at all — a stale pairing must never be persisted.
+        const textFields = { textHtml, textState, textFormat };
         const existing = scope.layers.get(layerId);
         const nextLayer =
             existing?.type === 'text'
-                ? { ...existing, textHtml }
+                ? { ...existing, ...textFields }
                 : fallbackLayer
-                  ? { ...fallbackLayer, textHtml }
+                  ? { ...fallbackLayer, ...textFields }
                   : null;
 
         if (!nextLayer || nextLayer.type !== 'text') {
@@ -542,7 +558,7 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
         }
 
         scope.layers.set(layerId, nextLayer);
-        scope.dirty = true;
+        markScopeDirty(scope);
         invalidateHydrateCache(scopeId);
         broadcastToScope(scopeId, {
             type: 'upsert_layer',
@@ -623,6 +639,12 @@ process.__AUTO_SAVE_INTERVAL__ = setInterval(() => {
             });
         }
     }
+
+    // Project-scoped state rides the same tick. Independent of scopes: a
+    // project can be dirty while every one of its slides is clean.
+    void persistDirtyProjectContexts().catch((err) => {
+        console.error('[Bus] Auto-save failed for project contexts:', err);
+    });
 }, AUTO_SAVE_INTERVAL);
 
 if (process.__REAPER_INTERVAL__) clearInterval(process.__REAPER_INTERVAL__);

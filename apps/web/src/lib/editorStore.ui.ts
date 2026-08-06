@@ -11,6 +11,9 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
         allocateId: helpers.allocateId,
         allocateZIndex: helpers.allocateZIndex,
 
+        setHoveredLayerId: (hoveredLayerId: string | null) =>
+            set((s) => (s.hoveredLayerId === hoveredLayerId ? s : { hoveredLayerId })),
+
         setStrokeColor: (strokeColor: string) => {
             set((s) => {
                 const newState: Partial<EditorState> = { strokeColor };
@@ -90,6 +93,29 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
                 return newState;
             });
             get().markDirty();
+        },
+
+        setRectangleCornerRadius: (radius: number) => {
+            if (!Number.isFinite(radius)) return;
+            const cornerRadius = Math.max(0, radius);
+            let didUpdateLayer = false;
+            set((s) => {
+                const newState: Partial<EditorState> = { rectangleCornerRadius: cornerRadius };
+                if (s.selectedLayerIds.length === 1) {
+                    const numericId = parseInt(s.selectedLayerIds[0]);
+                    const layer = s.layers.get(numericId);
+                    if (layer?.type === 'shape' && layer.shape === 'rectangle') {
+                        const updatedLayer = { ...layer, cornerRadius };
+                        const newLayers = new Map(s.layers);
+                        newLayers.set(numericId, updatedLayer);
+                        newState.layers = newLayers;
+                        didUpdateLayer = true;
+                        helpers.sendLayerUpdate(updatedLayer, 'editor:set_rectangle_corner_radius');
+                    }
+                }
+                return newState;
+            });
+            if (didUpdateLayer) get().markDirty();
         },
 
         setInsertionCenter: (x: number, y: number) =>

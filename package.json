@@ -8,6 +8,7 @@
             "tooling/*"
         ],
         "catalog": {
+            "@axe-core/playwright": "^4.12.1",
             "@base-ui/react": "^1.6.0",
             "@commitlint/cli": "^21.2.1",
             "@commitlint/config-conventional": "^21.2.0",
@@ -139,13 +140,19 @@
         "lint": "oxlint --type-aware --type-check",
         "lint:fix": "oxlint --type-aware --type-check --fix",
         "prepare": "husky",
-        "test:e2e": "bunx playwright test --config apps/web/playwright.config.ts",
+        "test": "bun run test:unit",
+        "test:unit": "bun test --conditions=production apps/web/src apps/web/tests/unit packages/db/src",
+        "test:e2e": "bunx playwright test --config apps/web/tests/playwright.config.ts",
+        "test:e2e:smoke": "bunx playwright test --config apps/web/tests/playwright.config.ts --grep-invert @visual",
+        "test:e2e:update": "bunx playwright test --config apps/web/tests/playwright.config.ts --grep @visual --update-snapshots",
         "test:e2e:full": "bun run tooling/testing/e2e-full.mjs",
         "test:harness:down": "bun run docker:test:down",
         "test:harness:prepare": "bun run tooling/testing/prepare.mjs",
         "test:harness:seed": "bun run tooling/testing/seed.mjs",
         "test:harness:up": "bun run docker:test:up",
         "test:integration": "bun test apps/web/tests/integration",
+        "test:visual": "bunx playwright test --config apps/web/tests/playwright.config.ts --grep @visual",
+        "test:all": "bun run test:unit && bun run test:e2e:full",
         "test:security": "bun run test:harness:prepare && bun run test:integration && bun run test:e2e",
         "ui": "bun run --filter=@repo/ui ui",
         "ui:web": "bun run --filter=@repo/web run ui"

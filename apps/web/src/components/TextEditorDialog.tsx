@@ -2,10 +2,10 @@
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/components/dialog';
 import { useRef } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
+import { resizeHeightFromTopEdge } from '~/lib/textLayerGeometry';
 
 import { CollaborativeEditor } from './editor/CollaborativeEditor';
 
@@ -16,16 +16,6 @@ interface TextEditorDialogProps {
 }
 
 export function TextEditorDialog({ layerId, open, onOpenChange }: TextEditorDialogProps) {
-    const textLayerMeta = useEditorStore(
-        useShallow((s) => {
-            const layer = s.layers.get(layerId);
-            if (!layer || layer.type !== 'text') return null;
-            return {
-                numericId: layer.numericId,
-                height: layer.config.height
-            };
-        })
-    );
     const latestMeasuredHeightRef = useRef<number | null>(null);
     const openSyncDoneRef = useRef(false);
     const commitMeasuredHeight = (
@@ -33,18 +23,25 @@ export function TextEditorDialog({ layerId, open, onOpenChange }: TextEditorDial
         measured?: number
     ) => {
         if (typeof window === 'undefined') return;
-        if (!textLayerMeta) return;
-        const nextHeight = Math.max(
-            40,
-            Math.round(measured ?? latestMeasuredHeightRef.current ?? textLayerMeta.height)
-        );
-        if (Math.abs(nextHeight - textLayerMeta.height) <= 1) return;
 
+        // Read through, rather than a subscription: the commit runs from a dialog
+        // callback and needs the config as it stands at that moment.
         const liveLayer = useEditorStore.getState().layers.get(layerId);
         if (!liveLayer || liveLayer.type !== 'text') return;
+
+        const contentHeight = Math.round(
+            measured ?? latestMeasuredHeightRef.current ?? liveLayer.config.height
+        );
+        // Auto-height only ever grows: a box shorter than its content clips it,
+        // but a box the author deliberately dragged taller is theirs to keep.
+        const nextHeight = Math.max(40, liveLayer.config.height, contentHeight);
+        if (Math.abs(nextHeight - liveLayer.config.height) <= 1) return;
+
+        // Resizing a centre-anchored box has to move the centre, or the text —
+        // which flows from the top — slides by half the growth.
         const updatedLayer = {
             ...liveLayer,
-            config: { ...liveLayer.config, height: nextHeight }
+            config: resizeHeightFromTopEdge(liveLayer.config, nextHeight)
         };
         useEditorStore.getState().updateLayerConfig(liveLayer.numericId, updatedLayer.config);
         const engine = EditorEngine.getInstance();

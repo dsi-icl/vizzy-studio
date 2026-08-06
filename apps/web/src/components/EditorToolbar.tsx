@@ -229,7 +229,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                             </div>
                         </PopoverContent>
                     </Popover>
-                    <TipButton tip="Add text layer" onClick={addTextLayer}>
+                    <TipButton
+                        tip="Add text layer"
+                        aria-label="Add text layer"
+                        onClick={addTextLayer}
+                    >
                         <TextTIcon />
                     </TipButton>
                     {/* TODO: Switcher to guarding by "tester" role once multi-role is implemented */}
@@ -270,6 +274,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     <Popover open={savePopoverOpen} onOpenChange={setSavePopoverOpen}>
                         <PopoverTrigger nativeButton={false} render={<div />}>
                             <TipButton
+                                aria-label="Save project"
                                 tip={
                                     saveStatus === 'dirty'
                                         ? 'Unsaved changes — click to save'
@@ -429,6 +434,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <TipButton
                             tip="Edit text"
+                            aria-label="Edit text"
                             onClick={() => startTextEditing(activeLayer.numericId)}
                         >
                             <PencilSimpleIcon />
@@ -440,7 +446,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                 {(isDrawing || isLine || isShape) && (
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
-                        <AppearanceToolbar />
+                        <AppearanceToolbar
+                            showRectangleCornerRadius={
+                                activeLayer?.type === 'shape' && activeLayer.shape === 'rectangle'
+                            }
+                        />
                     </>
                 )}
 

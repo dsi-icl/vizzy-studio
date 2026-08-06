@@ -1,7 +1,9 @@
 import { AutoFocusPlugin } from '@lexical/react/LexicalAutoFocusPlugin';
+import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { CircleNotchIcon } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -9,15 +11,52 @@ import { useEditorStore } from '~/lib/editorStore';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 
 import TextEditorToolbar from './TextEditorToolbar';
+import type { TextHydrationState } from './textHydrationState';
+
+/**
+ * How tall the document actually is, in layer pixels.
+ *
+ * `scrollHeight` cannot answer this: the content editable is stretched to fill
+ * the layer box, so it never reports less than the box it sits in. Block
+ * children are measured instead, through `offsetTop`/`offsetHeight` rather than
+ * bounding rects — the editor renders under a CSS scale that rects would fold
+ * into the number, while offsets stay in layout pixels.
+ */
+function measureDocumentHeight(editorInput: HTMLElement): number {
+    const styles = window.getComputedStyle(editorInput);
+    const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+
+    let contentBottom = 0;
+    let measuredAny = false;
+    for (const child of Array.from(editorInput.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        // `offsetTop` already carries the container's top padding and every
+        // preceding sibling's margin; only the trailing margin is left to add.
+        const marginBottom = Number.parseFloat(window.getComputedStyle(child).marginBottom) || 0;
+        contentBottom = Math.max(
+            contentBottom,
+            child.offsetTop + child.offsetHeight + marginBottom
+        );
+        measuredAny = true;
+    }
+
+    if (!measuredAny) return Math.round(editorInput.scrollHeight);
+    return Math.round(contentBottom + paddingBottom);
+}
 
 export function TextEditor({
     layerId,
-    onMeasuredHeight
+    onMeasuredHeight,
+    hydrationState,
+    onRetryHydration
 }: {
     layerId: number;
     onMeasuredHeight?: (height: number) => void;
+    hydrationState: TextHydrationState;
+    onRetryHydration: () => void;
 }) {
     const rootRef = useRef<HTMLDivElement | null>(null);
+    const [editor] = useLexicalComposerContext();
     const layerMetrics = useEditorStore(
         useShallow((s) => {
             const layer = s.layers.get(layerId);
@@ -79,21 +118,35 @@ export function TextEditor({
         if (!editorInput) return;
 
         const notify = () => {
-            const measured = Math.max(40, Math.round(editorInput.scrollHeight));
-            onMeasuredHeight?.(measured);
+            onMeasuredHeight?.(Math.max(40, measureDocumentHeight(editorInput)));
         };
 
         notify();
+        // Two triggers, because neither covers the other: the input is stretched
+        // to the box, so typing never resizes it and the observer stays silent,
+        // while a box that changes width reflows the document without an edit.
+        const unregisterUpdates = editor.registerUpdateListener(() => notify());
         const ro = new ResizeObserver(() => notify());
         ro.observe(editorInput);
-        return () => ro.disconnect();
-    }, [onMeasuredHeight, safeWidth, safeHeight]);
+        return () => {
+            unregisterUpdates();
+            ro.disconnect();
+        };
+    }, [editor, onMeasuredHeight, safeWidth, safeHeight]);
+
+    const isSynced = hydrationState === 'synced';
 
     return (
         <div ref={rootRef} className="flex flex-col gap-4">
-            <TextEditorToolbar />
+            {/* Formatting an unsynced document would be lost on hydrate. */}
             <div
-                className="overflow-auto rounded-lg border border-border bg-black"
+                className={isSynced ? undefined : 'pointer-events-none opacity-50'}
+                aria-disabled={!isSynced}
+            >
+                <TextEditorToolbar />
+            </div>
+            <div
+                className="relative overflow-auto rounded-lg border border-border bg-black"
                 style={{
                     width: `${viewportWidth}px`,
                     height: `${viewportHeight}px`
@@ -118,8 +171,35 @@ export function TextEditor({
                         }
                         ErrorBoundary={LexicalErrorBoundary}
                     />
-                    <AutoFocusPlugin />
+                    {/* Focusing before sync would place the caret in content
+                        that is about to be replaced. */}
+                    {isSynced ? <AutoFocusPlugin /> : null}
                 </div>
+                {!isSynced && (
+                    <div
+                        className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 text-sm text-white"
+                        aria-live="polite"
+                        aria-busy={hydrationState === 'connecting'}
+                    >
+                        {hydrationState === 'error' ? (
+                            <div className="flex flex-col items-center gap-3">
+                                <span>Text could not be loaded.</span>
+                                <button
+                                    type="button"
+                                    onClick={onRetryHydration}
+                                    className="rounded-md border border-white/30 px-3 py-1 text-xs hover:bg-white/10"
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <CircleNotchIcon className="size-4 animate-spin" />
+                                <span>Loading text…</span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );

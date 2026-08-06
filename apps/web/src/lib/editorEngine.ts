@@ -7,6 +7,15 @@ import { BusClient } from './busClient';
 import { type ConnectionStatus } from './reconnectingWs';
 import { GSMessageSchema, type GSMessage, type Layer } from './types';
 
+/** How often the local pointer is put on the wire while it keeps moving. */
+export const POINTER_BROADCAST_INTERVAL_MS = 100;
+/**
+ * Repeat rate for a pointer that is resting on the stage. Movement alone would
+ * stop the throttle firing, and peers would age out someone who is simply
+ * holding still over the thing they are talking about.
+ */
+export const POINTER_HEARTBEAT_INTERVAL_MS = 1000;
+
 type SaveResponseCallback = (data: Extract<GSMessage, { type: 'stage_save_response' }>) => void;
 type ServerMessageCallback = (data: GSMessage) => void;
 type BinaryMessageCallback = (
@@ -23,17 +32,26 @@ type PlaybackCallback = (
     id: number,
     playback: Extract<Layer, { type: 'video' }>['playback']
 ) => void;
+type PointerCallback = (data: Extract<GSMessage, { type: 'pointer' }>) => void;
 type ConnectionStatusCallback = (status: ConnectionStatus) => void;
 type BindOverrideResultCallback = (
     data: Extract<GSMessage, { type: 'bind_override_result' }>
 ) => void;
 
+/** How long to wait for the server to confirm a layer reached the commit. */
+const LAYER_CREATE_ACK_TIMEOUT_MS = 15_000;
+
 export class EditorEngine {
     private bus: BusClient;
+    private pendingLayerCreates = new Map<
+        string,
+        { numericId: number; timer: ReturnType<typeof setTimeout> }
+    >();
     private messageCallbacks = new Set<ServerMessageCallback>();
     private binaryCallbacks = new Set<BinaryMessageCallback>();
     private playbackCallbacks = new Set<PlaybackCallback>();
     private playbackStates = new Map<number, Extract<Layer, { type: 'video' }>['playback']>();
+    private pointerCallbacks = new Set<PointerCallback>();
     private saveCallbacks = new Set<SaveResponseCallback>();
     private connectionStatusCallbacks = new Set<ConnectionStatusCallback>();
     private bindOverrideResultCallbacks = new Set<BindOverrideResultCallback>();
@@ -159,6 +177,13 @@ export class EditorEngine {
                 return;
             }
 
+            if (data.type === 'pointer') {
+                // Kept off the generic channel: subscribing there consumes any
+                // buffered hydrate, and presence must never disturb loading.
+                this.pointerCallbacks.forEach((cb) => cb(data));
+                return;
+            }
+
             if (data.type === 'stage_save_response') {
                 this.saveCallbacks.forEach((cb) => cb(data));
                 return;
@@ -171,6 +196,11 @@ export class EditorEngine {
 
             if (data.type === 'auth_denied') {
                 toast.error('Session expired. Reconnect after signing in again.');
+                return;
+            }
+
+            if (data.type === 'layer_create_response') {
+                this.settleLayerCreate(data);
                 return;
             }
 
@@ -190,6 +220,49 @@ export class EditorEngine {
         }
     }
 
+    /**
+     * Resolve a pending layer creation. A failed write means the layer exists
+     * only in this browser, so we tell the user and reload the slide rather
+     * than let them keep editing something that was never saved.
+     */
+    private settleLayerCreate(
+        response: Extract<GSMessage, { type: 'layer_create_response' }>
+    ): void {
+        const pending = this.pendingLayerCreates.get(response.createRequestId);
+        if (pending) {
+            clearTimeout(pending.timer);
+            this.pendingLayerCreates.delete(response.createRequestId);
+        }
+        if (response.success) return;
+
+        toast.error(
+            response.error ??
+                `Layer ${response.numericId} was not saved. Reloading the slide to avoid losing work.`
+        );
+        this.sendJSON({ type: 'rehydrate_please' });
+    }
+
+    /** Track a layer creation until the server confirms it reached the commit. */
+    private trackLayerCreate(createRequestId: string, numericId: number): void {
+        const timer = setTimeout(() => {
+            this.failLayerCreate(
+                createRequestId,
+                `Layer ${numericId} was not confirmed as saved. Reloading the slide to avoid losing work.`
+            );
+        }, LAYER_CREATE_ACK_TIMEOUT_MS);
+        this.pendingLayerCreates.set(createRequestId, { numericId, timer });
+    }
+
+    /** Abandon a pending creation and recover the slide from the server. */
+    private failLayerCreate(createRequestId: string, message: string): void {
+        const pending = this.pendingLayerCreates.get(createRequestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pendingLayerCreates.delete(createRequestId);
+        toast.error(message);
+        this.sendJSON({ type: 'rehydrate_please' });
+    }
+
     public static getInstance(): EditorEngine {
         if (typeof window === 'undefined') {
             throw new Error('EditorEngine can only be used in the browser');
@@ -203,9 +276,15 @@ export class EditorEngine {
     public destroy() {
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
+        this.stopPointerBroadcast();
+        // Otherwise these fire after teardown and toast about a slide the user
+        // has already navigated away from.
+        for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
+        this.pendingLayerCreates.clear();
         this.bus.destroy();
         this.messageCallbacks.clear();
         this.binaryCallbacks.clear();
+        this.pointerCallbacks.clear();
         this.playbackCallbacks.clear();
         this.connectionStatusCallbacks.clear();
         this.bindOverrideResultCallbacks.clear();
@@ -272,6 +351,14 @@ export class EditorEngine {
         this.binaryCallbacks.add(cb);
         return () => {
             this.binaryCallbacks.delete(cb);
+        };
+    }
+
+    /** Subscribe to co-editor pointer positions for the current slide. */
+    public subscribeToPointer(cb: PointerCallback) {
+        this.pointerCallbacks.add(cb);
+        return () => {
+            this.pointerCallbacks.delete(cb);
         };
     }
 
@@ -371,6 +458,43 @@ export class EditorEngine {
         this.sendJSON({ type: 'stage_dirty' });
     }
 
+    // Trailing edge matters: without it, the position you stop on is never sent
+    // and peers keep pointing at wherever the last tick happened to land.
+    private sendPointerThrottled = throttle(
+        (x: number, y: number) => {
+            this.sendJSON({ type: 'pointer', x, y });
+        },
+        { wait: POINTER_BROADCAST_INTERVAL_MS }
+    );
+
+    private lastPointer: { x: number; y: number } | null = null;
+    private pointerHeartbeat: ReturnType<typeof setInterval> | null = null;
+
+    /** Broadcast the local stage pointer to co-editors on the same slide. */
+    public sendPointer(x: number, y: number) {
+        if (!this.currentSlideId) return;
+        this.lastPointer = { x, y };
+        this.sendPointerThrottled(x, y);
+
+        if (this.pointerHeartbeat) return;
+        this.pointerHeartbeat = setInterval(() => {
+            if (!this.lastPointer || !this.currentSlideId) return;
+            this.sendPointerThrottled(this.lastPointer.x, this.lastPointer.y);
+        }, POINTER_HEARTBEAT_INTERVAL_MS);
+    }
+
+    /**
+     * Stop advertising a pointer position, e.g. once it leaves the stage.
+     * Peers then simply age the cursor out; no departure message is needed.
+     */
+    public stopPointerBroadcast() {
+        if (this.pointerHeartbeat) {
+            clearInterval(this.pointerHeartbeat);
+            this.pointerHeartbeat = null;
+        }
+        this.lastPointer = null;
+    }
+
     public subscribeToSaveResponse(cb: SaveResponseCallback) {
         this.saveCallbacks.add(cb);
         return () => {
@@ -407,15 +531,45 @@ export class EditorEngine {
         return `bind_${Date.now()}_${rand}`;
     }
 
-    public sendJSON = (data: GSMessage) => {
+    /**
+     * Send an upsert for a newly created layer and wait for the server to
+     * confirm it reached the commit. Use this instead of sendJSON whenever a
+     * layer is created, so a failed write cannot pass silently.
+     */
+    public createLayer = (origin: string, layer: Layer): void => {
+        const createRequestId = `create_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        this.trackLayerCreate(createRequestId, layer.numericId);
+
+        const message = {
+            type: 'upsert_layer',
+            origin,
+            layer,
+            createRequestId
+        } as GSMessage;
+
+        if (this.sendJSON(message)) return;
+
+        // Socket not ready: wait for a reconnect rather than dropping the
+        // message and letting the acknowledgement time out.
+        void this.bus.waitUntilReady().then((ready) => {
+            if (!this.pendingLayerCreates.has(createRequestId)) return;
+            if (ready && this.sendJSON(message)) return;
+            this.failLayerCreate(
+                createRequestId,
+                `Layer ${layer.numericId} could not be sent. Reloading the slide to avoid losing work.`
+            );
+        });
+    };
+
+    /** Returns whether the message reached the socket. */
+    public sendJSON = (data: GSMessage): boolean => {
         // Protocol discipline:
         // Editor upsert_layer for video should never carry playback timeline fields.
         if (data.type === 'upsert_layer' && data.layer.type === 'video') {
             const { playback: _playback, ...layerWithoutPlayback } = data.layer;
-            this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
-            return;
+            return this.bus.sendRaw(JSON.stringify({ ...data, layer: layerWithoutPlayback }));
         }
-        this.bus.sendJSON(data);
+        return this.bus.sendJSON(data);
     };
 
     public broadcastBinaryMove = throttle(

@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport } from '~/lib/fitSizeToViewport';
+import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $deleteAsset } from '~/server/projects.fns';
 
@@ -100,8 +101,14 @@ export function AssetLibraryPanel({
             anchorServerTime: engine.getServerTime()
         };
 
+        const layerName = makeUniqueMediaLayerName(
+            asset.name,
+            useEditorStore.getState().layers.values()
+        );
+
         const layerBase = {
             numericId,
+            name: layerName,
             url: `/api/assets/${asset.url}`,
             config,
             isUploading: false,

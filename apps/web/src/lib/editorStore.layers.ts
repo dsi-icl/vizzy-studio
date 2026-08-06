@@ -1,7 +1,14 @@
+import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
+import {
+    computeBackgroundFloorUpdates,
+    computeBringToFrontUpdates,
+    computeSendToBackUpdates
+} from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
+import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
 type SliceSet = (
@@ -9,7 +16,37 @@ type SliceSet = (
 ) => void;
 type SliceGet = () => EditorState;
 
+const toNumericIds = (selectedLayerIds: string[]) =>
+    selectedLayerIds.map((id) => Number.parseInt(id, 10)).filter((id) => Number.isFinite(id));
+
 export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHelpers) {
+    /**
+     * Commit a batch of re-stacked layers. Broadcasts directly rather than through
+     * helpers.sendLayerUpdate, which is throttled and would collapse a batch into a
+     * single message.
+     */
+    const applyLayerUpdates = (updatedLayers: LayerWithEditorState[], origin: string) => {
+        if (!updatedLayers.length) return;
+
+        set((s) => {
+            const newLayers = new Map(s.layers);
+            for (const layer of updatedLayers) newLayers.set(layer.numericId, layer);
+            return { layers: newLayers };
+        });
+
+        const highestZIndex = updatedLayers.reduce(
+            (max, l) => Math.max(max, l.config.zIndex),
+            Number.NEGATIVE_INFINITY
+        );
+        if (highestZIndex >= helpers.peekNextZIndex()) helpers.setNextZIndex(highestZIndex + 1);
+
+        const engine = EditorEngine.getInstance();
+        for (const layer of updatedLayers) {
+            engine.sendJSON({ type: 'upsert_layer', origin, layer });
+        }
+        get().markDirty();
+    };
+
     return {
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
@@ -31,7 +68,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     mergedLayers.reduce((max, l) => Math.max(max, l.config.zIndex), 0) + 5
                 );
 
-                return { layers: new Map(mergedLayers.map((l) => [l.numericId, l])) };
+                return {
+                    layers: new Map(mergedLayers.map((l) => [l.numericId, l])),
+                    hoveredLayerId: null
+                };
             });
         },
 
@@ -65,7 +105,11 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 newLayers.delete(numericId);
                 return {
                     layers: newLayers,
-                    selectedLayerIds: s.selectedLayerIds.filter((id) => id !== numericId.toString())
+                    selectedLayerIds: s.selectedLayerIds.filter(
+                        (id) => id !== numericId.toString()
+                    ),
+                    hoveredLayerId:
+                        s.hoveredLayerId === numericId.toString() ? null : s.hoveredLayerId
                 };
             });
             const engine = EditorEngine.getInstance();
@@ -83,9 +127,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             }),
 
         updateLayerConfig: (numericId: number, config: Layer['config']) => {
+            const layer = get().layers.get(numericId);
+            if (!layer || layer.config.locked) return;
             set((s) => {
-                const layer = s.layers.get(numericId);
-                if (!layer) return s;
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, { ...layer, config });
                 return { layers: newLayers };
@@ -114,12 +158,46 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
+        toggleLayerLock: (numericId: number) => {
+            const layer = get().layers.get(numericId);
+            if (!layer) return;
+            const locked = !layer.config.locked;
+            const updatedLayer = {
+                ...layer,
+                config: { ...layer.config, locked }
+            };
+            set((s) => {
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, updatedLayer);
+                return {
+                    layers: newLayers,
+                    editingTextLayerId:
+                        locked && s.editingTextLayerId === numericId ? null : s.editingTextLayerId
+                };
+            });
+            const engine = EditorEngine.getInstance();
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:toggle_layer_lock',
+                layer: updatedLayer
+            });
+            get().markDirty();
+        },
+
         deselectAllLayers: () => {
             set(() => ({ selectedLayerIds: [] }));
         },
 
         toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => {
             const { layers, lastSelectedLayerId } = get();
+            const selectedLayer = layers.get(Number.parseInt(id, 10));
+            if (!selectedLayer) return;
+            if (selectedLayer.config.locked && (isShiftClick || isCtrlClick)) return;
+
+            const isUnlockedLayerId = (layerId: string) => {
+                const layer = layers.get(Number.parseInt(layerId, 10));
+                return Boolean(layer && !layer.config.locked);
+            };
             const layersArray = Array.from(layers.values());
             if (isShiftClick && lastSelectedLayerId) {
                 const lastIndex = layersArray.findIndex(
@@ -133,14 +211,16 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 set((s) => ({
                     selectedLayerIds: [
                         ...new Set([
-                            ...s.selectedLayerIds,
-                            ...inBetween.map((l) => l.numericId.toString())
+                            ...s.selectedLayerIds.filter(isUnlockedLayerId),
+                            ...inBetween
+                                .filter((layer) => !layer.config.locked)
+                                .map((layer) => layer.numericId.toString())
                         ])
                     ]
                 }));
             } else if (isCtrlClick) {
                 set((s) => {
-                    const newSelection = [...s.selectedLayerIds];
+                    const newSelection = s.selectedLayerIds.filter(isUnlockedLayerId);
                     const index = newSelection.indexOf(id);
                     if (index > -1) {
                         newSelection.splice(index, 1);
@@ -150,7 +230,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     return { selectedLayerIds: newSelection };
                 });
             } else {
-                const selectedLayer = layers.get(parseInt(id));
                 const newState: Partial<EditorState> = { selectedLayerIds: [id] };
                 if (selectedLayer?.type === 'line') {
                     newState.strokeColor = selectedLayer.strokeColor;
@@ -162,16 +241,95 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     newState.strokeDash = selectedLayer.strokeDash;
                     newState.strokeWidth = selectedLayer.strokeWidth;
                     newState.shapeFill = selectedLayer.fill;
+                    if (selectedLayer.shape === 'rectangle') {
+                        newState.rectangleCornerRadius = selectedLayer.cornerRadius ?? 0;
+                    }
                 }
                 set(newState);
             }
             set({ lastSelectedLayerId: id });
         },
 
+        copySelectedLayers: () => {
+            const state = get();
+            if (!state.projectId) return 0;
+            const selectedLayers = state.selectedLayerIds
+                .map((id) => Number.parseInt(id, 10))
+                .filter((id) => Number.isFinite(id))
+                .map((id) => state.layers.get(id))
+                .filter((layer): layer is LayerWithEditorState => Boolean(layer));
+            const copiedLayers = snapshotCopyableLayers(selectedLayers);
+            if (copiedLayers.length === 0) return 0;
+
+            set({
+                layerClipboard: {
+                    projectId: state.projectId,
+                    layers: copiedLayers,
+                    pasteCount: 0
+                }
+            });
+            return copiedLayers.length;
+        },
+
+        copyLayer: (numericId: number) => {
+            const state = get();
+            if (!state.projectId) return false;
+            const layer = state.layers.get(numericId);
+            if (!layer) return false;
+            const copiedLayers = snapshotCopyableLayers([layer]);
+            if (copiedLayers.length === 0) return false;
+
+            set({
+                layerClipboard: {
+                    projectId: state.projectId,
+                    layers: copiedLayers,
+                    pasteCount: 0
+                }
+            });
+            return true;
+        },
+
+        pasteLayers: () => {
+            const state = get();
+            const clipboard = state.layerClipboard;
+            if (!state.projectId || !clipboard || clipboard.projectId !== state.projectId)
+                return [];
+
+            const pasteCount = clipboard.pasteCount + 1;
+            const pastedLayers = createPastedLayers(
+                clipboard.layers,
+                pasteCount,
+                helpers.allocateId,
+                helpers.allocateZIndex
+            );
+            if (pastedLayers.length === 0) return [];
+
+            const selectedLayerIds = pastedLayers.map((layer) => layer.numericId.toString());
+            set((current) => {
+                const layers = new Map(current.layers);
+                for (const layer of pastedLayers) layers.set(layer.numericId, layer);
+                return {
+                    layers,
+                    selectedLayerIds,
+                    lastSelectedLayerId: selectedLayerIds.at(-1) ?? null,
+                    editingTextLayerId: null,
+                    layerClipboard: { ...clipboard, pasteCount }
+                };
+            });
+
+            const engine = EditorEngine.getInstance();
+            for (const layer of pastedLayers) {
+                engine.createLayer('editor:paste_layers', layer);
+            }
+            get().markDirty();
+            return selectedLayerIds;
+        },
+
         deleteSelectedLayer: () => {
-            const { selectedLayerIds } = get();
+            const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
             const numericId = parseInt(selectedLayerIds[0]);
+            if (layers.get(numericId)?.config.locked) return;
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'delete_layer', numericId });
             set((s) => {
@@ -184,47 +342,29 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
         bringToFront: () => {
             const s = get();
-            if (!s.selectedLayerIds.length) return;
-            const numericId = parseInt(s.selectedLayerIds[0]);
-            const layer = s.layers.get(numericId);
-            if (!layer) return;
-
-            const nextZIndex = helpers.peekNextZIndex();
-            const alreadyOnTop = layer.config.zIndex === nextZIndex;
-            const newZIndex = alreadyOnTop ? layer.config.zIndex : nextZIndex;
-            if (!alreadyOnTop) helpers.setNextZIndex(nextZIndex + 1);
-            const updatedConfig = { ...layer.config, zIndex: newZIndex };
-            const updatedLayer = { ...layer, config: updatedConfig };
-
-            const newLayers = new Map(s.layers);
-            newLayers.set(numericId, updatedLayer);
-            set({ layers: newLayers });
-
-            helpers.sendLayerUpdate(updatedLayer, 'editor:bring_to_front');
-            get().markDirty();
+            applyLayerUpdates(
+                computeBringToFrontUpdates(
+                    s.layers.values(),
+                    toNumericIds(s.selectedLayerIds).filter(
+                        (id) => !s.layers.get(id)?.config.locked
+                    ),
+                    helpers.peekNextZIndex()
+                ),
+                'editor:bring_to_front'
+            );
         },
 
         sendToBack: () => {
             const s = get();
-            if (!s.selectedLayerIds.length) return;
-            const numericId = parseInt(s.selectedLayerIds[0]);
-            const layer = s.layers.get(numericId);
-            if (!layer) return;
-
-            const minZIndex = Array.from(s.layers.values()).reduce(
-                (min, l) => Math.min(min, l.config.zIndex),
-                Infinity
+            applyLayerUpdates(
+                computeSendToBackUpdates(
+                    s.layers.values(),
+                    toNumericIds(s.selectedLayerIds).filter(
+                        (id) => !s.layers.get(id)?.config.locked
+                    )
+                ),
+                'editor:send_to_back'
             );
-            const newZIndex = layer.config.zIndex === minZIndex ? minZIndex : minZIndex - 1;
-            const updatedConfig = { ...layer.config, zIndex: newZIndex };
-            const updatedLayer = { ...layer, config: updatedConfig };
-
-            const newLayers = new Map(s.layers);
-            newLayers.set(numericId, updatedLayer);
-            set({ layers: newLayers });
-
-            helpers.sendLayerUpdate(updatedLayer, 'editor:send_to_back');
-            get().markDirty();
         },
 
         alignSelectedLayers: (
@@ -270,6 +410,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const updatedLayers: LayerWithEditorState[] = [];
 
             for (const box of boxes) {
+                if (box.layer.config.locked) continue;
                 let newCx = box.layer.config.cx;
                 let newCy = box.layer.config.cy;
 
@@ -319,8 +460,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const numericId = allocateId();
             const zIndex = allocateZIndex();
             const fitted = fitSizeToViewport(
-                1920,
-                1080,
+                TEXT_DEFAULT_LAYER_WIDTH_PX,
+                TEXT_DEFAULT_LAYER_HEIGHT_PX,
                 insertionViewport.width,
                 insertionViewport.height
             );
@@ -348,11 +489,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_text_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_text_layer', newLayer);
             get().markDirty();
         },
 
@@ -396,11 +533,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_map_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_map_layer', newLayer);
             get().markDirty();
         },
 
@@ -440,11 +573,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_web_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_web_layer', newLayer);
             get().markDirty();
         },
 
@@ -485,7 +614,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 fill: 'transparent',
                 strokeColor,
                 strokeDash,
-                strokeWidth
+                strokeWidth,
+                cornerRadius: shape === 'rectangle' ? get().rectangleCornerRadius : 0
             };
 
             set((s) => {
@@ -494,11 +624,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_shape_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_shape_layer', newLayer);
             get().markDirty();
         },
 
@@ -535,18 +661,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 speedFactor: 1
             };
 
-            set((s) => {
-                const newLayers = new Map(s.layers);
-                newLayers.set(numericId, newLayer);
-                return { layers: newLayers };
-            });
-            const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_background_layer',
-                layer: newLayer
-            });
-            get().markDirty();
+            // Nothing may share or sit below the new floor — a deck reordered while
+            // it had no background leaves its bottom layer at zIndex 0.
+            const liftedLayers = computeBackgroundFloorUpdates(
+                layers.values(),
+                newLayer.config.zIndex
+            );
+            applyLayerUpdates([...liftedLayers, newLayer], 'editor:add_background_layer');
         },
 
         addLineLayer: (line: Array<number>) => {
@@ -605,18 +726,14 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers, selectedLayerIds: [numericId.toString()] };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:add_line_layer',
-                layer: newLayer
-            });
+            engine.createLayer('editor:add_line_layer', newLayer);
             get().markDirty();
         },
 
         clearStage: () => {
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'clear_stage' });
-            set({ layers: new Map(), selectedLayerIds: [] });
+            set({ layers: new Map(), selectedLayerIds: [], hoveredLayerId: null });
             get().markDirty();
         },
 

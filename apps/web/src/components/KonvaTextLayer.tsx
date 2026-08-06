@@ -13,6 +13,7 @@ export function KonvaTextLayer({
     layer,
     isDrawing,
     isPinching,
+    isLocked,
     opacity,
     onSelect,
     onDblClick,
@@ -22,6 +23,7 @@ export function KonvaTextLayer({
     layer: Extract<LayerWithEditorState, { type: 'text' }>;
     isDrawing: boolean;
     isPinching: boolean;
+    isLocked: boolean;
     opacity?: number;
     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => void;
     onDblClick: () => void;
@@ -33,18 +35,23 @@ export function KonvaTextLayer({
     const renderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
+        let cancelled = false;
         // Debounce re-renders while typing
         if (renderTimer.current) clearTimeout(renderTimer.current);
         renderTimer.current = setTimeout(() => {
             textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
                 .then((rendered) => {
+                    if (cancelled) return;
                     setImg(rendered);
                     imageRef.current?.getLayer()?.batchDraw();
                 })
-                .catch(() => setImg(null));
+                .catch(() => {
+                    if (!cancelled) setImg(null);
+                });
         }, 100);
 
         return () => {
+            cancelled = true;
             if (renderTimer.current) clearTimeout(renderTimer.current);
         };
     }, [layer.textHtml, layer.config.width, layer.config.height]);
@@ -69,7 +76,7 @@ export function KonvaTextLayer({
             rotation={layer.config.rotation}
             opacity={opacity}
             listening={!isDrawing}
-            draggable={!isDrawing && !isPinching}
+            draggable={!isDrawing && !isPinching && !isLocked}
             onClick={onSelect}
             onTap={onSelect}
             onDblClick={onDblClick}

@@ -2,11 +2,14 @@ import {
     BugBeetleIcon,
     EyeIcon,
     EyeSlashIcon,
+    LockIcon,
+    LockOpenIcon,
     FilmSlateIcon,
     ImageIcon,
     MapTrifoldIcon,
     TextTIcon,
     GraphIcon,
+    CopyIcon,
     ScribbleIcon,
     TrashIcon,
     RectangleIcon,
@@ -19,7 +22,7 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import React from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
-import { LayerWithEditorState } from '~/lib/types';
+import type { LayerWithEditorState } from '~/lib/types';
 
 interface LayerItemProps {
     layer: LayerWithEditorState;
@@ -28,8 +31,11 @@ interface LayerItemProps {
 
 export function LayerItem({ layer, isSelected }: LayerItemProps) {
     const removeLayer = useEditorStore((s) => s.removeLayer);
+    const copyLayer = useEditorStore((s) => s.copyLayer);
     const toggleLayerVisibility = useEditorStore((s) => s.toggleLayerVisibility);
+    const toggleLayerLock = useEditorStore((s) => s.toggleLayerLock);
     const isHidden = !layer.config.visible;
+    const isLocked = Boolean(layer.config.locked);
 
     const getLayerIcon = (type: LayerWithEditorState['type']): React.ReactNode => {
         switch (type) {
@@ -69,9 +75,9 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
             case 'text':
                 return layer.textHtml.replace(/<[^>]*>/g, '').slice(0, 40) || 'Text';
             case 'image':
-                return 'Image';
+                return layer.name?.trim() || 'Image';
             case 'video':
-                return 'Video';
+                return layer.name?.trim() || 'Video';
             case 'graph':
                 return 'Graph';
             case 'map':
@@ -110,6 +116,33 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
                 <span>{getLayerName(layer)}</span>
             </div>
             <div className="flex items-center gap-1">
+                <TipButton
+                    tip={layer.isUploading ? 'Wait for upload to finish' : 'Copy layer (Ctrl+C)'}
+                    variant="ghost"
+                    disabled={layer.isUploading}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        copyLayer(layer.numericId);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100"
+                >
+                    <CopyIcon />
+                </TipButton>
+                <TipButton
+                    tip={isLocked ? 'Unlock layer' : 'Lock layer'}
+                    variant="ghost"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        toggleLayerLock(layer.numericId);
+                    }}
+                    className={
+                        isLocked
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100'
+                    }
+                >
+                    {isLocked ? <LockIcon /> : <LockOpenIcon />}
+                </TipButton>
                 <TipButton
                     tip={isHidden ? 'Show layer' : 'Hide layer'}
                     variant="ghost"

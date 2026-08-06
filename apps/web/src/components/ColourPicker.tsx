@@ -8,32 +8,45 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
 import { HexAlphaColorPicker } from 'react-colorful';
 
+import { EditorEngine } from '~/lib/editorEngine';
+import { isExplicitCommitKey, normalizeHexColor } from '~/lib/explicitInputCommit';
+
+import { RecentColourSwatches } from './RecentColourSwatches';
+
 interface ColorPickerProps extends PropsWithChildren {
     value: string;
     tip?: string;
     variant?: Parameters<typeof TipButton>[0]['variant'];
     onChange: (value: string) => void;
-}
-
-function normalizeHexColor(raw: string, lengths: number[]): string | null {
-    const trimmed = raw.trim();
-    if (!trimmed.startsWith('#')) return null;
-    const hex = trimmed.slice(1);
-    if (!lengths.includes(hex.length)) return null;
-    if (!/^[0-9a-fA-F]+$/.test(hex)) return null;
-    return `#${hex.toLowerCase()}`;
+    onTextCommit?: (value: string) => void;
+    onTextCancel?: () => void;
+    onTextInputFocus?: () => void;
+    onTextInputBlur?: () => void;
+    liveTextChange?: boolean;
 }
 
 function normalizeIncomingColor(raw: string): string {
-    return normalizeHexColor(raw, [3, 4, 6, 8]) ?? normalizeHexColor(raw, [6, 8]) ?? '#000000ff';
+    return normalizeHexColor(raw) ?? '#000000ff';
 }
 
-export function ColorPicker({ value, onChange }: ColorPickerProps) {
+export function ColorPicker({
+    value,
+    onChange,
+    onTextCommit,
+    onTextCancel,
+    onTextInputFocus,
+    onTextInputBlur,
+    liveTextChange = true
+}: ColorPickerProps) {
     const [hasEyeDropper, setHasEyeDropper] = useState(false);
     const [localValue, setLocalValue] = useState(() => normalizeIncomingColor(value));
     const [inputValue, setInputValue] = useState(() => normalizeIncomingColor(value));
     const [isTyping, setIsTyping] = useState(false);
+    const [isInputInvalid, setIsInputInvalid] = useState(false);
     const lastUserEditAtRef = useRef(0);
+    const lastTypingLiveCommitRef = useRef<string | null>(null);
+    const typingStartValueRef = useRef(localValue);
+    const pendingCommitKeyRef = useRef<'Enter' | 'Tab' | null>(null);
     const typingLiveCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
@@ -51,6 +64,29 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
         if (normalized !== inputValue) setInputValue(normalized);
     }, [value, localValue, inputValue, isTyping]);
 
+    /**
+     * Remember only the colour the picker was left on.
+     *
+     * onChange fires on every frame of a drag, and even a debounce would record
+     * each pause while the user hunts for a shade — filling the palette with
+     * near-misses and pushing out the colours they actually chose. So the
+     * candidate is held here and committed when the picker unmounts, which is
+     * what closing either popover does.
+     */
+    const pendingRecordRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        return () => {
+            const colour = pendingRecordRef.current;
+            if (!colour) return;
+            try {
+                EditorEngine.getInstance().sendJSON({ type: 'record_colour', colour });
+            } catch {
+                // No engine outside an editor session; the palette is optional.
+            }
+        };
+    }, []);
+
     const commitColor = useCallback(
         (next: string, options?: { syncInput?: boolean }) => {
             const syncInput = options?.syncInput ?? true;
@@ -58,6 +94,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
             setLocalValue(next);
             if (syncInput) setInputValue(next);
             onChange(next);
+            pendingRecordRef.current = next;
         },
         [onChange]
     );
@@ -67,32 +104,56 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
             // While typing, only emit upstream for live propagation.
             // Avoid local picker state updates that can cause focus churn.
             lastUserEditAtRef.current = Date.now();
+            lastTypingLiveCommitRef.current = next;
             onChange(next);
+            pendingRecordRef.current = next;
         },
         [onChange]
     );
 
+    const clearTypingLiveCommit = useCallback(() => {
+        if (!typingLiveCommitTimerRef.current) return;
+        clearTimeout(typingLiveCommitTimerRef.current);
+        typingLiveCommitTimerRef.current = null;
+    }, []);
+
     const queueTypingLiveCommit = useCallback(
         (next: string) => {
-            if (typingLiveCommitTimerRef.current) {
-                clearTimeout(typingLiveCommitTimerRef.current);
-            }
+            clearTypingLiveCommit();
             typingLiveCommitTimerRef.current = setTimeout(() => {
                 commitColorFromTyping(next);
                 typingLiveCommitTimerRef.current = null;
             }, 120);
         },
-        [commitColorFromTyping]
+        [clearTypingLiveCommit, commitColorFromTyping]
     );
 
     useEffect(
         () => () => {
-            if (typingLiveCommitTimerRef.current) {
-                clearTimeout(typingLiveCommitTimerRef.current);
-                typingLiveCommitTimerRef.current = null;
-            }
+            clearTypingLiveCommit();
         },
-        []
+        [clearTypingLiveCommit]
+    );
+
+    const commitTypedColor = useCallback(
+        (next: string) => {
+            clearTypingLiveCommit();
+            lastUserEditAtRef.current = Date.now();
+            setLocalValue(next);
+            setInputValue(next);
+            setIsTyping(false);
+            setIsInputInvalid(false);
+
+            if (lastTypingLiveCommitRef.current !== next) {
+                onChange(next);
+            }
+            lastTypingLiveCommitRef.current = null;
+            // Typing a hex and committing is a primary way to pick a colour, and
+            // this path bypasses commitColor entirely.
+            pendingRecordRef.current = next;
+            onTextCommit?.(next);
+        },
+        [clearTypingLiveCommit, onChange, onTextCommit]
     );
 
     const handleEyeDropper = async () => {
@@ -116,38 +177,79 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
                 <Input
                     maxLength={9}
                     value={inputValue}
-                    onFocus={() => setIsTyping(true)}
+                    aria-invalid={isInputInvalid || undefined}
+                    aria-label="Hex colour"
+                    onFocus={() => {
+                        typingStartValueRef.current = localValue;
+                        lastTypingLiveCommitRef.current = null;
+                        pendingCommitKeyRef.current = null;
+                        setIsTyping(true);
+                        setIsInputInvalid(false);
+                        onTextInputFocus?.();
+                    }}
                     onBlur={() => {
-                        if (typingLiveCommitTimerRef.current) {
-                            clearTimeout(typingLiveCommitTimerRef.current);
-                            typingLiveCommitTimerRef.current = null;
-                        }
+                        clearTypingLiveCommit();
+                        pendingCommitKeyRef.current = null;
                         setIsTyping(false);
-                        const normalized = normalizeHexColor(inputValue, [3, 4, 6, 8]);
-                        if (normalized) {
-                            commitColor(normalized);
-                        } else {
+                        setIsInputInvalid(false);
+                        if (!normalizeHexColor(inputValue)) {
                             setInputValue(localValue);
                         }
+                        onTextInputBlur?.();
                     }}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            (e.currentTarget as HTMLInputElement).blur();
+                        if (isExplicitCommitKey(e.key)) {
+                            const normalized = normalizeHexColor(e.currentTarget.value);
+                            e.preventDefault();
+                            if (!normalized) {
+                                pendingCommitKeyRef.current = null;
+                                setIsInputInvalid(true);
+                                return;
+                            }
+
+                            if (!e.repeat) pendingCommitKeyRef.current = e.key;
                         } else if (e.key === 'Escape') {
-                            setInputValue(localValue);
-                            (e.currentTarget as HTMLInputElement).blur();
+                            e.preventDefault();
+                            clearTypingLiveCommit();
+                            pendingCommitKeyRef.current = null;
+                            const initialValue = typingStartValueRef.current;
+                            setLocalValue(initialValue);
+                            setInputValue(initialValue);
+                            setIsTyping(false);
+                            setIsInputInvalid(false);
+                            if (
+                                lastTypingLiveCommitRef.current &&
+                                lastTypingLiveCommitRef.current !== initialValue
+                            ) {
+                                onChange(initialValue);
+                            }
+                            lastTypingLiveCommitRef.current = null;
+                            onTextCancel?.();
                         }
+                    }}
+                    onKeyUp={(e) => {
+                        if (!isExplicitCommitKey(e.key) || pendingCommitKeyRef.current !== e.key) {
+                            return;
+                        }
+
+                        pendingCommitKeyRef.current = null;
+                        const normalized = normalizeHexColor(e.currentTarget.value);
+                        if (normalized) commitTypedColor(normalized);
                     }}
                     onChange={(e) => {
                         const next = e.target.value;
                         setInputValue(next);
-                        const normalized = normalizeHexColor(next, [3, 4, 6, 8]);
+                        setIsInputInvalid(false);
+                        const normalized = normalizeHexColor(next);
                         if (normalized) {
-                            // Commit live while preserving text-input focus/caret.
-                            queueTypingLiveCommit(normalized);
-                        } else if (typingLiveCommitTimerRef.current) {
-                            clearTimeout(typingLiveCommitTimerRef.current);
-                            typingLiveCommitTimerRef.current = null;
+                            setLocalValue(normalized);
+                            if (liveTextChange) {
+                                queueTypingLiveCommit(normalized);
+                            } else {
+                                clearTypingLiveCommit();
+                            }
+                        } else {
+                            clearTypingLiveCommit();
                         }
                     }}
                     className="h-8 w-39 font-mono uppercase"
@@ -165,16 +267,40 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
                     </Button>
                 )}
             </div>
+            <RecentColourSwatches onPick={(colour) => commitColor(colour)} />
         </div>
     );
 }
 
-export function ColorPickerPopover({ value, onChange, tip, variant, children }: ColorPickerProps) {
+export function ColorPickerPopover({
+    value,
+    onChange,
+    onTextCommit,
+    onTextInputFocus,
+    onTextInputBlur,
+    liveTextChange,
+    tip,
+    variant,
+    children
+}: ColorPickerProps) {
+    const [open, setOpen] = useState(false);
+    const pendingTextCommitRef = useRef<string | null>(null);
+
     return (
-        <Popover>
+        <Popover
+            open={open}
+            onOpenChange={setOpen}
+            onOpenChangeComplete={(nextOpen) => {
+                if (nextOpen || pendingTextCommitRef.current === null) return;
+                const committedValue = pendingTextCommitRef.current;
+                pendingTextCommitRef.current = null;
+                onTextCommit?.(committedValue);
+            }}
+        >
             <PopoverTrigger nativeButton={false} render={<span className="inline-flex" />}>
                 <TipButton
                     tip={tip ?? 'Color'}
+                    aria-label={tip ?? 'Color'}
                     variant={variant ?? 'outline'}
                     className="h-8 w-8 p-0"
                 >
@@ -183,8 +309,24 @@ export function ColorPickerPopover({ value, onChange, tip, variant, children }: 
                     )}
                 </TipButton>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-3" side="bottom" align="start">
-                <ColorPicker value={value} onChange={onChange} />
+            <PopoverContent
+                className="w-auto p-3"
+                side="bottom"
+                align="start"
+                finalFocus={onTextCommit ? false : undefined}
+            >
+                <ColorPicker
+                    value={value}
+                    onChange={onChange}
+                    liveTextChange={liveTextChange}
+                    onTextInputFocus={onTextInputFocus}
+                    onTextInputBlur={onTextInputBlur}
+                    onTextCommit={(committedValue) => {
+                        pendingTextCommitRef.current = committedValue;
+                        setOpen(false);
+                    }}
+                    onTextCancel={() => setOpen(false)}
+                />
             </PopoverContent>
         </Popover>
     );

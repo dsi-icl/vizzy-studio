@@ -59,7 +59,9 @@ export {
     seedScopeFromDb,
     buildSlidesSnapshot,
     saveScope,
-    persistSlideMetadata
+    persistScopeNow,
+    persistSlideMetadata,
+    runCommitPersistenceTask
 } from './busState.persistence';
 
 export {

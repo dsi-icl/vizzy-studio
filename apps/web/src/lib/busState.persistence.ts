@@ -1,5 +1,6 @@
 import type { CommitDocument } from '@repo/db/documents';
 
+import { captureScopeRevision, KeyedSerialQueue, markScopePersisted } from '~/lib/scopePersistence';
 import type { Layer, ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
@@ -226,6 +227,24 @@ export async function buildSlidesSnapshot(
     return updatedSlides;
 }
 
+/**
+ * Serializes commit writes.
+ *
+ * Keyed by commit, not by scope. Several scopes — one per slide — share a
+ * commit document, and every write rewrites the whole slides array from a fresh
+ * read. Two scopes of the same commit saving concurrently would each read, then
+ * each write, and the later write would clobber the earlier one's slide.
+ */
+const commitWriteQueue = new KeyedSerialQueue<string>();
+
+/** Run a task that rewrites a commit document, serialized against all others. */
+export function runCommitPersistenceTask<Result>(
+    commitId: string,
+    task: () => Promise<Result>
+): Promise<Result> {
+    return commitWriteQueue.run(commitId, task);
+}
+
 export async function saveScope(
     scopeId: ScopeId,
     message: string,
@@ -234,6 +253,25 @@ export async function saveScope(
 ): Promise<{ success: boolean; commitId?: string; error?: string }> {
     const scope = scopedState.get(scopeId);
     if (!scope) return { success: false, error: 'Scope not found' };
+
+    // The head commit is resolved inside the write. When the scope has none yet,
+    // fall back to the project so we still serialize, just more coarsely.
+    const key = scope.commitId || `project:${scope.projectId}`;
+    return commitWriteQueue.run(key, () =>
+        writeScope(scopeId, scope, message, isAutoSave, authorEmail)
+    );
+}
+
+async function writeScope(
+    scopeId: ScopeId,
+    scope: ScopeState,
+    message: string,
+    isAutoSave: boolean,
+    authorEmail?: string | null
+): Promise<{ success: boolean; commitId?: string; error?: string }> {
+    // Captured before the snapshot is read, so a mutation arriving afterwards is
+    // never mistaken for one this write included.
+    const persistedRevision = captureScopeRevision(scope);
 
     try {
         // Resolve the mutable HEAD commit ID — prefer scope.commitId, fall back to project lookup
@@ -255,7 +293,7 @@ export async function saveScope(
                 content: { slides: updatedSlides as CommitDocument['content']['slides'] }
             });
 
-            scope.dirty = false;
+            markScopePersisted(scope, persistedRevision);
             return { success: true };
         }
 
@@ -278,12 +316,50 @@ export async function saveScope(
         // Pointer swap: HEAD now points at the snapshot
         await dbCol.commits.setParent(headId, snapshot.id);
 
-        scope.dirty = false;
+        markScopePersisted(scope, persistedRevision);
         return { success: true, commitId: snapshot.id };
     } catch (err) {
         console.error(`[Bus] saveScope failed for ${scopeLabel(scopeId)}:`, err);
         return { success: false, error: String(err) };
     }
+}
+
+/**
+ * Persist a scope right away rather than waiting for the autosave tick.
+ *
+ * A newly created layer lives only in memory until autosave runs, up to 30s
+ * later. Anything that reads the layer straight from the commit — the Yjs text
+ * session does — fails for that whole window. Creating a layer therefore has to
+ * make it durable immediately.
+ *
+ * Fire-and-forget: the caller is a message handler and must not block on I/O.
+ */
+export function persistScopeNow(
+    scopeId: ScopeId,
+    reason: string,
+    onSettled?: (result: { success: boolean; error?: string }) => void
+): void {
+    void saveScope(scopeId, reason, true)
+        .then((result) => {
+            if (!result.success) {
+                console.error(
+                    `[Bus] Immediate persist failed for ${scopeLabel(scopeId)}: ${result.error}`
+                );
+            }
+            // The originating peer may have disconnected while the write was in
+            // flight; reporting to a closed socket must not reject this chain.
+            try {
+                onSettled?.(result);
+            } catch (err) {
+                console.error(
+                    `[Bus] Persist acknowledgement failed for ${scopeLabel(scopeId)}:`,
+                    err
+                );
+            }
+        })
+        .catch((err) => {
+            console.error(`[Bus] Immediate persist threw for ${scopeLabel(scopeId)}:`, err);
+        });
 }
 
 /**

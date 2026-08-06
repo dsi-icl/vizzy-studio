@@ -562,6 +562,8 @@ function WallApp() {
                     // transition: 'all .1s ease-out',
                     width: `${layer.config.width}px`,
                     height: `${layer.config.height}px`,
+                    maxWidth: 'none',
+                    maxHeight: 'none',
                     filter: toCssFilterString(layer.config.filters),
                     zIndex: layer.config.zIndex
                 } as CSSProperties
@@ -676,7 +678,7 @@ function WallApp() {
                         muted
                         playsInline
                         loop={layer.loop ?? true}
-                        className="object-cover"
+                        className="object-fill"
                     />
                 );
 
@@ -735,6 +737,8 @@ function WallApp() {
                                     y={0}
                                     width={layer.config.width}
                                     height={layer.config.height}
+                                    rx={layer.cornerRadius}
+                                    ry={layer.cornerRadius}
                                     fill={layer.fill}
                                     stroke={layer.strokeColor}
                                     strokeDasharray={layer.strokeDash.join(' ')}

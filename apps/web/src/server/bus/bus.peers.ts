@@ -24,6 +24,7 @@ import {
     wallBindingSources,
     wallsByWallId
 } from '~/lib/busState';
+import { releaseProjectContextIfUnused } from '~/lib/busState.projectContext';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -420,6 +421,15 @@ export async function completeHelloRegistration(
 export function handleEditorScopeVacated(scopeId: number) {
     const remainingEditors = editorsByScope.get(scopeId)?.size ?? 0;
     if (remainingEditors > 0) return;
+
+    // Flush and drop the project's shared state once nobody is editing it. A
+    // colour picked just before the last peer left would otherwise be lost.
+    const projectId = scopedState.get(scopeId)?.projectId;
+    if (projectId) {
+        void releaseProjectContextIfUnused(projectId).catch((err) => {
+            console.error(`[Bus] Failed to release project context for ${projectId}:`, err);
+        });
+    }
 
     for (const [wallId, boundScopeId] of wallBindings) {
         if (boundScopeId !== scopeId) continue;

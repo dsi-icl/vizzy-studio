@@ -28,6 +28,7 @@ export function ParametersPanel({
 
     const selectedLayer =
         selectedLayerIds.length === 1 ? (layers.get(parseInt(selectedLayerIds[0])) ?? null) : null;
+    const isSelectedLayerLocked = Boolean(selectedLayer?.config.locked);
 
     const toggleCollapse = () => {
         if (collapsed) onExpand?.();
@@ -65,7 +66,8 @@ export function ParametersPanel({
 
     const updateWebProperty = useCallback(
         (field: 'url' | 'scale', value: string | number) => {
-            if (!selectedLayer || selectedLayer.type !== 'web') return;
+            if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'web')
+                return;
             const updatedLayer = { ...selectedLayer, [field]: value };
 
             useEditorStore.setState((s) => {
@@ -81,7 +83,7 @@ export function ParametersPanel({
 
     const updateConfig = useCallback(
         (field: keyof LayerWithEditorState['config'], value: number) => {
-            if (!selectedLayer) return;
+            if (!selectedLayer || selectedLayer.config.locked) return;
             const newConfig = { ...selectedLayer.config, [field]: value };
             const updatedLayer = { ...selectedLayer, config: newConfig };
 
@@ -131,6 +133,7 @@ export function ParametersPanel({
                                         label="X"
                                         className={'text-xs'}
                                         allowWheelScrub={true}
+                                        disabled={isSelectedLayerLocked}
                                         value={selectedLeftX ?? 0}
                                         onInput={(e) => console.log(e)}
                                         onValueChange={(v) => {
@@ -141,6 +144,7 @@ export function ParametersPanel({
                                     <SideButtonNumberField
                                         label="Y"
                                         allowWheelScrub={true}
+                                        disabled={isSelectedLayerLocked}
                                         value={selectedTopY ?? 0}
                                         onValueChange={(v) => {
                                             if (v === null || !selectedLayer) return;
@@ -156,6 +160,7 @@ export function ParametersPanel({
                                     <SideButtonNumberField
                                         label="Width"
                                         allowWheelScrub={true}
+                                        disabled={isSelectedLayerLocked}
                                         value={selectedLayer.config.width}
                                         onValueChange={(v) => {
                                             if (v !== null) updateConfig('width', v);
@@ -164,6 +169,7 @@ export function ParametersPanel({
                                     <SideButtonNumberField
                                         label="Height"
                                         allowWheelScrub={true}
+                                        disabled={isSelectedLayerLocked}
                                         value={selectedLayer.config.height}
                                         onValueChange={(v) => {
                                             if (v !== null) updateConfig('height', v);
@@ -178,6 +184,7 @@ export function ParametersPanel({
                                     <SideButtonNumberField
                                         label="Rotation"
                                         allowWheelScrub={true}
+                                        disabled={isSelectedLayerLocked}
                                         value={selectedLayer.config.rotation}
                                         onValueChange={(v) => {
                                             if (v !== null) updateConfig('rotation', v);
@@ -194,6 +201,7 @@ export function ParametersPanel({
                                             type="url"
                                             placeholder="https://example.com"
                                             value={selectedLayer.url}
+                                            disabled={isSelectedLayerLocked}
                                             onChange={(e) =>
                                                 updateWebProperty('url', e.target.value)
                                             }
@@ -205,6 +213,7 @@ export function ParametersPanel({
                                             <SideButtonNumberField
                                                 label="Zoom"
                                                 allowWheelScrub={true}
+                                                disabled={isSelectedLayerLocked}
                                                 step={0.1}
                                                 smallStep={0.01}
                                                 min={0.1}

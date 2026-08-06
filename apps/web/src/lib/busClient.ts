@@ -128,14 +128,48 @@ export class BusClient {
         this.rws.destroy();
     }
 
-    public sendRaw(data: string | Blob | BufferSource): void {
-        if (!this.isAuthenticated) return;
-        if (this.rws.status !== 'connected') return;
+    /** Returns whether the message was actually handed to the socket. */
+    public sendRaw(data: string | Blob | BufferSource): boolean {
+        if (!this.isAuthenticated) return false;
+        if (this.rws.status !== 'connected') return false;
         this.rws.send(data);
+        return true;
     }
 
-    public sendJSON(data: GSMessage): void {
-        this.sendRaw(JSON.stringify(data));
+    public sendJSON(data: GSMessage): boolean {
+        return this.sendRaw(JSON.stringify(data));
+    }
+
+    /**
+     * Resolve once the socket is ready, or false if it is not within the
+     * timeout. Lets a caller that needs delivery wait for a reconnect instead
+     * of dropping the message and discovering it later by timeout.
+     */
+    public waitUntilReady(timeoutMs = 10_000): Promise<boolean> {
+        if (this.isReady) return Promise.resolve(true);
+
+        return new Promise((resolve) => {
+            let settled = false;
+            let timer: ReturnType<typeof setTimeout> | null = null;
+            let unsubscribe: (() => void) | null = null;
+
+            const finish = (ready: boolean) => {
+                if (settled) return;
+                settled = true;
+                if (timer) clearTimeout(timer);
+                // onReady fires synchronously when already ready, so this can
+                // run before the subscription is assigned. Unsubscribing is
+                // then left to the assignment below.
+                unsubscribe?.();
+                resolve(ready);
+            };
+
+            const dispose = this.onReady(() => finish(true));
+            if (settled) dispose();
+            else unsubscribe = dispose;
+
+            timer = setTimeout(() => finish(false), timeoutMs);
+        });
     }
 
     private async handleOpen() {

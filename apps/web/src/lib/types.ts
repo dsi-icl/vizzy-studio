@@ -1,5 +1,12 @@
 import { z } from '~/lib/zod';
 
+/**
+ * Version stamped on a text layer whose `textState` is written alongside
+ * `textHtml`. A layer without `textFormat` predates structured state and is
+ * readable only through its HTML. Bump when the serialized shape changes.
+ */
+export const TEXT_FORMAT_VERSION = 1;
+
 // ── Layer schemas ────────────────────────────────────────────────────────────
 
 const LayerPositionStateSchema = z.object({
@@ -31,6 +38,7 @@ const LayerConfigStateSchema = z
     .object({
         zIndex: z.number(),
         visible: z.boolean().default(true),
+        locked: z.boolean().optional(),
         filters: LayerFilterStateSchema.optional()
     })
     .extend(LayerPositionStateSchema.shape);
@@ -42,6 +50,10 @@ const LayerPlaybackStateSchema = z.object({
 });
 
 const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
+
+const MediaLayerBaseSchema = LayerBaseSchema.extend({
+    name: z.string().optional()
+});
 
 // Legacy commits may store variant metadata in inconsistent shapes.
 // Normalize any non-array or non-numeric values to undefined.
@@ -65,16 +77,26 @@ const LayerSchema = z.discriminatedUnion('type', [
             blurhash: z.string().optional(),
             playback: LayerPlaybackStateSchema
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z
         .object({
             type: z.literal('image'),
             url: z.string(),
             blurhash: z.string().optional()
         })
-        .extend(LayerBaseSchema.shape),
+        .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
-    z.object({ type: z.literal('text'), textHtml: z.string() }).extend(LayerBaseSchema.shape),
+    z
+        .object({
+            type: z.literal('text'),
+            /** Derived render artifact. Consumed by the canvas, wall and viewers. */
+            textHtml: z.string(),
+            /** Serialized Lexical editor state. Canonical when present. */
+            textState: z.string().optional(),
+            /** Absent means legacy, HTML-only. See TEXT_FORMAT_VERSION. */
+            textFormat: z.number().int().nonnegative().optional()
+        })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('map'),
@@ -114,7 +136,8 @@ const LayerSchema = z.discriminatedUnion('type', [
             fill: z.string(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
-            strokeWidth: z.number()
+            strokeWidth: z.number(),
+            cornerRadius: z.number().nonnegative().default(0)
         })
         .extend(LayerBaseSchema.shape),
     z
@@ -246,7 +269,36 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('upsert_layer'),
         origin: z.string().regex(/^(editor|controller|yjs):[a-z0-9_]+$/),
-        layer: LayerSchema
+        layer: LayerSchema,
+        /** Set when creating a layer, to correlate the persistence acknowledgement. */
+        createRequestId: z.string().optional()
+    }),
+    z.object({
+        /**
+         * Sent back to the originating editor once a newly created layer has
+         * been written to the commit, so a failed write surfaces instead of
+         * leaving a layer that looks saved but is not.
+         */
+        type: z.literal('layer_create_response'),
+        createRequestId: z.string(),
+        numericId: z.number(),
+        success: z.boolean(),
+        error: z.string().optional()
+    }),
+    z.object({
+        /** Editor → server: remember a colour the user picked. */
+        type: z.literal('record_colour'),
+        colour: z.string()
+    }),
+    z.object({
+        /**
+         * Server → editors: durable project-scoped state. Sent on join and
+         * whenever it changes. Carries no ephemeral data — presence and counts
+         * have their own messages so they cannot drive persistence.
+         */
+        type: z.literal('project_context'),
+        projectId: z.string(),
+        recentColours: z.array(z.string())
     }),
     z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
     z.object({
@@ -293,6 +345,15 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     }),
     z.object({ type: z.literal('stage_dirty') }),
     z.object({ type: z.literal('leave_scope') }),
+    z.object({
+        type: z.literal('pointer'),
+        // Stage-logical coordinates, so peers at different zoom levels agree.
+        x: z.number(),
+        y: z.number(),
+        // Stamped by the bus on relay; clients never send these.
+        peerId: z.string().optional(),
+        email: z.string().optional()
+    }),
     z.object({
         type: z.literal('bind_wall'),
         wallId: z.string(),
@@ -448,6 +509,11 @@ export interface ScopeState {
     commitId: string;
     slideId: string;
     dirty: boolean;
+    /**
+     * Incremented on every mutation. A persist records the revision it covers so
+     * an edit landing mid-write is not mistakenly marked as saved.
+     */
+    mutationRevision?: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
     /** Optional custom render URL from the project configuration. */

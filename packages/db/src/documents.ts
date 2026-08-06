@@ -57,6 +57,8 @@ export interface ProjectDocument {
     customRenderCompat: boolean;
     customRenderProxy: boolean;
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
+    /** Shared palette of recently picked colours, most recent first. */
+    recentColours?: string[];
     headCommitId: string | null;
     publishedCommitId: string | null;
     deletedAt?: number | null;

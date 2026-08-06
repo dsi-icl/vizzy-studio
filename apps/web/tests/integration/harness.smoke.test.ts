@@ -31,4 +31,34 @@ describe('test harness smoke', () => {
         });
         expect(response.status).toBe(204);
     });
+
+    test('public CSP ingestion bounds oversized bodies without destabilizing the endpoint', async () => {
+        const manifest = readManifest();
+        const oversizedBody = JSON.stringify({
+            'csp-report': { sample: 'x'.repeat(70 * 1024) }
+        });
+        const response = await fetch(`${manifest.baseUrl}/api/report-csp`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: oversizedBody
+        });
+        expect(response.status).toBe(204);
+        expect(await response.text()).toBe('');
+    });
+
+    // Known main-branch gap: the upload-auth implementation is intentionally not part of this
+    // harness-only PR. Keep the contract executable without making the unsafe response canonical.
+    test.skip('TUS creation rejects unauthenticated work before accepting upload bytes', async () => {
+        const manifest = readManifest();
+        const response = await fetch(`${manifest.baseUrl}/api/uploads`, {
+            method: 'POST',
+            headers: {
+                'Tus-Resumable': '1.0.0',
+                'Upload-Length': '1',
+                'Upload-Metadata': 'filename aGFybmVzcy50eHQ='
+            }
+        });
+        expect(response.status).toBe(401);
+        expect(await response.text()).toContain('Missing upload token');
+    });
 });
