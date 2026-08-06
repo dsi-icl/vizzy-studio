@@ -5,6 +5,7 @@ import { useAuth } from '@repo/auth/tanstack/hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
+import { getDeterministicCursorColor } from '~/lib/cursorColor';
 import { useEditorStore } from '~/lib/editorStore';
 
 import { createWebsocketProvider, observeProviderStatus } from './providers';
@@ -26,15 +27,6 @@ const editorConfig = {
     theme
 };
 
-function getDeterministicCursorColor(seed: string): string {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i += 1) {
-        hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-    }
-    const color = hash & 0xffffff;
-    return `#${color.toString(16).padStart(6, '0')}`;
-}
-
 export function CollaborativeEditor({
     layerId,
     onMeasuredHeight
@@ -48,9 +40,9 @@ export function CollaborativeEditor({
     const textEditScope = useEditorStore(
         (s) => `${s.projectId}_${s.commitId}_${s.activeSlideId}_${layerId}`
     );
-    const [userColor] = useState(() =>
-        getDeterministicCursorColor(`${user?.email ?? ''}:${layerId}`)
-    );
+    // Identity-only seed keeps this caret the same colour as the author's stage
+    // cursor, instead of varying per text layer.
+    const [userColor] = useState(() => getDeterministicCursorColor(user?.email ?? ''));
     const latestHeightRef = useRef<number>(layer?.type === 'text' ? layer.config.height : 400);
 
     const providerFactory = useCallback((id: string, yjsDocMap: Map<string, Y.Doc>) => {

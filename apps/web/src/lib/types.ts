@@ -330,6 +330,15 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal('stage_dirty') }),
     z.object({ type: z.literal('leave_scope') }),
     z.object({
+        type: z.literal('pointer'),
+        // Stage-logical coordinates, so peers at different zoom levels agree.
+        x: z.number(),
+        y: z.number(),
+        // Stamped by the bus on relay; clients never send these.
+        peerId: z.string().optional(),
+        email: z.string().optional()
+    }),
+    z.object({
         type: z.literal('bind_wall'),
         wallId: z.string(),
         projectId: z.string(),

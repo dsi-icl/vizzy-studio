@@ -5,6 +5,7 @@ import {
     broadcastToControllersByWallRaw,
     broadcastToEditors,
     broadcastToEditorsByCommit,
+    broadcastToEditorsRaw,
     broadcastToScope,
     broadcastToScopeRaw,
     broadcastToWallNodesRaw,
@@ -90,6 +91,12 @@ export interface HandlerCtx {
 export type Handler = (ctx: HandlerCtx) => void;
 
 export const handlers = new Map<string, Handler>();
+
+/**
+ * Floor between two pointer relays from the same connection. Sits well under
+ * the client's send interval so ordinary jitter is never mistaken for abuse.
+ */
+const POINTER_RELAY_FLOOR_MS = 50;
 
 const lastPlaybackCommandAt = new Map<string, number>();
 
@@ -342,6 +349,39 @@ handlers.set('stage_dirty', ({ scopeId }) => {
     if (scopeId === null) return;
     const scope = scopedState.get(scopeId);
     if (scope) markScopeDirty(scope);
+});
+
+/**
+ * Pointer presence is a pure relay: no scope state, no peer registry, no
+ * lifecycle. Receivers age cursors out on their own, so a peer that leaves,
+ * navigates or drops simply stops being echoed and fades.
+ */
+handlers.set('pointer', ({ entry, data, scopeId }) => {
+    if (scopeId === null || entry.meta.specimen !== 'editor') return;
+    const { x, y } = data;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    // Clients throttle to POINTER_BROADCAST_INTERVAL_MS; this floor keeps a
+    // modified client from turning one socket into an unbounded fanout.
+    const now = Date.now();
+    if (entry.lastPointerAt !== undefined && now - entry.lastPointerAt < POINTER_RELAY_FLOOR_MS) {
+        return;
+    }
+    entry.lastPointerAt = now;
+
+    broadcastToEditorsRaw(
+        scopeId,
+        JSON.stringify({
+            type: 'pointer',
+            // Per-connection, so one user in two tabs shows as two cursors.
+            peerId: entry.peer.id,
+            email: entry.meta.authContext?.user?.email ?? '',
+            x,
+            y
+        } satisfies GSMessage),
+        // Exclude the sending connection, not the sending user.
+        entry
+    );
 });
 
 handlers.set('leave_scope', ({ entry }) => {

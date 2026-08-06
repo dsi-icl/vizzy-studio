@@ -7,6 +7,15 @@ import { BusClient } from './busClient';
 import { type ConnectionStatus } from './reconnectingWs';
 import { GSMessageSchema, type GSMessage, type Layer } from './types';
 
+/** How often the local pointer is put on the wire while it keeps moving. */
+export const POINTER_BROADCAST_INTERVAL_MS = 100;
+/**
+ * Repeat rate for a pointer that is resting on the stage. Movement alone would
+ * stop the throttle firing, and peers would age out someone who is simply
+ * holding still over the thing they are talking about.
+ */
+export const POINTER_HEARTBEAT_INTERVAL_MS = 1000;
+
 type SaveResponseCallback = (data: Extract<GSMessage, { type: 'stage_save_response' }>) => void;
 type ServerMessageCallback = (data: GSMessage) => void;
 type BinaryMessageCallback = (
@@ -23,6 +32,7 @@ type PlaybackCallback = (
     id: number,
     playback: Extract<Layer, { type: 'video' }>['playback']
 ) => void;
+type PointerCallback = (data: Extract<GSMessage, { type: 'pointer' }>) => void;
 type ConnectionStatusCallback = (status: ConnectionStatus) => void;
 type BindOverrideResultCallback = (
     data: Extract<GSMessage, { type: 'bind_override_result' }>
@@ -41,6 +51,7 @@ export class EditorEngine {
     private binaryCallbacks = new Set<BinaryMessageCallback>();
     private playbackCallbacks = new Set<PlaybackCallback>();
     private playbackStates = new Map<number, Extract<Layer, { type: 'video' }>['playback']>();
+    private pointerCallbacks = new Set<PointerCallback>();
     private saveCallbacks = new Set<SaveResponseCallback>();
     private connectionStatusCallbacks = new Set<ConnectionStatusCallback>();
     private bindOverrideResultCallbacks = new Set<BindOverrideResultCallback>();
@@ -166,6 +177,13 @@ export class EditorEngine {
                 return;
             }
 
+            if (data.type === 'pointer') {
+                // Kept off the generic channel: subscribing there consumes any
+                // buffered hydrate, and presence must never disturb loading.
+                this.pointerCallbacks.forEach((cb) => cb(data));
+                return;
+            }
+
             if (data.type === 'stage_save_response') {
                 this.saveCallbacks.forEach((cb) => cb(data));
                 return;
@@ -258,9 +276,11 @@ export class EditorEngine {
     public destroy() {
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
+        this.stopPointerBroadcast();
         this.bus.destroy();
         this.messageCallbacks.clear();
         this.binaryCallbacks.clear();
+        this.pointerCallbacks.clear();
         this.playbackCallbacks.clear();
         this.connectionStatusCallbacks.clear();
         this.bindOverrideResultCallbacks.clear();
@@ -327,6 +347,14 @@ export class EditorEngine {
         this.binaryCallbacks.add(cb);
         return () => {
             this.binaryCallbacks.delete(cb);
+        };
+    }
+
+    /** Subscribe to co-editor pointer positions for the current slide. */
+    public subscribeToPointer(cb: PointerCallback) {
+        this.pointerCallbacks.add(cb);
+        return () => {
+            this.pointerCallbacks.delete(cb);
         };
     }
 
@@ -424,6 +452,43 @@ export class EditorEngine {
     /** Notify the bus that the scope is dirty */
     public sendDirty() {
         this.sendJSON({ type: 'stage_dirty' });
+    }
+
+    // Trailing edge matters: without it, the position you stop on is never sent
+    // and peers keep pointing at wherever the last tick happened to land.
+    private sendPointerThrottled = throttle(
+        (x: number, y: number) => {
+            this.sendJSON({ type: 'pointer', x, y });
+        },
+        { wait: POINTER_BROADCAST_INTERVAL_MS }
+    );
+
+    private lastPointer: { x: number; y: number } | null = null;
+    private pointerHeartbeat: ReturnType<typeof setInterval> | null = null;
+
+    /** Broadcast the local stage pointer to co-editors on the same slide. */
+    public sendPointer(x: number, y: number) {
+        if (!this.currentSlideId) return;
+        this.lastPointer = { x, y };
+        this.sendPointerThrottled(x, y);
+
+        if (this.pointerHeartbeat) return;
+        this.pointerHeartbeat = setInterval(() => {
+            if (!this.lastPointer || !this.currentSlideId) return;
+            this.sendPointerThrottled(this.lastPointer.x, this.lastPointer.y);
+        }, POINTER_HEARTBEAT_INTERVAL_MS);
+    }
+
+    /**
+     * Stop advertising a pointer position, e.g. once it leaves the stage.
+     * Peers then simply age the cursor out; no departure message is needed.
+     */
+    public stopPointerBroadcast() {
+        if (this.pointerHeartbeat) {
+            clearInterval(this.pointerHeartbeat);
+            this.pointerHeartbeat = null;
+        }
+        this.lastPointer = null;
     }
 
     public subscribeToSaveResponse(cb: SaveResponseCallback) {

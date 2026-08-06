@@ -29,6 +29,7 @@ import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
+import { PeerCursors } from '~/components/PeerCursors';
 import { EditorEngine } from '~/lib/editorEngine';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import {
@@ -77,6 +78,12 @@ export function EditorSlate() {
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
+
+    // Peer cursors are per-slide; remounting on scope change drops the previous
+    // slide's cursors instead of leaving them to age out.
+    const peerCursorScopeKey = useEditorStore(
+        (s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`
+    );
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
@@ -761,6 +768,10 @@ export function EditorSlate() {
         e: Pick<KonvaEventObject<Event>, 'target' | 'evt'>,
         numericId: number
     ) => {
+        // Konva mutes stage pointermove while dragging or transforming, so this
+        // is the only place presence keeps flowing during a manipulation.
+        broadcastPointerPosition();
+
         const node = e.target as Konva.Shape;
         const layer = layersRef.current.get(numericId);
         if (!node || !layer) return;
@@ -1134,8 +1145,21 @@ export function EditorSlate() {
         }
     };
 
+    // Presence is stage-only: pointer motion elsewhere in the UI is not shared.
+    // Sent in stage-logical units so peers at other zoom levels agree.
+    //
+    // Read from the stage rather than the event: Konva suppresses stage
+    // pointermove for the duration of a drag or transform, but it still keeps
+    // the stage's pointer position current, so this stays live throughout.
+    const broadcastPointerPosition = useCallback(() => {
+        const point = stageInstance.current?.getPointerPosition();
+        if (!point) return;
+        engine?.sendPointer(point.x / stageScaleFactor, point.y / stageScaleFactor);
+    }, [engine, stageScaleFactor]);
+
     const handleTouchMove = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         e.evt.preventDefault();
+        broadcastPointerPosition();
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         if (e.evt instanceof MouseEvent) {
             const targetId =
@@ -1264,6 +1288,9 @@ export function EditorSlate() {
 
     const handleStageMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
         setHoveredLayerId(null);
+        // Stops the presence heartbeat, so peers age this cursor out instead of
+        // holding it at the edge of the stage indefinitely.
+        engine?.stopPointerBroadcast();
         handleTouchEnd(e);
     };
 
@@ -1636,6 +1663,7 @@ export function EditorSlate() {
                                 }}
                             />
                         </KonvaLayer>
+                        <PeerCursors key={peerCursorScopeKey} stageScaleFactor={stageScaleFactor} />
                     </Stage>
                 </div>
             </div>

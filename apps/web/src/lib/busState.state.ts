@@ -32,6 +32,8 @@ export type PeerMeta =
 export interface PeerEntry {
     peer: Peer;
     meta: PeerMeta;
+    /** Last pointer relay, used as a per-connection floor. Dies with the entry. */
+    lastPointerAt?: number;
 }
 
 const _hmr = (process as any).__BUS_HMR__ ?? {

@@ -159,6 +159,13 @@ export function isWsMessageAuthorized(
     const scopeProjectId = getScopeProjectId(scopeId);
     const projectId = payloadProjectId ?? scopeProjectId;
 
+    if (type === 'pointer') {
+        // Presence is editor-only and carries a peer email, so viewers qualify
+        // but unscoped or unauthorised peers must not reach the relay.
+        if (entry.meta.specimen !== 'editor' || !projectId) return false;
+        return Boolean(getCachedEditorPermission(entry, projectId)?.canView);
+    }
+
     if (EDIT_PROJECT_MESSAGE_TYPES.has(type)) {
         if (
             (type === 'upsert_layer' || type === 'delete_layer') &&
