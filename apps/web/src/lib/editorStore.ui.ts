@@ -21,12 +21,11 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
                     const numericId = parseInt(s.selectedLayerIds[0]);
                     const layer = s.layers.get(numericId);
                     if (layer && (layer.type === 'line' || layer.type === 'shape')) {
+                        const updatedLayer = { ...layer, strokeColor };
                         const newLayers = new Map(s.layers);
-                        newLayers.set(numericId, { ...layer, strokeColor });
+                        newLayers.set(numericId, updatedLayer);
                         newState.layers = newLayers;
-                    }
-                    if (layer) {
-                        helpers.sendLayerUpdate(layer, 'editor:set_stroke_color');
+                        helpers.sendLayerUpdate(updatedLayer, 'editor:set_stroke_color');
                     }
                 }
                 return newState;
