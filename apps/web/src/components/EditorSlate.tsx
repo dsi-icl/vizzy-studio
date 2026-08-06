@@ -307,11 +307,7 @@ export function EditorSlate() {
             store.upsertLayer(layer);
             store.toggleLayerSelection(numericId.toString(), false, false);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:asset_library_drop',
-                layer
-            });
+            engine.createLayer('editor:asset_library_drop', layer);
             store.markDirty();
         },
         [engine]
@@ -743,18 +739,19 @@ export function EditorSlate() {
             useEditorStore.getState().upsertLayer(finalizedLayer);
             engine.setPlayback(numericId, defaultPlayback);
 
-            engine.sendJSON({
-                type: 'upsert_layer',
-                origin: 'editor:handle_upload',
-                layer: {
-                    numericId,
-                    type: finalizedLayer.type,
-                    name: layerName,
-                    playback: defaultPlayback,
-                    url: assetUrl,
-                    config: freshestLayer.config
-                } as LayerWithEditorState
-            });
+            // First time this layer reaches the server, so it goes through the
+            // acknowledged path and a failed write surfaces to the user.
+            engine.createLayer('editor:handle_upload', {
+                numericId,
+                type: finalizedLayer.type,
+                name: layerName,
+                playback: defaultPlayback,
+                url: assetUrl,
+                config: freshestLayer.config
+            } as LayerWithEditorState);
+            // Without this the project never looks dirty after an upload, so the
+            // manual save shortcut silently does nothing.
+            useEditorStore.getState().markDirty();
             URL.revokeObjectURL(localUrl);
 
             // Asset record is created server-side in onUploadFinish
