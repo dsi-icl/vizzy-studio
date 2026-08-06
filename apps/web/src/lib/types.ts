@@ -38,6 +38,7 @@ const LayerConfigStateSchema = z
     .object({
         zIndex: z.number(),
         visible: z.boolean().default(true),
+        locked: z.boolean().optional(),
         filters: LayerFilterStateSchema.optional()
     })
     .extend(LayerPositionStateSchema.shape);

@@ -96,6 +96,7 @@ export function LayerList({ collapsed, onCollapse, onExpand, titleBarSize = 48 }
                         onSelect={toggleLayerSelection}
                         onItemDoubleClick={(item) => goToLayer(item.id)}
                         onItemHover={(item) => setHoveredLayerId(item?.id ?? null)}
+                        isItemDisabled={(item) => Boolean(item.config.locked)}
                         itemRenderer={(layer, { isSelected }) => (
                             <LayerItem layer={layer} isSelected={isSelected} />
                         )}

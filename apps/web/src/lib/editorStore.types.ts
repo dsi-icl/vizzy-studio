@@ -63,6 +63,7 @@ export interface EditorState {
     updateProgress: (numericId: number, progress: number) => void;
     updateLayerConfig: (numericId: number, config: Layer['config']) => void;
     toggleLayerVisibility: (numericId: number) => void;
+    toggleLayerLock: (numericId: number) => void;
     deselectAllLayers: () => void;
     toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
     setHoveredLayerId: (id: string | null) => void;

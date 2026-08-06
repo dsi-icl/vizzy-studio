@@ -13,6 +13,7 @@ export function KonvaVideo({
     layer,
     isDrawing,
     isPinching,
+    isLocked,
     opacity,
     onSelect,
     onTransform,
@@ -21,6 +22,7 @@ export function KonvaVideo({
     layer: Extract<LayerWithEditorState, { type: 'video' }>;
     isDrawing: boolean;
     isPinching: boolean;
+    isLocked: boolean;
     opacity?: number;
     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => void;
     onTransform: (e: KonvaEventObject<Event>) => void;
@@ -157,7 +159,7 @@ export function KonvaVideo({
             offsetY={layer.config.height / 2}
             opacity={opacity}
             listening={!isDrawing}
-            draggable={!isDrawing && !isPinching}
+            draggable={!isDrawing && !isPinching && !isLocked}
             onClick={onSelect}
             onTap={onSelect}
             onDragMove={onTransform}

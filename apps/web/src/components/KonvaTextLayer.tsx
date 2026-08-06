@@ -13,6 +13,7 @@ export function KonvaTextLayer({
     layer,
     isDrawing,
     isPinching,
+    isLocked,
     opacity,
     onSelect,
     onDblClick,
@@ -22,6 +23,7 @@ export function KonvaTextLayer({
     layer: Extract<LayerWithEditorState, { type: 'text' }>;
     isDrawing: boolean;
     isPinching: boolean;
+    isLocked: boolean;
     opacity?: number;
     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => void;
     onDblClick: () => void;
@@ -74,7 +76,7 @@ export function KonvaTextLayer({
             rotation={layer.config.rotation}
             opacity={opacity}
             listening={!isDrawing}
-            draggable={!isDrawing && !isPinching}
+            draggable={!isDrawing && !isPinching && !isLocked}
             onClick={onSelect}
             onTap={onSelect}
             onDblClick={onDblClick}

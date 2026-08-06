@@ -2,6 +2,8 @@ import {
     BugBeetleIcon,
     EyeIcon,
     EyeSlashIcon,
+    LockIcon,
+    LockOpenIcon,
     FilmSlateIcon,
     ImageIcon,
     MapTrifoldIcon,
@@ -31,7 +33,9 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
     const removeLayer = useEditorStore((s) => s.removeLayer);
     const copyLayer = useEditorStore((s) => s.copyLayer);
     const toggleLayerVisibility = useEditorStore((s) => s.toggleLayerVisibility);
+    const toggleLayerLock = useEditorStore((s) => s.toggleLayerLock);
     const isHidden = !layer.config.visible;
+    const isLocked = Boolean(layer.config.locked);
 
     const getLayerIcon = (type: LayerWithEditorState['type']): React.ReactNode => {
         switch (type) {
@@ -123,6 +127,21 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
                     className="opacity-0 group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100"
                 >
                     <CopyIcon />
+                </TipButton>
+                <TipButton
+                    tip={isLocked ? 'Unlock layer' : 'Lock layer'}
+                    variant="ghost"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        toggleLayerLock(layer.numericId);
+                    }}
+                    className={
+                        isLocked
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100'
+                    }
+                >
+                    {isLocked ? <LockIcon /> : <LockOpenIcon />}
                 </TipButton>
                 <TipButton
                     tip={isHidden ? 'Show layer' : 'Hide layer'}

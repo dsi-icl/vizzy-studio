@@ -127,9 +127,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             }),
 
         updateLayerConfig: (numericId: number, config: Layer['config']) => {
+            const layer = get().layers.get(numericId);
+            if (!layer || layer.config.locked) return;
             set((s) => {
-                const layer = s.layers.get(numericId);
-                if (!layer) return s;
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, { ...layer, config });
                 return { layers: newLayers };
@@ -158,12 +158,46 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
+        toggleLayerLock: (numericId: number) => {
+            const layer = get().layers.get(numericId);
+            if (!layer) return;
+            const locked = !layer.config.locked;
+            const updatedLayer = {
+                ...layer,
+                config: { ...layer.config, locked }
+            };
+            set((s) => {
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, updatedLayer);
+                return {
+                    layers: newLayers,
+                    editingTextLayerId:
+                        locked && s.editingTextLayerId === numericId ? null : s.editingTextLayerId
+                };
+            });
+            const engine = EditorEngine.getInstance();
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:toggle_layer_lock',
+                layer: updatedLayer
+            });
+            get().markDirty();
+        },
+
         deselectAllLayers: () => {
             set(() => ({ selectedLayerIds: [] }));
         },
 
         toggleLayerSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => {
             const { layers, lastSelectedLayerId } = get();
+            const selectedLayer = layers.get(Number.parseInt(id, 10));
+            if (!selectedLayer) return;
+            if (selectedLayer.config.locked && (isShiftClick || isCtrlClick)) return;
+
+            const isUnlockedLayerId = (layerId: string) => {
+                const layer = layers.get(Number.parseInt(layerId, 10));
+                return Boolean(layer && !layer.config.locked);
+            };
             const layersArray = Array.from(layers.values());
             if (isShiftClick && lastSelectedLayerId) {
                 const lastIndex = layersArray.findIndex(
@@ -177,14 +211,16 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 set((s) => ({
                     selectedLayerIds: [
                         ...new Set([
-                            ...s.selectedLayerIds,
-                            ...inBetween.map((l) => l.numericId.toString())
+                            ...s.selectedLayerIds.filter(isUnlockedLayerId),
+                            ...inBetween
+                                .filter((layer) => !layer.config.locked)
+                                .map((layer) => layer.numericId.toString())
                         ])
                     ]
                 }));
             } else if (isCtrlClick) {
                 set((s) => {
-                    const newSelection = [...s.selectedLayerIds];
+                    const newSelection = s.selectedLayerIds.filter(isUnlockedLayerId);
                     const index = newSelection.indexOf(id);
                     if (index > -1) {
                         newSelection.splice(index, 1);
@@ -194,7 +230,6 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     return { selectedLayerIds: newSelection };
                 });
             } else {
-                const selectedLayer = layers.get(parseInt(id));
                 const newState: Partial<EditorState> = { selectedLayerIds: [id] };
                 if (selectedLayer?.type === 'line') {
                     newState.strokeColor = selectedLayer.strokeColor;
@@ -291,9 +326,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         },
 
         deleteSelectedLayer: () => {
-            const { selectedLayerIds } = get();
+            const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
             const numericId = parseInt(selectedLayerIds[0]);
+            if (layers.get(numericId)?.config.locked) return;
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'delete_layer', numericId });
             set((s) => {
@@ -309,7 +345,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             applyLayerUpdates(
                 computeBringToFrontUpdates(
                     s.layers.values(),
-                    toNumericIds(s.selectedLayerIds),
+                    toNumericIds(s.selectedLayerIds).filter(
+                        (id) => !s.layers.get(id)?.config.locked
+                    ),
                     helpers.peekNextZIndex()
                 ),
                 'editor:bring_to_front'
@@ -319,7 +357,12 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         sendToBack: () => {
             const s = get();
             applyLayerUpdates(
-                computeSendToBackUpdates(s.layers.values(), toNumericIds(s.selectedLayerIds)),
+                computeSendToBackUpdates(
+                    s.layers.values(),
+                    toNumericIds(s.selectedLayerIds).filter(
+                        (id) => !s.layers.get(id)?.config.locked
+                    )
+                ),
                 'editor:send_to_back'
             );
         },
@@ -367,6 +410,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const updatedLayers: LayerWithEditorState[] = [];
 
             for (const box of boxes) {
+                if (box.layer.config.locked) continue;
                 let newCx = box.layer.config.cx;
                 let newCy = box.layer.config.cy;
 

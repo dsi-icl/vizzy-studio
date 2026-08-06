@@ -13,6 +13,7 @@ export function KonvaStaticImage({
     layer,
     isDrawing,
     isPinching,
+    isLocked,
     opacity,
     onSelect,
     onTransform,
@@ -21,6 +22,7 @@ export function KonvaStaticImage({
     layer: Extract<LayerWithEditorState, { type: 'image' }>;
     isDrawing: boolean;
     isPinching: boolean;
+    isLocked: boolean;
     opacity?: number;
     onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => void;
     onTransform: (e: KonvaEventObject<Event>) => void;
@@ -76,7 +78,7 @@ export function KonvaStaticImage({
             rotation={layer.config.rotation}
             opacity={opacity}
             listening={!isDrawing}
-            draggable={!isDrawing && !isPinching}
+            draggable={!isDrawing && !isPinching && !isLocked}
             onClick={onSelect}
             onTap={onSelect}
             onDragMove={onTransform}
