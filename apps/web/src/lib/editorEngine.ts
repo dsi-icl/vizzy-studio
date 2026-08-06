@@ -277,6 +277,10 @@ export class EditorEngine {
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
         this.stopPointerBroadcast();
+        // Otherwise these fire after teardown and toast about a slide the user
+        // has already navigated away from.
+        for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
+        this.pendingLayerCreates.clear();
         this.bus.destroy();
         this.messageCallbacks.clear();
         this.binaryCallbacks.clear();

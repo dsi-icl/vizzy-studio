@@ -59,8 +59,6 @@ export function CollaborativeEditor({
         setAttempt((current) => current + 1);
     }, []);
 
-    if (!user) return null;
-
     useEffect(() => {
         return () => {
             onMeasuredHeight?.(latestHeightRef.current);
@@ -82,6 +80,10 @@ export function CollaborativeEditor({
             clearTimeout(timer);
         };
     }, [textEditScope, attempt]);
+
+    // After every hook: an early return above them changes the hook count when
+    // auth resolves, which React rejects.
+    if (!user) return null;
 
     return (
         <div ref={containerRef}>

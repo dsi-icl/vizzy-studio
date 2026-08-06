@@ -151,17 +151,23 @@ export class BusClient {
         return new Promise((resolve) => {
             let settled = false;
             let timer: ReturnType<typeof setTimeout> | null = null;
-            let unsubscribe: () => void = () => undefined;
+            let unsubscribe: (() => void) | null = null;
 
             const finish = (ready: boolean) => {
                 if (settled) return;
                 settled = true;
                 if (timer) clearTimeout(timer);
-                unsubscribe();
+                // onReady fires synchronously when already ready, so this can
+                // run before the subscription is assigned. Unsubscribing is
+                // then left to the assignment below.
+                unsubscribe?.();
                 resolve(ready);
             };
 
-            unsubscribe = this.onReady(() => finish(true));
+            const dispose = this.onReady(() => finish(true));
+            if (settled) dispose();
+            else unsubscribe = dispose;
+
             timer = setTimeout(() => finish(false), timeoutMs);
         });
     }

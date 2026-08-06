@@ -339,14 +339,27 @@ export function persistScopeNow(
     reason: string,
     onSettled?: (result: { success: boolean; error?: string }) => void
 ): void {
-    void saveScope(scopeId, reason, true).then((result) => {
-        if (!result.success) {
-            console.error(
-                `[Bus] Immediate persist failed for ${scopeLabel(scopeId)}: ${result.error}`
-            );
-        }
-        onSettled?.(result);
-    });
+    void saveScope(scopeId, reason, true)
+        .then((result) => {
+            if (!result.success) {
+                console.error(
+                    `[Bus] Immediate persist failed for ${scopeLabel(scopeId)}: ${result.error}`
+                );
+            }
+            // The originating peer may have disconnected while the write was in
+            // flight; reporting to a closed socket must not reject this chain.
+            try {
+                onSettled?.(result);
+            } catch (err) {
+                console.error(
+                    `[Bus] Persist acknowledgement failed for ${scopeLabel(scopeId)}:`,
+                    err
+                );
+            }
+        })
+        .catch((err) => {
+            console.error(`[Bus] Immediate persist threw for ${scopeLabel(scopeId)}:`, err);
+        });
 }
 
 /**
