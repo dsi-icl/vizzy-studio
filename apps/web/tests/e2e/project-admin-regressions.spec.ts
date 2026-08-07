@@ -24,6 +24,45 @@ test.describe('custom-render project navigation', () => {
     });
 });
 
+test.describe('project scoped audits tab access control', () => {
+    test.describe('non-privileged users should not see the audits tab', () => {
+        test.use({ storageState: actorStorageState('user_editor') });
+
+        test('hides the audits tab and blocks direct navigation', async ({ page }) => {
+            const { fixtures } = readHarnessManifest();
+            const projectId = fixtures.customRenderProjectId;
+
+            await page.goto(`/quarry/projects/${projectId}`);
+            await expect(page.getByRole('tab', { name: 'Audits' })).toHaveCount(0);
+
+            await page.goto(`/quarry/projects/${projectId}/audits`);
+            await expect(page.getByText('History Filters')).toHaveCount(0);
+            await expect(page.getByText('No audit events found')).toHaveCount(0);
+            await expect(page.getByRole('button', { name: 'Try Again' })).toBeVisible();
+        });
+    });
+
+    test.describe('admins and operators should see the audits tab', () => {
+        test.use({ storageState: actorStorageState('user_admin') });
+
+        test('exposes the audits tab and log to admins', async ({ page }) => {
+            const { fixtures } = readHarnessManifest();
+            const projectId = fixtures.customRenderProjectId;
+
+            await page.goto(`/quarry/projects/${projectId}`);
+            const auditsTab = page.getByRole('tab', { name: 'Audits' });
+            await expect(auditsTab).toBeVisible();
+
+            await auditsTab.click();
+            await expect(page).toHaveURL(new RegExp(`/quarry/projects/${projectId}/audits$`));
+
+            await expect(
+                page.getByText('History Filters').or(page.getByText('No audit events found'))
+            ).toBeVisible();
+        });
+    });
+});
+
 test.describe('wall administration form', () => {
     test.use({ storageState: actorStorageState('user_admin') });
 
