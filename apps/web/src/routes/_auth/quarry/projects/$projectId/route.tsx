@@ -1,7 +1,7 @@
 import {
     ArrowLeftIcon,
     CircleNotchIcon,
-    ClockIcon,
+    ActivityIcon,
     FolderIcon,
     GlobeIcon,
     GitBranchIcon,
@@ -55,7 +55,7 @@ const TAB_ORDER = {
     info: 0,
     permissions: 1,
     commits: 2,
-    history: 3,
+    audits: 3,
     assets: 4,
     controller: 5
 } as const;
@@ -65,7 +65,7 @@ const ALL_TABS: { key: TabKey; label: string; to: string; icon: any }[] = [
     { key: 'info', label: 'Project Info', to: '.', icon: FolderIcon },
     { key: 'permissions', label: 'Permissions', to: './permissions', icon: UsersIcon },
     { key: 'commits', label: 'Commits', to: './commits', icon: GitBranchIcon },
-    { key: 'history', label: 'History', to: './history', icon: ClockIcon },
+    { key: 'audits', label: 'Audits', to: './audits', icon: ActivityIcon },
     { key: 'assets', label: 'Assets', to: './assets', icon: ImageIcon },
     { key: 'controller', label: 'Controller', to: './controller_editor', icon: CodeIcon }
 ];
@@ -85,7 +85,7 @@ const TAB_SUBHEADERS: Record<TabKey, { title: string; description?: string }> = 
         title: 'Commit History',
         description: 'Select a commit to publish it to the public gallery.'
     },
-    history: {
+    audits: {
         title: 'Audit Log',
         description: 'A record of all changes made to this project.'
     },
@@ -117,7 +117,7 @@ const slidePanelVariants = {
 function getTabFromPath(pathname: string): TabKey {
     if (pathname.endsWith('/permissions')) return 'permissions';
     if (pathname.endsWith('/commits')) return 'commits';
-    if (pathname.endsWith('/history')) return 'history';
+    if (pathname.endsWith('/audits')) return 'audits';
     if (pathname.endsWith('/assets')) return 'assets';
     if (pathname.endsWith('/controller_editor')) return 'controller';
     return 'info';
@@ -134,9 +134,12 @@ function ProjectLayout() {
     const hasCustomRender = !!project.customRenderUrl;
     const canPublish =
         user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
+    const canViewAudit = user?.role === 'admin' || user?.role === 'operator';
     const tabs = (
         hasCustomRender ? ALL_TABS.filter((t) => !CUSTOM_RENDER_HIDDEN_TABS.has(t.key)) : ALL_TABS
-    ).filter((t) => t.key !== 'controller' || user?.role === 'admin');
+    )
+        .filter((t) => t.key !== 'controller' || user?.role === 'admin')
+        .filter((t) => t.key !== 'audits' || canViewAudit);
     const queryClient = useQueryClient();
     const [openingEditor, setOpeningEditor] = useState(false);
     const impersonatedBy =

@@ -1,4 +1,5 @@
 import { ClockIcon } from '@phosphor-icons/react';
+import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
@@ -19,8 +20,12 @@ import {
     projectQueryOptions
 } from '~/server/projects.queries';
 
-export const Route = createFileRoute('/_auth/quarry/projects/$projectId/history')({
+export const Route = createFileRoute('/_auth/quarry/projects/$projectId/audits')({
     loader: async ({ context, params }) => {
+        const user = await context.queryClient.ensureQueryData(authQueryOptions());
+        if (user?.role !== 'admin' && user?.role !== 'operator') {
+            throw new Response('Unauthorized', { status: 401 });
+        }
         const project = await context.queryClient.ensureQueryData(
             projectQueryOptions(params.projectId)
         );
@@ -28,9 +33,9 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/history'
             projectName: project?.name ?? 'Project'
         };
     },
-    component: HistoryTab,
+    component: AuditsTab,
     head: ({ loaderData }) => ({
-        meta: [{ title: `History · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
+        meta: [{ title: `Audits · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     })
 });
 
@@ -139,7 +144,7 @@ function eventCollapseSignature(event: {
     ].join('|');
 }
 
-function HistoryTab() {
+function AuditsTab() {
     const { projectId } = Route.useParams();
     const queryClient = useQueryClient();
     const [filtersOpen, setFiltersOpen] = useState(false);
