@@ -26,6 +26,8 @@ export interface EditorState {
     showSpacePreview: boolean;
     showGrid: boolean;
     isDrawing: boolean;
+    isErasing: boolean;
+    eraserWidth: number;
     isSnapping: boolean;
     strokeColor: string;
     strokeWidth: number;
@@ -108,6 +110,8 @@ export interface EditorState {
     toggleSlideSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
     toggleGrid: () => void;
     toggleDrawing: () => void;
+    setErasing: (isErasing: boolean) => void;
+    setEraserWidth: (width: number) => void;
     toggleSnapping: () => void;
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;
