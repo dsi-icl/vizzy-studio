@@ -106,6 +106,7 @@ export function EditorSlate() {
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
     const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
+    const [eraserPreviewPath, setEraserPreviewPath] = useState<number[]>([]);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -1195,6 +1196,7 @@ export function EditorSlate() {
                 finalizing: false
             };
             setEraserCursor(cursor);
+            setEraserPreviewPath([cursor.x, cursor.y]);
             return;
         }
         if (
@@ -1290,6 +1292,7 @@ export function EditorSlate() {
             const lastY = gesture.path[gesture.path.length - 1];
             if (lastX !== cursor.x || lastY !== cursor.y) {
                 gesture.path.push(cursor.x, cursor.y);
+                setEraserPreviewPath([...gesture.path]);
             }
             return;
         }
@@ -1407,7 +1410,10 @@ export function EditorSlate() {
             toast.error(getLineEraseFailureMessage(result.reason));
         }
 
-        if (eraserGestureRef.current === gesture) eraserGestureRef.current = null;
+        if (eraserGestureRef.current === gesture) {
+            eraserGestureRef.current = null;
+            setEraserPreviewPath([]);
+        }
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
@@ -1774,6 +1780,16 @@ export function EditorSlate() {
                                     lineJoin="round"
                                 />
                             )}
+                            {isErasing && eraserPreviewPath.length > 2 ? (
+                                <Line
+                                    points={eraserPreviewPath}
+                                    stroke="rgba(148, 163, 184, 0.4)"
+                                    strokeWidth={eraserWidth}
+                                    lineCap="round"
+                                    lineJoin="round"
+                                    listening={false}
+                                />
+                            ) : null}
                             {isErasing && eraserCursor ? (
                                 <Circle
                                     x={eraserCursor.x}
