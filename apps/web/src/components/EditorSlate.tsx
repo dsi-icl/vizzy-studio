@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -1643,19 +1644,14 @@ export function EditorSlate() {
                                 }
                                 if (layer.type === 'line') {
                                     return (
-                                        <Line
+                                        <KonvaLineSegments
                                             key={`lin_${layer.numericId}`}
                                             id={layer.numericId.toString()}
+                                            layer={layer}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}
                                             onClick={props.onSelect}
                                             onTap={props.onSelect}
-                                            points={layer.line}
-                                            stroke={layer.strokeColor}
-                                            strokeWidth={layer.strokeWidth}
-                                            dash={layer.strokeDash}
-                                            dashEnabled={true}
-                                            tension={0.4}
                                             shadowForStrokeEnabled={
                                                 selectedLayerIds[0] ===
                                                     layer.numericId.toString() &&
@@ -1666,8 +1662,6 @@ export function EditorSlate() {
                                             shadowOffsetY={20}
                                             shadowOffsetX={20}
                                             shadowOpacity={1}
-                                            lineCap="round"
-                                            lineJoin="round"
                                         />
                                     );
                                 }

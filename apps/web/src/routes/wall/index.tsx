@@ -13,7 +13,7 @@ import { signedFetch } from '~/lib/signedFetch';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import type { LayerWithWallComponentState } from '~/lib/types';
+import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 
 const HYDRATE_FADE_MS = 1000;
@@ -336,7 +336,7 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const bounds = getLineBounds(layer.line);
+                              const bounds = getLineBounds(getLinePaths(layer).flat());
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -683,13 +683,9 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const bounds = getLineBounds(layer.line);
+                const linePaths = getLinePaths(layer);
+                const bounds = getLineBounds(linePaths.flat());
                 if (!bounds) return null;
-                let svgPoints = [];
-                for (let i = 0; i < layer.line.length; i += 2)
-                    svgPoints.push(
-                        `${Math.round(layer.line[i] - bounds.cx + bounds.width / 2)},${Math.round(layer.line[i + 1] - bounds.cy + bounds.height / 2)}`
-                    );
                 return (
                     <div
                         key={layer.numericId}
@@ -707,16 +703,27 @@ function WallApp() {
                             className="overflow-visible"
                             xmlns="http://www.w3.org/2000/svg"
                         >
-                            <polyline
-                                points={svgPoints.join(' ')}
-                                fill="none"
-                                stroke={layer.strokeColor}
-                                strokeWidth={layer.strokeWidth}
-                                strokeDasharray={layer.strokeDash.join(' ')}
-                                strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
+                            {linePaths.map((line, pathIndex) => {
+                                const points = [];
+                                for (let i = 0; i < line.length; i += 2) {
+                                    points.push(
+                                        `${Math.round(line[i] - bounds.cx + bounds.width / 2)},${Math.round(line[i + 1] - bounds.cy + bounds.height / 2)}`
+                                    );
+                                }
+                                return (
+                                    <polyline
+                                        key={`line-path-${pathIndex}`}
+                                        points={points.join(' ')}
+                                        fill="none"
+                                        stroke={layer.strokeColor}
+                                        strokeWidth={layer.strokeWidth}
+                                        strokeDasharray={layer.strokeDash.join(' ')}
+                                        strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                );
+                            })}
                         </svg>
                     </div>
                 );
