@@ -8,6 +8,7 @@ import {
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
+import { getLineBounds } from './stageGeometry';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
@@ -728,6 +729,40 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const engine = EditorEngine.getInstance();
             engine.createLayer('editor:add_line_layer', newLayer);
             get().markDirty();
+        },
+
+        commitLineErase: (numericId: number, linePaths: number[][]) => {
+            const layer = get().layers.get(numericId);
+            if (layer?.type !== 'line' || layer.config.locked) return;
+
+            if (linePaths.length === 0) {
+                get().removeLayer(numericId);
+                return;
+            }
+
+            const bounds = getLineBounds(linePaths.flat());
+            if (!bounds) return;
+
+            const line = linePaths.reduce((longest, path) =>
+                path.length > longest.length ? path : longest
+            );
+            applyLayerUpdates(
+                [
+                    {
+                        ...layer,
+                        config: {
+                            ...layer.config,
+                            cx: Math.round(bounds.cx),
+                            cy: Math.round(bounds.cy),
+                            width: Math.max(MIN_LAYER_DIMENSION, bounds.width),
+                            height: Math.max(MIN_LAYER_DIMENSION, bounds.height)
+                        },
+                        line,
+                        linePaths
+                    }
+                ],
+                'editor:erase_line_layer'
+            );
         },
 
         clearStage: () => {

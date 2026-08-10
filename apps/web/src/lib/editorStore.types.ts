@@ -82,6 +82,7 @@ export interface EditorState {
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
     addLineLayer: (line: Array<number>) => void;
+    commitLineErase: (numericId: number, linePaths: number[][]) => void;
     clearStage: () => void;
     reboot: () => void;
     reorderLayers: (layers: LayerWithEditorState[]) => void;
