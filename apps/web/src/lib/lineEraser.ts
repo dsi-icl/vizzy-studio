@@ -84,6 +84,15 @@ export type LineEraseTerminalResult =
     | { status: 'unchanged'; paths: number[][] }
     | { status: 'failed'; paths: number[][]; reason: LineEraseTerminalFailureReason };
 
+export type LineEraseGesture = {
+    numericId: number;
+    radius: number;
+    path: number[];
+    didProcessBatch: boolean;
+    result: Promise<LineEraseTerminalResult>;
+    finalizing: boolean;
+};
+
 export const LINE_PATH_MAX_POINTS = 16_384;
 export const ERASER_BATCH_MAX_POINTS = 1_024;
 export const LINE_ERASE_MAX_OUTPUT_PATHS = 512;
