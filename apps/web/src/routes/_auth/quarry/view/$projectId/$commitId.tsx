@@ -18,10 +18,11 @@ import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer as KonvaLayer, Rect, Circle, Line } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Rect, Circle } from 'react-konva';
 import { toast } from 'sonner';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { getStageGridLines } from '~/lib/editorHelpers';
@@ -346,16 +347,9 @@ function CommitViewer() {
                                                     }
                                                     if (layer.type === 'line') {
                                                         return (
-                                                            <Line
+                                                            <KonvaLineSegments
                                                                 key={`lin_${layer.numericId}`}
-                                                                points={layer.line}
-                                                                stroke={layer.strokeColor}
-                                                                strokeWidth={layer.strokeWidth}
-                                                                dash={layer.strokeDash}
-                                                                dashEnabled={true}
-                                                                tension={0.4}
-                                                                lineCap="round"
-                                                                lineJoin="round"
+                                                                layer={layer}
                                                                 listening={false}
                                                             />
                                                         );
