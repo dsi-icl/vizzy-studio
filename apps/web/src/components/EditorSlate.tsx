@@ -41,6 +41,7 @@ import {
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { eraseLinePathsResiliently, getLineEraseFailureMessage } from '~/lib/lineEraser';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
@@ -54,7 +55,7 @@ import {
     touchToStagePoint
 } from '~/lib/stageGeometry';
 import { scrubInsecureTusResumeEntries } from '~/lib/tusClient';
-import type { Layer, LayerWithEditorState } from '~/lib/types';
+import { getLinePaths, type Layer, type LayerWithEditorState } from '~/lib/types';
 import { $createUploadToken } from '~/server/projects.fns';
 
 import { SlatePreview } from './SlatePreview';
@@ -62,6 +63,14 @@ import { SlatePreview } from './SlatePreview';
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
+
+type EraserGesture = {
+    numericId: number;
+    linePaths: number[][];
+    strokeWidth: number;
+    path: number[];
+    finalizing: boolean;
+};
 
 export function EditorSlate() {
     const engine = useMemo(
@@ -83,6 +92,9 @@ export function EditorSlate() {
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
+    const isErasing = useEditorStore((s) => s.isErasing);
+    const eraserWidth = useEditorStore((s) => s.eraserWidth);
+    const commitLineErase = useEditorStore((s) => s.commitLineErase);
 
     // Peer cursors are per-slide; remounting on scope change drops the previous
     // slide's cursors instead of leaving them to age out.
@@ -93,6 +105,7 @@ export function EditorSlate() {
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
+    const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -102,6 +115,7 @@ export function EditorSlate() {
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
     const hoverTrRef = useRef<Konva.Transformer>(null);
+    const eraserGestureRef = useRef<EraserGesture | null>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
@@ -134,6 +148,7 @@ export function EditorSlate() {
         hoveredLayer?.config.visible &&
         !selectedLayerIdSet.has(hoveredLayerId) &&
         !isDrawing &&
+        !isErasing &&
         !isPinching
             ? hoveredLayerId
             : null;
@@ -423,6 +438,10 @@ export function EditorSlate() {
     useEffect(() => {
         layersRef.current = layers;
     }, [layers]);
+
+    useEffect(() => {
+        if (!isErasing) eraserGestureRef.current = null;
+    }, [isErasing]);
 
     useEffect(() => {
         if (!engine) return;
@@ -1151,6 +1170,33 @@ export function EditorSlate() {
         if (isDrawing && isTwoFingerTouch) {
             setCurrentLine([]);
         }
+        if (isErasing) {
+            const isPrimaryPointer =
+                (e.evt instanceof TouchEvent && e.evt.touches.length === 1) ||
+                (e.evt instanceof MouseEvent && e.evt.button === 0);
+            if (!isPrimaryPointer || eraserGestureRef.current) return;
+
+            const selectedId = currentSelectedIds[0];
+            const layer = selectedId
+                ? useEditorStore.getState().layers.get(Number.parseInt(selectedId, 10))
+                : undefined;
+            const point = e.target.getStage()?.getPointerPosition();
+            if (!point || layer?.type !== 'line' || layer.config.locked) return;
+
+            const cursor = {
+                x: point.x / stageScaleFactor,
+                y: point.y / stageScaleFactor
+            };
+            eraserGestureRef.current = {
+                numericId: layer.numericId,
+                linePaths: getLinePaths(layer),
+                strokeWidth: layer.strokeWidth,
+                path: [cursor.x, cursor.y],
+                finalizing: false
+            };
+            setEraserCursor(cursor);
+            return;
+        }
         if (
             (isTouchEvent(e.evt) && e.evt.touches?.length === 1) ||
             (e.evt instanceof MouseEvent && e.type === 'mousedown' && e.evt.button === 0)
@@ -1224,6 +1270,29 @@ export function EditorSlate() {
         const currentSelectedLayer = currentSelectedIds[0]
             ? useEditorStore.getState().layers.get(Number.parseInt(currentSelectedIds[0], 10))
             : undefined;
+        if (isErasing) {
+            const point = e.target.getStage()?.getPointerPosition();
+            if (!point) return;
+
+            const cursor = {
+                x: point.x / stageScaleFactor,
+                y: point.y / stageScaleFactor
+            };
+            setEraserCursor(cursor);
+
+            const gesture = eraserGestureRef.current;
+            const isPrimaryPointer =
+                (e.evt instanceof TouchEvent && e.evt.touches.length === 1) ||
+                (e.evt instanceof MouseEvent && e.evt.buttons === 1);
+            if (!gesture || gesture.finalizing || !isPrimaryPointer) return;
+
+            const lastX = gesture.path[gesture.path.length - 2];
+            const lastY = gesture.path[gesture.path.length - 1];
+            if (lastX !== cursor.x || lastY !== cursor.y) {
+                gesture.path.push(cursor.x, cursor.y);
+            }
+            return;
+        }
         if (e.evt instanceof MouseEvent) {
             const targetId =
                 !isDrawing && e.evt.buttons === 0 && !trRef.current?.isTransforming()
@@ -1322,7 +1391,31 @@ export function EditorSlate() {
         }
     };
 
+    const finishEraserGesture = async () => {
+        const gesture = eraserGestureRef.current;
+        if (!gesture || gesture.finalizing) return;
+        gesture.finalizing = true;
+
+        const result = await eraseLinePathsResiliently(
+            gesture.linePaths,
+            gesture.path,
+            eraserWidth / 2 + gesture.strokeWidth / 2
+        );
+        if (result.status === 'changed') {
+            commitLineErase(gesture.numericId, result.paths);
+        } else if (result.status === 'failed') {
+            toast.error(getLineEraseFailureMessage(result.reason));
+        }
+
+        if (eraserGestureRef.current === gesture) eraserGestureRef.current = null;
+    };
+
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (isErasing) {
+            void finishEraserGesture();
+            if (isTouchEvent(e.evt)) setEraserCursor(null);
+            return;
+        }
         if (isTouchEvent(e.evt) && e.evt.touches.length < 2) setIsPinching(false);
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const shouldFinalizeFromStage = isTouchEvent(e.evt) && isPinching;
@@ -1350,6 +1443,7 @@ export function EditorSlate() {
 
     const handleStageMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
         setHoveredLayerId(null);
+        setEraserCursor(null);
         // Stops the presence heartbeat, so peers age this cursor out instead of
         // holding it at the edge of the stage indefinitely.
         engine?.stopPointerBroadcast();
@@ -1483,7 +1577,7 @@ export function EditorSlate() {
                                 const hiddenOpacity = isHidden ? 0.3 : 1;
 
                                 const props = {
-                                    listening: !isDrawing,
+                                    listening: !isDrawing && !isErasing,
                                     isDrawing,
                                     isPinching,
                                     isLocked,
@@ -1680,6 +1774,17 @@ export function EditorSlate() {
                                     lineJoin="round"
                                 />
                             )}
+                            {isErasing && eraserCursor ? (
+                                <Circle
+                                    x={eraserCursor.x}
+                                    y={eraserCursor.y}
+                                    radius={eraserWidth / 2}
+                                    fill="rgba(255, 255, 255, 0.08)"
+                                    stroke="rgba(255, 255, 255, 0.7)"
+                                    strokeWidth={2 / stageScaleFactor}
+                                    listening={false}
+                                />
+                            ) : null}
                             <Transformer
                                 ref={hoverTrRef}
                                 listening={false}
