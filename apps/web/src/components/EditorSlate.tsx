@@ -41,7 +41,12 @@ import {
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { eraseLinePathsResiliently, getLineEraseFailureMessage } from '~/lib/lineEraser';
+import {
+    appendEraserPoint,
+    eraseLinePathsResiliently,
+    getLineEraseFailureMessage,
+    type LineEraseGesture
+} from '~/lib/lineEraser';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
@@ -63,14 +68,6 @@ import { SlatePreview } from './SlatePreview';
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
-
-type EraserGesture = {
-    numericId: number;
-    linePaths: number[][];
-    strokeWidth: number;
-    path: number[];
-    finalizing: boolean;
-};
 
 export function EditorSlate() {
     const engine = useMemo(
@@ -107,6 +104,10 @@ export function EditorSlate() {
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
     const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
     const [eraserPreviewPath, setEraserPreviewPath] = useState<number[]>([]);
+    const [erasedLinePreview, setErasedLinePreview] = useState<{
+        numericId: number;
+        linePaths: number[][];
+    } | null>(null);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -116,7 +117,7 @@ export function EditorSlate() {
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
     const hoverTrRef = useRef<Konva.Transformer>(null);
-    const eraserGestureRef = useRef<EraserGesture | null>(null);
+    const eraserGestureRef = useRef<LineEraseGesture | null>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
@@ -1159,6 +1160,32 @@ export function EditorSlate() {
         return null;
     };
 
+    const processEraserBatch = (gesture: LineEraseGesture, path: number[]) => {
+        const batch = [...path];
+        gesture.result = gesture.result.then(async (currentResult) => {
+            if (currentResult.status === 'failed' || eraserGestureRef.current !== gesture) {
+                return currentResult;
+            }
+
+            const nextResult = await eraseLinePathsResiliently(
+                currentResult.paths,
+                batch,
+                gesture.radius
+            );
+            if (eraserGestureRef.current !== gesture) return currentResult;
+            if (nextResult.status === 'changed') {
+                setErasedLinePreview({
+                    numericId: gesture.numericId,
+                    linePaths: nextResult.paths
+                });
+            }
+
+            return nextResult.status === 'unchanged' && currentResult.status === 'changed'
+                ? currentResult
+                : nextResult;
+        });
+    };
+
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
             setHoveredLayerId(null);
@@ -1188,15 +1215,18 @@ export function EditorSlate() {
                 x: point.x / stageScaleFactor,
                 y: point.y / stageScaleFactor
             };
+            const linePaths = getLinePaths(layer);
             eraserGestureRef.current = {
                 numericId: layer.numericId,
-                linePaths: getLinePaths(layer),
-                strokeWidth: layer.strokeWidth,
+                radius: eraserWidth / 2 + layer.strokeWidth / 2,
                 path: [cursor.x, cursor.y],
+                didProcessBatch: false,
+                result: Promise.resolve({ status: 'unchanged', paths: linePaths }),
                 finalizing: false
             };
             setEraserCursor(cursor);
             setEraserPreviewPath([cursor.x, cursor.y]);
+            setErasedLinePreview(null);
             return;
         }
         if (
@@ -1291,7 +1321,11 @@ export function EditorSlate() {
             const lastX = gesture.path[gesture.path.length - 2];
             const lastY = gesture.path[gesture.path.length - 1];
             if (lastX !== cursor.x || lastY !== cursor.y) {
-                gesture.path.push(cursor.x, cursor.y);
+                const batch = appendEraserPoint(gesture.path, cursor.x, cursor.y);
+                if (batch) {
+                    gesture.didProcessBatch = true;
+                    processEraserBatch(gesture, batch);
+                }
                 setEraserPreviewPath([...gesture.path]);
             }
             return;
@@ -1399,21 +1433,21 @@ export function EditorSlate() {
         if (!gesture || gesture.finalizing) return;
         gesture.finalizing = true;
 
-        const result = await eraseLinePathsResiliently(
-            gesture.linePaths,
-            gesture.path,
-            eraserWidth / 2 + gesture.strokeWidth / 2
-        );
+        if (gesture.path.length > 2 || !gesture.didProcessBatch) {
+            processEraserBatch(gesture, gesture.path);
+        }
+        const result = await gesture.result;
+        if (eraserGestureRef.current !== gesture) return;
+
         if (result.status === 'changed') {
             commitLineErase(gesture.numericId, result.paths);
         } else if (result.status === 'failed') {
             toast.error(getLineEraseFailureMessage(result.reason));
         }
 
-        if (eraserGestureRef.current === gesture) {
-            eraserGestureRef.current = null;
-            setEraserPreviewPath([]);
-        }
+        eraserGestureRef.current = null;
+        setEraserPreviewPath([]);
+        setErasedLinePreview(null);
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
@@ -1743,11 +1777,16 @@ export function EditorSlate() {
                                     }
                                 }
                                 if (layer.type === 'line') {
+                                    const previewLayer =
+                                        isErasing &&
+                                        erasedLinePreview?.numericId === layer.numericId
+                                            ? { ...layer, linePaths: erasedLinePreview.linePaths }
+                                            : layer;
                                     return (
                                         <KonvaLineSegments
                                             key={`lin_${layer.numericId}`}
                                             id={layer.numericId.toString()}
-                                            layer={layer}
+                                            layer={previewLayer}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}
                                             onClick={props.onSelect}
