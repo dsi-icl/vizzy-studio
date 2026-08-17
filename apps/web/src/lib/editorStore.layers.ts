@@ -328,14 +328,24 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         deleteSelectedLayer: () => {
             const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
-            const numericId = parseInt(selectedLayerIds[0]);
-            if (layers.get(numericId)?.config.locked) return;
+            const deletableIds = toNumericIds(selectedLayerIds).filter(
+                (id) => layers.has(id) && !layers.get(id)?.config.locked
+            );
+            if (!deletableIds.length) return;
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({ type: 'delete_layer', numericId });
+            for (const numericId of deletableIds) {
+                engine.sendJSON({ type: 'delete_layer', numericId });
+            }
+            const deletedSet = new Set(deletableIds);
             set((s) => {
                 const newLayers = new Map(s.layers);
-                newLayers.delete(numericId);
-                return { layers: newLayers, selectedLayerIds: [] };
+                for (const numericId of deletedSet) newLayers.delete(numericId);
+                return {
+                    layers: newLayers,
+                    selectedLayerIds: s.selectedLayerIds.filter(
+                        (id) => !deletedSet.has(parseInt(id))
+                    )
+                };
             });
             get().markDirty();
         },
