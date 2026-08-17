@@ -21,10 +21,7 @@ type LineEraseLimits = {
     maxOutputPaths: number;
     maxOutputPoints: number;
     maxWork: number;
-    useSpatialIndex: boolean;
 };
-type PendingEraseBatch = { path: number[]; useDirectScan: boolean };
-type LineEraseYield = () => Promise<void>;
 
 function getLinePathsBounds(paths: number[][]): LineBounds | null {
     let minX = Infinity;
@@ -89,8 +86,7 @@ export type LineEraseGesture = {
     radius: number;
     path: number[];
     didProcessBatch: boolean;
-    result: Promise<LineEraseTerminalResult>;
-    finalizing: boolean;
+    result: LineEraseTerminalResult;
 };
 
 export const LINE_PATH_MAX_POINTS = 16_384;
@@ -101,7 +97,6 @@ export const LINE_ERASE_MAX_OUTPUT_POINTS = LINE_PATH_MAX_POINTS + LINE_ERASE_MA
 export const LINE_ERASE_MAX_WORK = 250_000;
 
 const MIN_BUCKET_SIZE = 32;
-const DIRECT_SCAN_MAX_SEGMENTS = 16;
 const EPSILON = 1e-6;
 const DEFAULT_LIMITS: LineEraseLimits = {
     maxEraserPoints: ERASER_BATCH_MAX_POINTS,
@@ -109,17 +104,7 @@ const DEFAULT_LIMITS: LineEraseLimits = {
     maxInputPoints: LINE_ERASE_MAX_OUTPUT_POINTS,
     maxOutputPaths: LINE_ERASE_MAX_OUTPUT_PATHS,
     maxOutputPoints: LINE_ERASE_MAX_OUTPUT_POINTS,
-    maxWork: LINE_ERASE_MAX_WORK,
-    useSpatialIndex: true
-};
-const RELAXED_STRUCTURE_LIMITS: Pick<
-    LineEraseLimits,
-    'maxInputPaths' | 'maxInputPoints' | 'maxOutputPaths' | 'maxOutputPoints'
-> = {
-    maxInputPaths: Number.POSITIVE_INFINITY,
-    maxInputPoints: Number.POSITIVE_INFINITY,
-    maxOutputPaths: Number.POSITIVE_INFINITY,
-    maxOutputPoints: Number.POSITIVE_INFINITY
+    maxWork: LINE_ERASE_MAX_WORK
 };
 
 const FAILURE_MESSAGES: Record<LineEraseTerminalFailureReason, string> = {
@@ -189,35 +174,6 @@ function createBoundedSegment(start: Point, end: Point): BoundedSegment {
         minY: Math.min(start.y, end.y),
         maxY: Math.max(start.y, end.y)
     };
-}
-
-function deduplicateSegments(segments: BoundedSegment[]): BoundedSegment[] {
-    const uniqueSegments: BoundedSegment[] = [];
-    const keys = new Set<string>();
-
-    for (const segment of segments) {
-        const forward = `${segment.start.x}:${segment.start.y}:${segment.end.x}:${segment.end.y}`;
-        const reverse = `${segment.end.x}:${segment.end.y}:${segment.start.x}:${segment.start.y}`;
-        const key = forward < reverse ? forward : reverse;
-        if (keys.has(key)) continue;
-        keys.add(key);
-        uniqueSegments.push(segment);
-    }
-
-    return uniqueSegments;
-}
-
-function countUniquePathSegments(path: number[]): number {
-    const keys = new Set<string>();
-    if (path.length === 2) return 1;
-
-    for (let index = 0; index < path.length - 2; index += 2) {
-        const forward = `${path[index]}:${path[index + 1]}:${path[index + 2]}:${path[index + 3]}`;
-        const reverse = `${path[index + 2]}:${path[index + 3]}:${path[index]}:${path[index + 1]}`;
-        keys.add(forward < reverse ? forward : reverse);
-        if (keys.size > DIRECT_SCAN_MAX_SEGMENTS) return keys.size;
-    }
-    return keys.size;
 }
 
 function getSegmentBucketKeys(
@@ -479,12 +435,15 @@ function measureLinePaths(
 
     let pointCount = 0;
     for (const path of paths) {
-        if (path.length % 2 !== 0 || !path.every(Number.isFinite)) {
+        if (path.length % 2 !== 0) {
             return { ok: false, reason: 'invalid_line_paths' };
         }
         pointCount += path.length / 2;
         if (pointCount > limits.maxInputPoints) {
             return { ok: false, reason: 'line_point_limit_exceeded' };
+        }
+        if (!path.every(Number.isFinite)) {
+            return { ok: false, reason: 'invalid_line_paths' };
         }
     }
 
@@ -519,17 +478,16 @@ function eraseLinePathsWithLimits(
     if (!Number.isFinite(effectiveRadius) || effectiveRadius <= 0) {
         return failed(paths, 'invalid_radius');
     }
-    if (
-        eraserPath.length === 0 ||
-        eraserPath.length % 2 !== 0 ||
-        !eraserPath.every(Number.isFinite)
-    ) {
+    if (eraserPath.length === 0 || eraserPath.length % 2 !== 0) {
         return failed(paths, 'invalid_eraser_path');
     }
 
     const eraserPointCount = eraserPath.length / 2;
     if (eraserPointCount > limits.maxEraserPoints) {
         return failed(paths, 'eraser_batch_limit_exceeded');
+    }
+    if (!eraserPath.every(Number.isFinite)) {
+        return failed(paths, 'invalid_eraser_path');
     }
     // A prior batch may already have erased the entire layer. Later batches are valid no-ops.
     if (paths.length === 0) return { status: 'unchanged', paths };
@@ -556,17 +514,11 @@ function eraseLinePathsWithLimits(
             segment.minY - effectiveRadius <= lineBounds.maxY
     );
     if (nearbyEraserSegments.length === 0) return { status: 'unchanged', paths };
-    const scanEraserSegments = limits.useSpatialIndex
-        ? nearbyEraserSegments
-        : deduplicateSegments(nearbyEraserSegments);
-
     // Spatial sampling and candidate checks share one bounded workload.
     const workBudget = { remaining: limits.maxWork };
     const bucketSize = Math.max(MIN_BUCKET_SIZE, effectiveRadius);
-    const buckets = limits.useSpatialIndex
-        ? buildSegmentBuckets(scanEraserSegments, bucketSize, workBudget)
-        : null;
-    if (limits.useSpatialIndex && !buckets) return failed(paths, 'work_budget_exceeded');
+    const buckets = buildSegmentBuckets(nearbyEraserSegments, bucketSize, workBudget);
+    if (!buckets) return failed(paths, 'work_budget_exceeded');
 
     const radiusSquared = effectiveRadius * effectiveRadius;
     const output: LinePathOutput = { paths: [], pointCount: 0 };
@@ -585,7 +537,7 @@ function eraseLinePathsWithLimits(
             const edgeMaxY = Math.max(start.y, end.y);
             const cuts: Interval[] = [];
             const visitEraserSegment = (index: number) => {
-                const eraserSegment = scanEraserSegments[index];
+                const eraserSegment = nearbyEraserSegments[index];
                 if (
                     edgeMaxX < eraserSegment.minX - effectiveRadius ||
                     edgeMinX > eraserSegment.maxX + effectiveRadius ||
@@ -607,26 +559,14 @@ function eraseLinePathsWithLimits(
                 cuts.push(cut);
                 return cut.start > EPSILON || cut.end < 1 - EPSILON;
             };
-            let completedWithinBudget = true;
-
-            if (limits.useSpatialIndex && buckets) {
-                completedWithinBudget = visitNearbySegmentIndexes(
-                    start,
-                    end,
-                    bucketSize,
-                    buckets,
-                    workBudget,
-                    visitEraserSegment
-                );
-            } else {
-                for (let index = 0; index < scanEraserSegments.length; index += 1) {
-                    if (!consumeWork(workBudget)) {
-                        completedWithinBudget = false;
-                        break;
-                    }
-                    if (!visitEraserSegment(index)) break;
-                }
-            }
+            const completedWithinBudget = visitNearbySegmentIndexes(
+                start,
+                end,
+                bucketSize,
+                buckets,
+                workBudget,
+                visitEraserSegment
+            );
             if (!completedWithinBudget) return failed(paths, 'work_budget_exceeded');
 
             const mergedCuts = mergeIntervals(cuts);
@@ -672,194 +612,11 @@ export function eraseLinePathsWithinBudget(
 ): LineEraseEngineResult {
     return eraseLinePathsWithLimits(paths, eraserPath, effectiveRadius, DEFAULT_LIMITS);
 }
-
-function splitEraserBatch(path: number[]): [number[], number[]] | null {
-    const pointCount = path.length / 2;
-    if (!Number.isInteger(pointCount) || pointCount < 3) return null;
-
-    const middlePointIndex = Math.floor((pointCount - 1) / 2);
-    return [path.slice(0, (middlePointIndex + 1) * 2), path.slice(middlePointIndex * 2)];
-}
-
-function yieldLineEraseWork(): Promise<void> {
-    if (typeof requestAnimationFrame === 'function') {
-        return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-    }
-    return Promise.resolve();
-}
-
-function appendContinuedChunk(output: number[][], chunkPaths: number[][]): void {
-    if (chunkPaths.length === 0) return;
-    const previous = output.at(-1);
-    const first = chunkPaths[0];
-    if (previous && previous.at(-2) === first[0] && previous.at(-1) === first[1]) {
-        previous.push(...first.slice(2));
-        output.push(...chunkPaths.slice(1));
-        return;
-    }
-    output.push(...chunkPaths);
-}
-
-async function eraseLinePathsDirectlyInChunks(
+export function eraseLinePaths(
     paths: number[][],
     eraserPath: number[],
-    effectiveRadius: number,
-    yieldControl: LineEraseYield
-): Promise<LineEraseEngineResult> {
-    const uniqueSegmentCount = Math.max(1, countUniquePathSegments(eraserPath));
-    const maxLineSegmentsPerChunk = Math.max(
-        1,
-        Math.floor(LINE_ERASE_MAX_WORK / uniqueSegmentCount)
-    );
-    const totalLineSegments = paths.reduce(
-        (total, path) => total + Math.max(0, path.length / 2 - 1),
-        0
-    );
-    if (totalLineSegments <= maxLineSegmentsPerChunk) {
-        return eraseLinePathsWithLimits(paths, eraserPath, effectiveRadius, {
-            ...DEFAULT_LIMITS,
-            ...RELAXED_STRUCTURE_LIMITS,
-            maxWork: LINE_ERASE_MAX_WORK,
-            useSpatialIndex: false
-        });
-    }
-
-    const output: number[][] = [];
-    let estimatedWorkSinceYield = 0;
-    let didChange = false;
-
-    for (const path of paths) {
-        const pathOutput: number[][] = [];
-        const pointCount = path.length / 2;
-        if (pointCount < 2) continue;
-
-        for (
-            let startPointIndex = 0;
-            startPointIndex < pointCount - 1;
-            startPointIndex += maxLineSegmentsPerChunk
-        ) {
-            const endPointIndex = Math.min(
-                pointCount - 1,
-                startPointIndex + maxLineSegmentsPerChunk
-            );
-            const chunk = path.slice(startPointIndex * 2, (endPointIndex + 1) * 2);
-            const estimatedWork = (endPointIndex - startPointIndex) * uniqueSegmentCount;
-            if (
-                estimatedWorkSinceYield > 0 &&
-                estimatedWorkSinceYield + estimatedWork > LINE_ERASE_MAX_WORK
-            ) {
-                await yieldControl();
-                estimatedWorkSinceYield = 0;
-            }
-
-            const result = eraseLinePathsWithLimits([chunk], eraserPath, effectiveRadius, {
-                ...DEFAULT_LIMITS,
-                ...RELAXED_STRUCTURE_LIMITS,
-                maxWork: LINE_ERASE_MAX_WORK,
-                useSpatialIndex: false
-            });
-            if (result.status === 'failed') return failed(paths, result.reason);
-            if (result.status === 'changed') didChange = true;
-            appendContinuedChunk(pathOutput, result.paths);
-            estimatedWorkSinceYield += estimatedWork;
-        }
-        output.push(...pathOutput);
-    }
-
-    return didChange ? { status: 'changed', paths: output } : { status: 'unchanged', paths };
-}
-
-function isStructureLimitFailure(reason: LineEraseEngineFailureReason): boolean {
-    return (
-        reason === 'line_path_limit_exceeded' ||
-        reason === 'line_point_limit_exceeded' ||
-        reason === 'output_path_limit_exceeded' ||
-        reason === 'output_point_limit_exceeded'
-    );
-}
-
-/**
- * Completes valid user gestures without dropping input. Work-heavy batches are divided until each
- * spatial job fits the budget or contains at most a small, fixed number of unique segments for an
- * exact direct scan. Pending jobs yield to the browser between chunks so long-lived fragmented lines
- * cannot monopolise the main thread.
- */
-export async function eraseLinePathsResiliently(
-    paths: number[][],
-    eraserPath: number[],
-    effectiveRadius: number,
-    yieldControl: LineEraseYield = yieldLineEraseWork
-): Promise<LineEraseTerminalResult> {
-    const pending: PendingEraseBatch[] = [{ path: eraserPath, useDirectScan: false }];
-    let currentPaths = paths;
-    let didChange = false;
-    let relaxedStructureLimits = false;
-
-    while (pending.length > 0) {
-        const batch = pending.shift();
-        if (!batch) break;
-
-        const result = batch.useDirectScan
-            ? await eraseLinePathsDirectlyInChunks(
-                  currentPaths,
-                  batch.path,
-                  effectiveRadius,
-                  yieldControl
-              )
-            : eraseLinePathsWithLimits(currentPaths, batch.path, effectiveRadius, {
-                  ...DEFAULT_LIMITS,
-                  ...(relaxedStructureLimits ? RELAXED_STRUCTURE_LIMITS : {})
-              });
-
-        if (result.status === 'changed') {
-            currentPaths = result.paths;
-            didChange = true;
-            if (pending.length > 0) await yieldControl();
-            continue;
-        }
-        if (result.status === 'unchanged') {
-            if (pending.length > 0) await yieldControl();
-            continue;
-        }
-
-        if (isStructureLimitFailure(result.reason)) {
-            if (relaxedStructureLimits) return terminalFailed(paths, result.reason);
-            relaxedStructureLimits = true;
-            pending.unshift(batch);
-            await yieldControl();
-            continue;
-        }
-
-        if (result.reason === 'eraser_batch_limit_exceeded') {
-            const split = splitEraserBatch(batch.path);
-            if (split) {
-                pending.unshift(
-                    { path: split[0], useDirectScan: false },
-                    { path: split[1], useDirectScan: false }
-                );
-                await yieldControl();
-                continue;
-            }
-        }
-
-        if (result.reason === 'work_budget_exceeded') {
-            if (!batch.useDirectScan) {
-                const split = splitEraserBatch(batch.path);
-                if (split && countUniquePathSegments(batch.path) > DIRECT_SCAN_MAX_SEGMENTS) {
-                    pending.unshift(
-                        { path: split[0], useDirectScan: false },
-                        { path: split[1], useDirectScan: false }
-                    );
-                } else {
-                    pending.unshift({ ...batch, useDirectScan: true });
-                }
-                await yieldControl();
-                continue;
-            }
-        }
-
-        return terminalFailed(paths, result.reason);
-    }
-
-    return didChange ? { status: 'changed', paths: currentPaths } : { status: 'unchanged', paths };
+    effectiveRadius: number
+): LineEraseTerminalResult {
+    const result = eraseLinePathsWithinBudget(paths, eraserPath, effectiveRadius);
+    return result.status === 'failed' ? terminalFailed(paths, result.reason) : result;
 }
