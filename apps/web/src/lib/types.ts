@@ -307,7 +307,14 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string(),
         recentColours: z.array(z.string())
     }),
-    z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('delete_layer'),
+        numericId: z.number(),
+        origin: z
+            .string()
+            .regex(/^(editor|controller|yjs):[a-z0-9_]+$/)
+            .optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),

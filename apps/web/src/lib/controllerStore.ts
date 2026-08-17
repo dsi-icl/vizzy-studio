@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { ERASER_DEFAULT_WIDTH, clampEraserWidth } from './eraser';
+import { appendEraserPoint as appendBoundedEraserPoint } from './lineEraser';
 
 export interface ControllerState {
     isDrawing: boolean;
@@ -19,6 +20,7 @@ export interface ControllerState {
     setStrokeDash: (strokeDash: number[]) => void;
     startLine: (x: number, y: number) => void;
     appendLinePoint: (x: number, y: number) => void;
+    appendEraserPoint: (x: number, y: number) => number[] | null;
     clearCurrentLine: () => void;
     consumeCurrentLine: () => number[];
 }
@@ -63,6 +65,22 @@ export const useControllerStore =
                   set((s) => ({
                       currentLine: s.currentLine.concat([Math.round(x), Math.round(y)])
                   })),
+              appendEraserPoint: (x, y) => {
+                  const currentLine = get().currentLine;
+                  const roundedX = Math.round(x);
+                  const roundedY = Math.round(y);
+                  if (
+                      currentLine[currentLine.length - 2] === roundedX &&
+                      currentLine[currentLine.length - 1] === roundedY
+                  ) {
+                      return null;
+                  }
+
+                  const path = [...currentLine];
+                  const batch = appendBoundedEraserPoint(path, roundedX, roundedY);
+                  set({ currentLine: path });
+                  return batch;
+              },
               clearCurrentLine: () =>
                   set((s) => (s.currentLine.length === 0 ? s : { currentLine: [] })),
               consumeCurrentLine: () => {

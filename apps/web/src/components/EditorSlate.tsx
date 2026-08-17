@@ -43,7 +43,7 @@ import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import {
     appendEraserPoint,
-    eraseLinePathsResiliently,
+    eraseLinePaths,
     getLineEraseFailureMessage,
     type LineEraseGesture
 } from '~/lib/lineEraser';
@@ -1161,29 +1161,18 @@ export function EditorSlate() {
     };
 
     const processEraserBatch = (gesture: LineEraseGesture, path: number[]) => {
-        const batch = [...path];
-        gesture.result = gesture.result.then(async (currentResult) => {
-            if (currentResult.status === 'failed' || eraserGestureRef.current !== gesture) {
-                return currentResult;
-            }
+        if (gesture.result.status === 'failed') return;
 
-            const nextResult = await eraseLinePathsResiliently(
-                currentResult.paths,
-                batch,
-                gesture.radius
-            );
-            if (eraserGestureRef.current !== gesture) return currentResult;
-            if (nextResult.status === 'changed') {
-                setErasedLinePreview({
-                    numericId: gesture.numericId,
-                    linePaths: nextResult.paths
-                });
-            }
-
-            return nextResult.status === 'unchanged' && currentResult.status === 'changed'
-                ? currentResult
-                : nextResult;
-        });
+        const nextResult = eraseLinePaths(gesture.result.paths, path, gesture.radius);
+        if (nextResult.status === 'changed') {
+            setErasedLinePreview({
+                numericId: gesture.numericId,
+                linePaths: nextResult.paths
+            });
+        }
+        if (nextResult.status !== 'unchanged' || gesture.result.status !== 'changed') {
+            gesture.result = nextResult;
+        }
     };
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
@@ -1221,8 +1210,7 @@ export function EditorSlate() {
                 radius: eraserWidth / 2 + layer.strokeWidth / 2,
                 path: [cursor.x, cursor.y],
                 didProcessBatch: false,
-                result: Promise.resolve({ status: 'unchanged', paths: linePaths }),
-                finalizing: false
+                result: { status: 'unchanged', paths: linePaths }
             };
             setEraserCursor(cursor);
             setEraserPreviewPath([cursor.x, cursor.y]);
@@ -1316,7 +1304,7 @@ export function EditorSlate() {
             const isPrimaryPointer =
                 (e.evt instanceof TouchEvent && e.evt.touches.length === 1) ||
                 (e.evt instanceof MouseEvent && e.evt.buttons === 1);
-            if (!gesture || gesture.finalizing || !isPrimaryPointer) return;
+            if (!gesture || !isPrimaryPointer) return;
 
             const lastX = gesture.path[gesture.path.length - 2];
             const lastY = gesture.path[gesture.path.length - 1];
@@ -1428,16 +1416,14 @@ export function EditorSlate() {
         }
     };
 
-    const finishEraserGesture = async () => {
+    const finishEraserGesture = () => {
         const gesture = eraserGestureRef.current;
-        if (!gesture || gesture.finalizing) return;
-        gesture.finalizing = true;
+        if (!gesture) return;
 
         if (gesture.path.length > 2 || !gesture.didProcessBatch) {
             processEraserBatch(gesture, gesture.path);
         }
-        const result = await gesture.result;
-        if (eraserGestureRef.current !== gesture) return;
+        const result = gesture.result;
 
         if (result.status === 'changed') {
             commitLineErase(gesture.numericId, result.paths);
@@ -1452,7 +1438,7 @@ export function EditorSlate() {
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isErasing) {
-            void finishEraserGesture();
+            finishEraserGesture();
             if (isTouchEvent(e.evt)) setEraserCursor(null);
             return;
         }

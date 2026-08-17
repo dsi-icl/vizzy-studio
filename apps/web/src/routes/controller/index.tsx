@@ -21,9 +21,11 @@ import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
-import { eraseLinePathsResiliently } from '~/lib/lineEraser';
+import { MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { eraseLinePaths } from '~/lib/lineEraser';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
+import { getLineBounds } from '~/lib/stageGeometry';
 import { getLinePaths, type LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
@@ -58,6 +60,20 @@ interface SlideEntry {
 interface RenderState {
     hydrationReady: boolean;
     customRenderUrl?: string;
+}
+
+interface ControllerEraseTarget {
+    layer: LayerWithEditorState;
+    paths: number[][];
+    radius: number;
+    changed: boolean;
+    failed: boolean;
+}
+
+interface ControllerEraseGesture {
+    slideId: string;
+    targets: ControllerEraseTarget[];
+    didProcessBatch: boolean;
 }
 
 function buildLineLayer(
@@ -159,6 +175,7 @@ function Controller() {
     const [slides, setSlides] = useState<SlideEntry[]>([]);
     const [pendingSlideId, setPendingSlideId] = useState<string | null>(null);
     const slidesRef = useRef<SlideEntry[]>([]);
+    const eraserGestureRef = useRef<ControllerEraseGesture | null>(null);
     const lastRequestedBindRef = useRef<string | null>(null);
     const lastBoundScopeRef = useRef<string | null>(null);
     const boundSlideIdRef = useRef<string | null>(null);
@@ -181,6 +198,7 @@ function Controller() {
         toggleDrawing,
         startLine,
         appendLinePoint,
+        appendEraserPoint,
         clearCurrentLine,
         consumeCurrentLine
     } = useControllerStore(
@@ -201,6 +219,7 @@ function Controller() {
             toggleDrawing: s.toggleDrawing,
             startLine: s.startLine,
             appendLinePoint: s.appendLinePoint,
+            appendEraserPoint: s.appendEraserPoint,
             clearCurrentLine: s.clearCurrentLine,
             consumeCurrentLine: s.consumeCurrentLine
         }))
@@ -424,6 +443,16 @@ function Controller() {
         );
     }, []);
 
+    const removeLayerFromSlide = useCallback((slideId: string, numericId: number) => {
+        setSlides((prev) =>
+            prev.map((slide) => {
+                if (slide.id !== slideId) return slide;
+                const nextLayers = slide.layers.filter((layer) => layer.numericId !== numericId);
+                return { ...slide, layers: nextLayers, layerCount: nextLayers.length };
+            })
+        );
+    }, []);
+
     // HMR rehydrate
     useEffect(() => {
         if (window.__CONTROLLER_RELOADING__) {
@@ -487,6 +516,7 @@ function Controller() {
 
     useEffect(() => {
         clearCurrentLine();
+        eraserGestureRef.current = null;
     }, [activeSlideId, requestedSlideId, binding.slideId, binding.bound, clearCurrentLine]);
 
     useEffect(() => {
@@ -629,39 +659,87 @@ function Controller() {
         [engine, activeSlideId, strokeColor, strokeWidth, strokeDash, upsertLayerOnSlide]
     );
 
-    const eraseLines = useCallback(
-        async (eraserPath: number[]) => {
-            if (!engine || !activeSlideId) return;
-            const slide = slidesRef.current.find((item) => item.id === activeSlideId);
-            if (!slide) return;
+    const startEraserGesture = useCallback(() => {
+        if (!activeSlideId) return;
+        const slide = slidesRef.current.find((item) => item.id === activeSlideId);
+        if (!slide) return;
 
-            for (const layer of slide.layers) {
-                if (layer.type !== 'line' || layer.config.locked || !layer.config.visible) continue;
-                const result = await eraseLinePathsResiliently(
-                    getLinePaths(layer),
-                    eraserPath,
-                    eraserWidth / 2 + layer.strokeWidth / 2
-                );
-                if (result.status !== 'changed') continue;
+        eraserGestureRef.current = {
+            slideId: activeSlideId,
+            targets: slide.layers.flatMap((layer) => {
+                if (layer.type !== 'line' || layer.config.locked || !layer.config.visible)
+                    return [];
+                return [
+                    {
+                        layer,
+                        paths: getLinePaths(layer),
+                        radius: eraserWidth / 2 + layer.strokeWidth / 2,
+                        changed: false,
+                        failed: false
+                    }
+                ];
+            }),
+            didProcessBatch: false
+        };
+    }, [activeSlideId, eraserWidth]);
 
-                const nextLayer = {
-                    ...layer,
-                    line: result.paths.reduce(
-                        (longest, path) => (path.length > longest.length ? path : longest),
-                        [] as number[]
-                    ),
-                    linePaths: result.paths
-                };
-                upsertLayerOnSlide(activeSlideId, nextLayer);
-                engine.sendJSON({
-                    type: 'upsert_layer',
-                    origin: 'controller:add_line_layer',
-                    layer: nextLayer
-                });
+    const processEraserBatch = useCallback((eraserPath: number[]) => {
+        const gesture = eraserGestureRef.current;
+        if (!gesture) return;
+
+        const targets = gesture.targets.map((target) => {
+            if (target.failed) return target;
+            const result = eraseLinePaths(target.paths, eraserPath, target.radius);
+            if (result.status === 'failed') return { ...target, failed: true };
+            if (result.status === 'changed') {
+                return { ...target, paths: result.paths, changed: true };
             }
-        },
-        [activeSlideId, engine, eraserWidth, upsertLayerOnSlide]
-    );
+            return target;
+        });
+        eraserGestureRef.current = { ...gesture, targets };
+    }, []);
+
+    const commitEraserGesture = useCallback(() => {
+        const gesture = eraserGestureRef.current;
+        eraserGestureRef.current = null;
+        if (!gesture || !engine) return;
+
+        for (const target of gesture.targets) {
+            if (!target.changed || target.failed || target.layer.type !== 'line') continue;
+            if (target.paths.length === 0) {
+                removeLayerFromSlide(gesture.slideId, target.layer.numericId);
+                engine.sendJSON({
+                    type: 'delete_layer',
+                    origin: 'controller:add_line_layer',
+                    numericId: target.layer.numericId
+                });
+                continue;
+            }
+
+            const bounds = getLineBounds(target.paths.flat());
+            if (!bounds) continue;
+            const nextLayer: LayerWithEditorState = {
+                ...target.layer,
+                config: {
+                    ...target.layer.config,
+                    cx: Math.round(bounds.cx),
+                    cy: Math.round(bounds.cy),
+                    width: Math.max(MIN_LAYER_DIMENSION, bounds.width),
+                    height: Math.max(MIN_LAYER_DIMENSION, bounds.height)
+                },
+                line: target.paths.reduce((longest, path) =>
+                    path.length > longest.length ? path : longest
+                ),
+                linePaths: target.paths
+            };
+            upsertLayerOnSlide(gesture.slideId, nextLayer);
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'controller:add_line_layer',
+                layer: nextLayer
+            });
+        }
+    }, [engine, removeLayerFromSlide, upsertLayerOnSlide]);
 
     const getStagePoint = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -682,9 +760,10 @@ function Controller() {
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) return;
             const point = getStagePoint(e);
             if (!point) return;
+            if (isErasing) startEraserGesture();
             startLine(point.x, point.y);
         },
-        [canDraw, isDrawing, isErasing, getStagePoint, startLine]
+        [canDraw, isDrawing, isErasing, getStagePoint, startEraserGesture, startLine]
     );
 
     const handleDrawMove = useCallback(
@@ -692,12 +771,24 @@ function Controller() {
             if (!canDraw || (!isDrawing && !isErasing) || currentLine.length < 2) return;
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) {
                 clearCurrentLine();
+                eraserGestureRef.current = null;
                 return;
             }
             if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
             const point = getStagePoint(e);
             if (!point) return;
-            appendLinePoint(point.x, point.y);
+            if (isErasing) {
+                const batch = appendEraserPoint(point.x, point.y);
+                if (batch) {
+                    const gesture = eraserGestureRef.current;
+                    if (gesture) {
+                        eraserGestureRef.current = { ...gesture, didProcessBatch: true };
+                    }
+                    processEraserBatch(batch);
+                }
+            } else {
+                appendLinePoint(point.x, point.y);
+            }
         },
         [
             canDraw,
@@ -706,6 +797,8 @@ function Controller() {
             currentLine.length,
             getStagePoint,
             appendLinePoint,
+            appendEraserPoint,
+            processEraserBatch,
             clearCurrentLine
         ]
     );
@@ -716,7 +809,11 @@ function Controller() {
         if (isDrawing && line.length > 4) {
             addLineLayer(line);
         } else if (isErasing && line.length >= 2) {
-            void eraseLines(line);
+            const gesture = eraserGestureRef.current;
+            if (gesture && (line.length > 2 || !gesture.didProcessBatch)) {
+                processEraserBatch(line);
+            }
+            commitEraserGesture();
         }
         clearCurrentLine();
     }, [
@@ -725,7 +822,8 @@ function Controller() {
         isErasing,
         consumeCurrentLine,
         addLineLayer,
-        eraseLines,
+        processEraserBatch,
+        commitEraserGesture,
         clearCurrentLine
     ]);
 

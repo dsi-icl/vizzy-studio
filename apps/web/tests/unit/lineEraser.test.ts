@@ -7,7 +7,7 @@ import {
     LINE_ERASE_MAX_OUTPUT_POINTS,
     LINE_PATH_MAX_POINTS,
     appendEraserPoint,
-    eraseLinePathsResiliently,
+    eraseLinePaths,
     eraseLinePathsWithinBudget,
     type LineEraseEngineFailureReason,
     type LineEraseEngineResult,
@@ -155,9 +155,9 @@ describe('eraseLinePathsWithinBudget geometry', () => {
         });
     });
 
-    test('a repeated erase preserves every prior gap instead of bridging paths', async () => {
-        const first = await eraseLinePathsResiliently([[0, 0, 100, 0]], [50, 0], 10);
-        const second = await eraseLinePathsResiliently(first.paths, [80, 0], 5);
+    test('a repeated erase preserves every prior gap instead of bridging paths', () => {
+        const first = eraseLinePaths([[0, 0, 100, 0]], [50, 0], 10);
+        const second = eraseLinePaths(first.paths, [80, 0], 5);
 
         expect(second).toEqual({
             status: 'changed',
@@ -185,73 +185,26 @@ describe('appendEraserPoint', () => {
     });
 });
 
-describe('eraseLinePathsResiliently performance', () => {
-    test('bounds dense large-input work without dropping the erase', async () => {
+describe('eraseLinePaths performance', () => {
+    test('bounds dense maximum-size input', () => {
         const line = [makePath(LINE_PATH_MAX_POINTS, (i) => [i % 2, 0])];
         const eraserPath = makePath(ERASER_BATCH_MAX_POINTS, (i) => [i % 2, 0]);
         const start = performance.now();
 
-        const result = await eraseLinePathsResiliently(line, eraserPath, 10);
+        const result = eraseLinePaths(line, eraserPath, 10);
 
         expect(result).toEqual({ status: 'changed', paths: [] });
         expect(performance.now() - start).toBeLessThan(250);
     });
 
-    test('bounds a long-lived fragmented line through structure relaxation and direct fallback', async () => {
-        const fragmentedPaths = Array.from({ length: 2_000 }, () => [0, 0, 1, 0]);
-        const { eraserPath } = makeWorkHeavyGeometry();
-        const boundedResult = eraseLinePathsWithinBudget(
-            fragmentedPaths.slice(0, LINE_ERASE_MAX_OUTPUT_PATHS),
-            eraserPath,
-            10
-        );
-        const start = performance.now();
-
-        let yieldCount = 0;
-        const result = await eraseLinePathsResiliently(
-            fragmentedPaths,
-            eraserPath,
-            10,
-            async () => {
-                yieldCount += 1;
-            }
-        );
-
-        expect(boundedResult.status).toBe('failed');
-        if (boundedResult.status !== 'failed') throw new Error('Expected bounded failure');
-        expect(boundedResult.reason).toBe('work_budget_exceeded');
-        expect(result).toEqual({ status: 'changed', paths: [] });
-        expect(yieldCount).toBeGreaterThan(0);
-        expect(performance.now() - start).toBeLessThan(250);
-    });
-
-    test('chunks one very long path and preserves the gap across chunk boundaries', async () => {
-        const paths = [makePath(260_002, (index) => [index, 0])];
-        let yieldCount = 0;
-        const start = performance.now();
-
-        const result = await eraseLinePathsResiliently(paths, [125_000, 0], 10, async () => {
-            yieldCount += 1;
-        });
-
-        expect(result.status).toBe('changed');
-        expect(result.paths).toHaveLength(2);
-        expect(result.paths[0].slice(0, 2)).toEqual([0, 0]);
-        expect(result.paths[0].slice(-2)).toEqual([124_990, 0]);
-        expect(result.paths[1].slice(0, 2)).toEqual([125_010, 0]);
-        expect(result.paths[1].slice(-2)).toEqual([260_001, 0]);
-        expect(yieldCount).toBeGreaterThanOrEqual(2);
-        expect(performance.now() - start).toBeLessThan(1_000);
-    });
-
-    test('does not lose a large erase after irrelevant input', async () => {
+    test('does not lose a maximum-size erase after irrelevant input', () => {
         const line = [makePath(LINE_PATH_MAX_POINTS, (i) => [i % 2, 0])];
         const eraserPath = makePath(ERASER_BATCH_MAX_POINTS, (i) =>
             i === ERASER_BATCH_MAX_POINTS - 1 ? [0, 0] : [30 + (i % 2), 30]
         );
         const start = performance.now();
 
-        const result = await eraseLinePathsResiliently(line, eraserPath, 10);
+        const result = eraseLinePaths(line, eraserPath, 10);
 
         expect(result).toEqual({ status: 'changed', paths: [] });
         expect(performance.now() - start).toBeLessThan(250);
@@ -374,100 +327,25 @@ describe('eraseLinePathsWithinBudget failures', () => {
     });
 });
 
-describe('eraseLinePathsResiliently', () => {
-    test('subdivides an oversized gesture without dropping its later points', async () => {
-        const paths = [makePath(3_000, (i) => [i, 0])];
-        const eraserPath = makePath(2_500, (i) => [i, 0]);
-
-        const result = await eraseLinePathsResiliently(paths, eraserPath, 5);
-
-        expect(result.status).toBe('changed');
-        expect(result.paths).toHaveLength(1);
-        expect(result.paths[0][0]).toBeGreaterThan(2_499);
-        expect(result.paths[0].at(-2)).toBe(2_999);
-    });
-
-    test('falls back from a work-heavy batch and completes the erase', async () => {
-        const { paths, eraserPath } = makeWorkHeavyGeometry();
-
-        expect(eraseLinePathsWithinBudget(paths, eraserPath, 10).status).toBe('failed');
-
-        const result = await eraseLinePathsResiliently(paths, eraserPath, 10);
-
-        expect(result.status).toBe('changed');
-        expect(result.paths).toEqual([]);
-    });
-
-    test('keeps all geometry when a valid erase exceeds output limits', async () => {
-        const paths = [[0, 0, 6_000, 0]];
-        const eraserPath: number[] = [];
-        for (let i = 0; i < ERASER_BATCH_MAX_POINTS / 2; i += 1) {
-            const x = i * 10 + 5;
-            eraserPath.push(x, -5, x, 5);
-        }
-
-        const result = await eraseLinePathsResiliently(paths, eraserPath, 1);
-
-        expect(result.status).toBe('changed');
-        expect(result.paths.length).toBeGreaterThan(LINE_ERASE_MAX_OUTPUT_PATHS);
-        expect(result.paths[0]).toEqual([0, 0, 4, 0]);
-        expect(result.paths.at(-1)?.at(-2)).toBe(6_000);
-    });
-
-    test('keeps all points when a valid erase exceeds the output point limit', async () => {
-        const paths = [makePath(LINE_ERASE_MAX_OUTPUT_POINTS, (i) => [i * 10, 0])];
-
-        const result = await eraseLinePathsResiliently(paths, [5, -2, 5, 2], 1);
-        const pointCount = result.paths.reduce((total, path) => total + path.length / 2, 0);
-
-        expect(result.status).toBe('changed');
-        expect(pointCount).toBeGreaterThan(LINE_ERASE_MAX_OUTPUT_POINTS);
-    });
-
-    test('continues erasing geometry that already exceeds structure limits', async () => {
-        const manyPaths = Array.from({ length: LINE_ERASE_MAX_OUTPUT_PATHS + 1 }, (_, index) => [
-            index * 10,
-            0,
-            index * 10 + 1,
-            0
-        ]);
-        const manyPoints = [makePath(LINE_ERASE_MAX_OUTPUT_POINTS + 1, (i) => [i * 10, 0])];
-
-        const pathResult = await eraseLinePathsResiliently(manyPaths, [0, 0], 2);
-        const pointResult = await eraseLinePathsResiliently(manyPoints, [5, -2, 5, 2], 1);
-
-        expect(pathResult.status).toBe('changed');
-        expect(pathResult.paths).toHaveLength(LINE_ERASE_MAX_OUTPUT_PATHS);
-        expect(pointResult.status).toBe('changed');
-        expect(pointResult.paths.flat().length / 2).toBeGreaterThan(LINE_ERASE_MAX_OUTPUT_POINTS);
-    });
-
-    test('treats later batches as no-ops after an earlier batch erased the whole line', async () => {
-        const firstBatch = await eraseLinePathsResiliently([[0, 0, 100, 0]], [0, 0, 100, 0], 10);
+describe('eraseLinePaths', () => {
+    test('treats a later batch as a no-op after the line is gone', () => {
+        const firstBatch = eraseLinePaths([[0, 0, 100, 0]], [0, 0, 100, 0], 10);
 
         expect(firstBatch).toEqual({ status: 'changed', paths: [] });
-        expect(await eraseLinePathsResiliently(firstBatch.paths, [100, 0, 200, 0], 10)).toEqual({
+        expect(eraseLinePaths(firstBatch.paths, [100, 0, 200, 0], 10)).toEqual({
             status: 'unchanged',
             paths: firstBatch.paths
         });
     });
 
-    test('still reports invalid data instead of retrying it', async () => {
+    test('returns terminal failures without retrying invalid input', () => {
         const paths = [[0, 0, 100, 0]];
         const invalidPaths = [[0, 0, 1]];
 
+        expectTerminalFailure(eraseLinePaths(paths, [0, 0, 1], 10), 'invalid_eraser_path', paths);
+        expectTerminalFailure(eraseLinePaths(paths, [0, 0], 0), 'invalid_radius', paths);
         expectTerminalFailure(
-            await eraseLinePathsResiliently(paths, [0, 0, 1], 10),
-            'invalid_eraser_path',
-            paths
-        );
-        expectTerminalFailure(
-            await eraseLinePathsResiliently(paths, [0, 0], 0),
-            'invalid_radius',
-            paths
-        );
-        expectTerminalFailure(
-            await eraseLinePathsResiliently(invalidPaths, [0, 0], 10),
+            eraseLinePaths(invalidPaths, [0, 0], 10),
             'invalid_line_paths',
             invalidPaths
         );
