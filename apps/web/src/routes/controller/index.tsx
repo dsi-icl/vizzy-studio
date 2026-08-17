@@ -21,9 +21,10 @@ import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
+import { eraseLinePathsResiliently } from '~/lib/lineEraser';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
-import type { LayerWithEditorState } from '~/lib/types';
+import { getLinePaths, type LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const BINDING_SIGNAL_TIMEOUT_MS = 1500;
@@ -165,6 +166,8 @@ function Controller() {
     const pendingSlideTimeoutRef = useRef<number | null>(null);
     const {
         isDrawing,
+        isErasing,
+        eraserWidth,
         strokeColor,
         setStrokeColor,
         strokeWidth,
@@ -173,6 +176,8 @@ function Controller() {
         setStrokeDash,
         currentLine,
         setDrawing,
+        setErasing,
+        setEraserWidth,
         toggleDrawing,
         startLine,
         appendLinePoint,
@@ -181,6 +186,8 @@ function Controller() {
     } = useControllerStore(
         useShallow((s) => ({
             isDrawing: s.isDrawing,
+            isErasing: s.isErasing,
+            eraserWidth: s.eraserWidth,
             strokeColor: s.strokeColor,
             setStrokeColor: s.setStrokeColor,
             strokeWidth: s.strokeWidth,
@@ -189,6 +196,8 @@ function Controller() {
             setStrokeDash: s.setStrokeDash,
             currentLine: s.currentLine,
             setDrawing: s.setDrawing,
+            setErasing: s.setErasing,
+            setEraserWidth: s.setEraserWidth,
             toggleDrawing: s.toggleDrawing,
             startLine: s.startLine,
             appendLinePoint: s.appendLinePoint,
@@ -483,7 +492,8 @@ function Controller() {
     useEffect(() => {
         if (binding.bound) return;
         setDrawing(false);
-    }, [binding.bound, setDrawing]);
+        setErasing(false);
+    }, [binding.bound, setDrawing, setErasing]);
 
     useEffect(() => {
         if (!pendingSlideId) return;
@@ -619,6 +629,40 @@ function Controller() {
         [engine, activeSlideId, strokeColor, strokeWidth, strokeDash, upsertLayerOnSlide]
     );
 
+    const eraseLines = useCallback(
+        async (eraserPath: number[]) => {
+            if (!engine || !activeSlideId) return;
+            const slide = slidesRef.current.find((item) => item.id === activeSlideId);
+            if (!slide) return;
+
+            for (const layer of slide.layers) {
+                if (layer.type !== 'line' || layer.config.locked || !layer.config.visible) continue;
+                const result = await eraseLinePathsResiliently(
+                    getLinePaths(layer),
+                    eraserPath,
+                    eraserWidth / 2 + layer.strokeWidth / 2
+                );
+                if (result.status !== 'changed') continue;
+
+                const nextLayer = {
+                    ...layer,
+                    line: result.paths.reduce(
+                        (longest, path) => (path.length > longest.length ? path : longest),
+                        [] as number[]
+                    ),
+                    linePaths: result.paths
+                };
+                upsertLayerOnSlide(activeSlideId, nextLayer);
+                engine.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'controller:add_line_layer',
+                    layer: nextLayer
+                });
+            }
+        },
+        [activeSlideId, engine, eraserWidth, upsertLayerOnSlide]
+    );
+
     const getStagePoint = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
             const stage = e.target.getStage();
@@ -634,18 +678,18 @@ function Controller() {
 
     const handleDrawStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (!canDraw || !isDrawing) return;
+            if (!canDraw || (!isDrawing && !isErasing)) return;
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) return;
             const point = getStagePoint(e);
             if (!point) return;
             startLine(point.x, point.y);
         },
-        [canDraw, isDrawing, getStagePoint, startLine]
+        [canDraw, isDrawing, isErasing, getStagePoint, startLine]
     );
 
     const handleDrawMove = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (!canDraw || !isDrawing || currentLine.length < 2) return;
+            if (!canDraw || (!isDrawing && !isErasing) || currentLine.length < 2) return;
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) {
                 clearCurrentLine();
                 return;
@@ -655,17 +699,35 @@ function Controller() {
             if (!point) return;
             appendLinePoint(point.x, point.y);
         },
-        [canDraw, isDrawing, currentLine.length, getStagePoint, appendLinePoint, clearCurrentLine]
+        [
+            canDraw,
+            isDrawing,
+            isErasing,
+            currentLine.length,
+            getStagePoint,
+            appendLinePoint,
+            clearCurrentLine
+        ]
     );
 
     const handleDrawEnd = useCallback(() => {
-        if (!canDraw || !isDrawing) return;
+        if (!canDraw || (!isDrawing && !isErasing)) return;
         const line = consumeCurrentLine();
-        if (line.length > 4) {
+        if (isDrawing && line.length > 4) {
             addLineLayer(line);
+        } else if (isErasing && line.length >= 2) {
+            void eraseLines(line);
         }
         clearCurrentLine();
-    }, [canDraw, isDrawing, consumeCurrentLine, addLineLayer, clearCurrentLine]);
+    }, [
+        canDraw,
+        isDrawing,
+        isErasing,
+        consumeCurrentLine,
+        addLineLayer,
+        eraseLines,
+        clearCurrentLine
+    ]);
 
     const handleTouchStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -898,8 +960,12 @@ function Controller() {
                             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                                 <ControllerToolbar
                                     isDrawing={isDrawing}
+                                    isErasing={isErasing}
                                     canDraw={canDraw}
                                     onToggleDrawing={toggleDrawing}
+                                    onToggleErasing={() => setErasing(!isErasing)}
+                                    eraserWidth={eraserWidth}
+                                    setEraserWidth={setEraserWidth}
                                     strokeColor={strokeColor}
                                     setStrokeColor={setStrokeColor}
                                     strokeWidth={strokeWidth}
@@ -1070,7 +1136,7 @@ function Controller() {
                                                         />
                                                     );
                                                 })}
-                                            {currentLine.length > 3 && (
+                                            {isDrawing && currentLine.length > 3 && (
                                                 <Line
                                                     key="new-line"
                                                     points={currentLine}
@@ -1084,6 +1150,27 @@ function Controller() {
                                                     listening={false}
                                                 />
                                             )}
+                                            {isErasing && currentLine.length > 2 ? (
+                                                <Line
+                                                    points={currentLine}
+                                                    stroke="rgba(148, 163, 184, 0.4)"
+                                                    strokeWidth={eraserWidth}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                    listening={false}
+                                                />
+                                            ) : null}
+                                            {isErasing && currentLine.length >= 2 ? (
+                                                <Circle
+                                                    x={currentLine[currentLine.length - 2]}
+                                                    y={currentLine[currentLine.length - 1]}
+                                                    radius={eraserWidth / 2}
+                                                    fill="rgba(255, 255, 255, 0.08)"
+                                                    stroke="rgba(255, 255, 255, 0.7)"
+                                                    strokeWidth={2 / stageScaleFactor}
+                                                    listening={false}
+                                                />
+                                            ) : null}
                                         </KonvaLayer>
                                     </Stage>
                                 </div>
