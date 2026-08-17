@@ -547,18 +547,25 @@ export function EditorSlate() {
             }
             if (!isEditorArrowKey(e.key)) return;
 
-            const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
-            if (!currentSelected || currentSelected.config.locked) return;
+            const selectedLayers = store.selectedLayerIds
+                .map((id) => store.layers.get(parseInt(id)))
+                .filter(
+                    (layer): layer is LayerWithEditorState =>
+                        layer !== undefined && !layer.config.locked && layer.type !== 'line'
+                );
+            if (!selectedLayers.length) return;
 
             e.preventDefault();
-            const updatedLayer = applyKeyboardArrowTransform(
-                currentSelected,
-                e.key,
-                e.shiftKey,
-                isSnapping ? SNAP_GRID : 10
-            );
-            store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
-            if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
+            for (const layer of selectedLayers) {
+                const updatedLayer = applyKeyboardArrowTransform(
+                    layer,
+                    e.key,
+                    e.shiftKey,
+                    isSnapping ? SNAP_GRID : 10
+                );
+                store.updateLayerConfig(layer.numericId, updatedLayer.config);
+                if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
