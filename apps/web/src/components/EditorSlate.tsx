@@ -37,7 +37,7 @@ import {
     broadcastKeyboardLayerTransform,
     isEditorArrowKey
 } from '~/lib/editorKeyboardMovement';
-import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
+import { getCanvasSelectionModifiers, resolveSelectedLayers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
@@ -551,12 +551,9 @@ export function EditorSlate() {
             }
             if (!isEditorArrowKey(e.key)) return;
 
-            const selectedLayers = store.selectedLayerIds
-                .map((id) => store.layers.get(parseInt(id)))
-                .filter(
-                    (layer): layer is LayerWithEditorState =>
-                        layer !== undefined && !layer.config.locked && layer.type !== 'line'
-                );
+            const selectedLayers = resolveSelectedLayers(store.layers, store.selectedLayerIds, {
+                excludeLines: true
+            });
             if (!selectedLayers.length) return;
 
             e.preventDefault();
@@ -808,13 +805,11 @@ export function EditorSlate() {
             autoScrollStageDuringDrag(e.evt);
         }
 
-        const selectedIds = useEditorStore
-            .getState()
-            .selectedLayerIds.map((id) => Number.parseInt(id, 10))
-            .filter((id) => {
-                const l = layersRef.current.get(id);
-                return l !== undefined && !l.config.locked && l.type !== 'line';
-            });
+        const selectedIds = resolveSelectedLayers(
+            layersRef.current,
+            useEditorStore.getState().selectedLayerIds,
+            { excludeLines: true }
+        ).map((layer) => layer.numericId);
         const isGroupDrag =
             node.isDragging() &&
             !isTransformerActive &&

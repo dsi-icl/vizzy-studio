@@ -5,6 +5,7 @@ import {
     computeBringToFrontUpdates,
     computeSendToBackUpdates
 } from './editorLayerOrder';
+import { resolveSelectedLayers } from './editorSelection';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
@@ -328,8 +329,8 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         deleteSelectedLayer: () => {
             const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
-            const deletableIds = toNumericIds(selectedLayerIds).filter(
-                (id) => layers.has(id) && !layers.get(id)?.config.locked
+            const deletableIds = resolveSelectedLayers(layers, selectedLayerIds).map(
+                (layer) => layer.numericId
             );
             if (!deletableIds.length) return;
             const engine = EditorEngine.getInstance();
