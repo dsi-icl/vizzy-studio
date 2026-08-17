@@ -6,12 +6,13 @@ import { ERASER_MAX_WIDTH, ERASER_MIN_WIDTH, ERASER_WHEEL_STEP } from '~/lib/era
 interface EraserToolProps {
     eraserWidth: number;
     setEraserWidth: (width: number) => void;
+    showIcon?: boolean;
 }
 
-export function EraserTool({ eraserWidth, setEraserWidth }: EraserToolProps) {
+export function EraserTool({ eraserWidth, setEraserWidth, showIcon = true }: EraserToolProps) {
     return (
         <div className="flex min-w-72 items-center gap-3">
-            <EraserIcon className="size-4 shrink-0 text-muted-foreground" />
+            {showIcon ? <EraserIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
             <Slider
                 aria-label="Eraser size"
                 value={[eraserWidth]}

@@ -1,13 +1,19 @@
 import { create } from 'zustand';
 
+import { ERASER_DEFAULT_WIDTH, clampEraserWidth } from './eraser';
+
 export interface ControllerState {
     isDrawing: boolean;
+    isErasing: boolean;
+    eraserWidth: number;
     strokeColor: string;
     strokeWidth: number;
     strokeDash: number[];
     currentLine: number[];
     setDrawing: (isDrawing: boolean) => void;
     toggleDrawing: () => void;
+    setErasing: (isErasing: boolean) => void;
+    setEraserWidth: (width: number) => void;
     setStrokeColor: (strokeColor: string) => void;
     setStrokeWidth: (strokeWidth: number) => void;
     setStrokeDash: (strokeDash: number[]) => void;
@@ -24,6 +30,8 @@ export const useControllerStore =
         ? window.__CONTROLLER_STORE__
         : create<ControllerState>()((set, get) => ({
               isDrawing: false,
+              isErasing: false,
+              eraserWidth: ERASER_DEFAULT_WIDTH,
               strokeColor: '#ff0000',
               strokeWidth: 10,
               strokeDash: [],
@@ -35,14 +43,18 @@ export const useControllerStore =
                       }
                       return {
                           isDrawing,
-                          currentLine: isDrawing ? s.currentLine : []
+                          isErasing: isDrawing ? false : s.isErasing,
+                          currentLine: []
                       };
                   }),
               toggleDrawing: () =>
                   set((s) => ({
                       isDrawing: !s.isDrawing,
-                      currentLine: s.isDrawing ? [] : s.currentLine
+                      isErasing: false,
+                      currentLine: []
                   })),
+              setErasing: (isErasing) => set({ isErasing, isDrawing: false, currentLine: [] }),
+              setEraserWidth: (width) => set({ eraserWidth: clampEraserWidth(width) }),
               setStrokeColor: (strokeColor) => set({ strokeColor }),
               setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
               setStrokeDash: (strokeDash) => set({ strokeDash }),
