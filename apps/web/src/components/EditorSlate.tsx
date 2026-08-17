@@ -104,6 +104,10 @@ export function EditorSlate() {
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const groupDragRef = useRef<{
+        start: Map<number, { cx: number; cy: number }>;
+        anchorId: number;
+    } | null>(null);
 
     const sortedLayers = useMemo(
         () => Array.from(layers.values()).sort((a, b) => a.config.zIndex - b.config.zIndex),
@@ -804,6 +808,61 @@ export function EditorSlate() {
             autoScrollStageDuringDrag(e.evt);
         }
 
+        const selectedIds = useEditorStore
+            .getState()
+            .selectedLayerIds.map((id) => Number.parseInt(id, 10))
+            .filter((id) => {
+                const l = layersRef.current.get(id);
+                return l !== undefined && !l.config.locked && l.type !== 'line';
+            });
+        const isGroupDrag =
+            node.isDragging() &&
+            !isTransformerActive &&
+            selectedIds.length > 1 &&
+            selectedIds.includes(numericId);
+
+        if (isGroupDrag) {
+            if (!groupDragRef.current || !groupDragRef.current.start.has(numericId)) {
+                const start = new Map<number, { cx: number; cy: number }>();
+                for (const id of selectedIds) {
+                    const cfg = layersRef.current.get(id)?.config;
+                    if (cfg) start.set(id, { cx: cfg.cx, cy: cfg.cy });
+                }
+                groupDragRef.current = { start, anchorId: numericId };
+            }
+
+            const base = groupDragRef.current.start;
+            const anchorStart = base.get(numericId);
+            if (!anchorStart) return;
+            const dx = Math.round(node.x()) - anchorStart.cx;
+            const dy = Math.round(node.y()) - anchorStart.cy;
+
+            const stage = node.getStage();
+            for (const id of selectedIds) {
+                const startPos = base.get(id);
+                const target = layersRef.current.get(id);
+                if (!startPos || !target) continue;
+                const newCx = startPos.cx + dx;
+                const newCy = startPos.cy + dy;
+                if (id !== numericId) {
+                    stage?.findOne<Konva.Shape>(`#${id}`)?.position({ x: newCx, y: newCy });
+                }
+                stage?.findOne<Konva.Rect>(`#selbox_${id}`)?.position({ x: newCx, y: newCy });
+                engine?.broadcastBinaryMove(
+                    id,
+                    newCx,
+                    newCy,
+                    target.config.width,
+                    target.config.height,
+                    target.config.scaleX,
+                    target.config.scaleY,
+                    target.config.rotation
+                );
+            }
+            node.getLayer()?.batchDraw();
+            return;
+        }
+
         const activeAnchor = trRef.current?.getActiveAnchor() ?? null;
         node.setAttr('lastActiveAnchor', activeAnchor);
 
@@ -949,10 +1008,66 @@ export function EditorSlate() {
         );
     };
 
+    const persistDraggedLayer = useCallback(
+        (node: Konva.Shape, numericId: number) => {
+            if (!engine) return;
+            const layer = layersRef.current.get(numericId);
+            if (!layer || layer.config.locked) return;
+
+            if (isSnapping) {
+                const left = node.x() - node.width() / 2;
+                const top = node.y() - node.height() / 2;
+                node.position({
+                    x: snapToGrid(left, SNAP_GRID) + node.width() / 2,
+                    y: snapToGrid(top, SNAP_GRID) + node.height() / 2
+                });
+            }
+
+            const updatedConfig: Layer['config'] = {
+                ...layer.config,
+                cx: Math.round(node.x()),
+                cy: Math.round(node.y())
+            };
+            if (updatedConfig.cx === layer.config.cx && updatedConfig.cy === layer.config.cy)
+                return;
+
+            engine.broadcastBinaryMove(
+                numericId,
+                updatedConfig.cx,
+                updatedConfig.cy,
+                updatedConfig.width,
+                updatedConfig.height,
+                updatedConfig.scaleX,
+                updatedConfig.scaleY,
+                updatedConfig.rotation
+            );
+            layer.config = updatedConfig;
+            useEditorStore.getState().updateLayerConfig(numericId, updatedConfig);
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:group_drag_end',
+                layer: { ...layer, config: updatedConfig }
+            });
+        },
+        [engine, isSnapping]
+    );
+
     const handleTransformEnd = useCallback(
         (e: Pick<KonvaEventObject<Event>, 'target' | 'type'>, numericId: number) => {
             if (!engine) return;
             const node = e.target as Konva.Shape;
+
+            const groupDrag = groupDragRef.current;
+            if (groupDrag && e.type === 'dragend') {
+                groupDragRef.current = null;
+                const stage = node.getStage();
+                for (const id of groupDrag.start.keys()) {
+                    const target = id === numericId ? node : stage?.findOne<Konva.Shape>(`#${id}`);
+                    if (target) persistDraggedLayer(target, id);
+                }
+                return;
+            }
+
             const endInteraction = () => {
                 node.setAttr('textTransformMode', undefined);
                 node.setAttr('lastActiveAnchor', undefined);
@@ -1110,7 +1225,7 @@ export function EditorSlate() {
                 layer: { ...layerToUpdate, config: updatedConfig }
             });
         },
-        [engine, isSnapping]
+        [engine, isSnapping, persistDraggedLayer]
     );
 
     const flushNodeState = (idToFlush: string) => {
@@ -1707,6 +1822,7 @@ export function EditorSlate() {
                                 ? selectedOutlineLayers.map((layer) => (
                                       <Rect
                                           key={`selbox_${layer.numericId}`}
+                                          id={`selbox_${layer.numericId}`}
                                           x={layer.config.cx}
                                           y={layer.config.cy}
                                           width={layer.config.width}
