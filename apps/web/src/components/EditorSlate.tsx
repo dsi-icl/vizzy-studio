@@ -31,6 +31,7 @@ import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { PeerCursors } from '~/components/PeerCursors';
 import { EditorEngine } from '~/lib/editorEngine';
+import { computeGroupTranslation } from '~/lib/editorGroupDrag';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import {
     applyKeyboardArrowTransform,
@@ -826,27 +827,30 @@ export function EditorSlate() {
                 groupDragRef.current = { start, anchorId: numericId };
             }
 
-            const base = groupDragRef.current.start;
-            const anchorStart = base.get(numericId);
-            if (!anchorStart) return;
-            const dx = Math.round(node.x()) - anchorStart.cx;
-            const dy = Math.round(node.y()) - anchorStart.cy;
+            const translated = computeGroupTranslation(groupDragRef.current.start, numericId, {
+                x: Math.round(node.x()),
+                y: Math.round(node.y())
+            });
 
             const stage = node.getStage();
             for (const id of selectedIds) {
-                const startPos = base.get(id);
+                const newPos = translated.get(id);
                 const target = layersRef.current.get(id);
-                if (!startPos || !target) continue;
-                const newCx = startPos.cx + dx;
-                const newCy = startPos.cy + dy;
+                if (!newPos || !target) continue;
                 if (id !== numericId) {
-                    stage?.findOne<Konva.Shape>(`#${id}`)?.position({ x: newCx, y: newCy });
+                    stage?.findOne<Konva.Shape>(`#${id}`)?.position({
+                        x: newPos.cx,
+                        y: newPos.cy
+                    });
                 }
-                stage?.findOne<Konva.Rect>(`#selbox_${id}`)?.position({ x: newCx, y: newCy });
+                stage?.findOne<Konva.Rect>(`#selbox_${id}`)?.position({
+                    x: newPos.cx,
+                    y: newPos.cy
+                });
                 engine?.broadcastBinaryMove(
                     id,
-                    newCx,
-                    newCy,
+                    newPos.cx,
+                    newPos.cy,
                     target.config.width,
                     target.config.height,
                     target.config.scaleX,
