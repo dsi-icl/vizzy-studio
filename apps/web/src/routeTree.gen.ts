@@ -59,6 +59,7 @@ import { Route as AdminWallsWallIdDevicesRouteImport } from './routes/admin/wall
 import { Route as ApiPortalV1BindRouteImport } from './routes/api/portal/v1/bind'
 import { Route as ApiPortalV1RebootRouteImport } from './routes/api/portal/v1/reboot'
 import { Route as ApiPortalV1SlidesRouteImport } from './routes/api/portal/v1/slides'
+import { Route as ApiPortalV1ImageZoomRouteImport } from './routes/api/portal/v1/image/zoom'
 import { Route as AuthQuarryEditorProjectIdIndexRouteImport } from './routes/_auth/quarry/editor/$projectId/index'
 import { Route as AuthQuarryEditorProjectIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$slideId'
 import { Route as AuthQuarryProjectsProjectIdIndexRouteImport } from './routes/_auth/quarry/projects/$projectId/index'
@@ -320,6 +321,11 @@ const ApiPortalV1SlidesRoute = ApiPortalV1SlidesRouteImport.update({
   path: '/api/portal/v1/slides',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPortalV1ImageZoomRoute = ApiPortalV1ImageZoomRouteImport.update({
+  id: '/api/portal/v1/image/zoom',
+  path: '/api/portal/v1/image/zoom',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthQuarryEditorProjectIdIndexRoute =
   AuthQuarryEditorProjectIdIndexRouteImport.update({
     id: '/$projectId/',
@@ -435,6 +441,7 @@ export interface FileRoutesByFullPath {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRoute
+  '/api/portal/v1/image/zoom': typeof ApiPortalV1ImageZoomRoute
   '/admin/walls/$wallId/': typeof AdminWallsWallIdIndexRoute
   '/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -493,6 +500,7 @@ export interface FileRoutesByTo {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRoute
+  '/api/portal/v1/image/zoom': typeof ApiPortalV1ImageZoomRoute
   '/admin/walls/$wallId': typeof AdminWallsWallIdIndexRoute
   '/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -557,6 +565,7 @@ export interface FileRoutesById {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRoute
+  '/api/portal/v1/image/zoom': typeof ApiPortalV1ImageZoomRoute
   '/admin/walls/$wallId/': typeof AdminWallsWallIdIndexRoute
   '/_auth/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/_auth/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -620,6 +629,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
+    | '/api/portal/v1/image/zoom'
     | '/admin/walls/$wallId/'
     | '/quarry/editor/$projectId/$slideId'
     | '/quarry/projects/$projectId/assets'
@@ -678,6 +688,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
+    | '/api/portal/v1/image/zoom'
     | '/admin/walls/$wallId'
     | '/quarry/editor/$projectId/$slideId'
     | '/quarry/projects/$projectId/assets'
@@ -741,6 +752,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
+    | '/api/portal/v1/image/zoom'
     | '/admin/walls/$wallId/'
     | '/_auth/quarry/editor/$projectId/$slideId'
     | '/_auth/quarry/projects/$projectId/assets'
@@ -787,6 +799,7 @@ export interface RootRouteChildren {
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
   ApiPortalV1SlidesRoute: typeof ApiPortalV1SlidesRoute
+  ApiPortalV1ImageZoomRoute: typeof ApiPortalV1ImageZoomRoute
   ApiPortalV1ControllersProjectIdRoute: typeof ApiPortalV1ControllersProjectIdRoute
 }
 
@@ -1142,6 +1155,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPortalV1SlidesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/portal/v1/image/zoom': {
+      id: '/api/portal/v1/image/zoom'
+      path: '/api/portal/v1/image/zoom'
+      fullPath: '/api/portal/v1/image/zoom'
+      preLoaderRoute: typeof ApiPortalV1ImageZoomRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_auth/quarry/editor/$projectId/': {
       id: '/_auth/quarry/editor/$projectId/'
       path: '/$projectId'
@@ -1396,6 +1416,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
   ApiPortalV1SlidesRoute: ApiPortalV1SlidesRoute,
+  ApiPortalV1ImageZoomRoute: ApiPortalV1ImageZoomRoute,
   ApiPortalV1ControllersProjectIdRoute: ApiPortalV1ControllersProjectIdRoute,
 }
 export const routeTree = rootRouteImport
