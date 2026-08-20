@@ -20,6 +20,7 @@ import {
 } from '~/lib/busState';
 import type { AuditExecutionContextInput } from '~/server/audit';
 import { logAuditSuccess } from '~/server/audit';
+import { broadcastGalleryStateSnapshot } from '~/server/bus/bus.binding';
 import { dbCol, collections } from '~/server/collections';
 import { adminEnrollDeviceBySignature, adminListDevices } from '~/server/devices';
 import { getStageLayoutLimits } from '~/server/projects';
@@ -458,6 +459,7 @@ export async function adminUpdateWallLayoutTemplate(input: {
     }
     const updated = await dbCol.walls.update(existing.id, { layoutTemplate });
     if (!updated) throw new Error('Wall not found');
+    broadcastGalleryStateSnapshot(input.wallId);
     await logAuditSuccess({
         action: 'WALL_LAYOUT_TEMPLATE_UPDATED',
         actorId: input.actorEmail,

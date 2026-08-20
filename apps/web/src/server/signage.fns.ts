@@ -13,6 +13,7 @@ import {
     resolveSignageEntries,
     updateSignageSlideshow
 } from './signage';
+import { getSignageRuntimeStatus, startSignageRunner } from './signageRunner';
 
 const SignageDefaults = {
     defaultDisplayDurationMs: z.int().min(100).max(86_400_000),
@@ -68,6 +69,15 @@ export const $resolveSignageEntries = createServerFn({ method: 'GET' })
     .middleware([signageMiddleware])
     .validator(z.object({ id: z.string() }))
     .handler(({ data, context }) => resolveSignageEntries(context.authContext.user!, data.id));
+
+export const $getSignageRuntimeStatus = createServerFn({ method: 'GET' })
+    .middleware([signageMiddleware])
+    .validator(z.object({ id: z.string() }))
+    .handler(async ({ data, context }) => {
+        const slideshow = await getSignageSlideshow(context.authContext.user!, data.id);
+        startSignageRunner();
+        return getSignageRuntimeStatus(slideshow);
+    });
 
 export const $listSignageSources = createServerFn({ method: 'GET' })
     .middleware([signageMiddleware])

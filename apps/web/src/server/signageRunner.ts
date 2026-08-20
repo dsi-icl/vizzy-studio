@@ -39,7 +39,22 @@ type Runtime = {
     phase: 'display' | 'gap';
     current: ResolvedEntry | null;
     timer: ReturnType<typeof setTimeout> | null;
+    nextTransitionAt: number | null;
+    lastBindErrors: Map<string, string>;
 };
+
+export interface SignageRuntimeStatus {
+    state: 'disabled' | 'starting' | 'running' | 'waiting';
+    phase: 'display' | 'gap' | null;
+    currentEntryId: string | null;
+    currentIndex: number | null;
+    nextTransitionAt: number | null;
+    walls: Array<{
+        wallId: string;
+        suppressed: boolean;
+        lastBindError: string | null;
+    }>;
+}
 
 const runtimes = new Map<string, Runtime>();
 const targetOwnerByWall = new Map<string, string>();
@@ -98,14 +113,18 @@ async function applyRuntimeToWall(runtime: Runtime, wallId: string) {
     if (suppressedWalls.has(wallId)) return;
     if (runtime.phase === 'gap' && runtime.slideshow.gapMode === 'blank') {
         sendBlankFrame(wallId);
+        runtime.lastBindErrors.delete(wallId);
         return;
     }
     if (!runtime.current) {
         sendBlankFrame(wallId);
+        runtime.lastBindErrors.delete(wallId);
         return;
     }
     const { projectId, commitId, slideId } = runtime.current;
-    await performLiveBind(wallId, projectId, commitId, slideId, 'signage');
+    const result = await performLiveBind(wallId, projectId, commitId, slideId, 'signage');
+    if (result.ok) runtime.lastBindErrors.delete(wallId);
+    else runtime.lastBindErrors.set(wallId, result.error ?? 'bind_failed');
     if (!isCurrentRuntime(runtime) && !targetOwnerByWall.has(wallId)) {
         await clearSignageBinding(wallId);
     }
@@ -120,6 +139,7 @@ async function applyRuntime(runtime: Runtime) {
 function schedule(runtime: Runtime, delayMs: number, callback: () => Promise<void>) {
     if (!isCurrentRuntime(runtime)) return;
     const generation = runtime.generation;
+    runtime.nextTransitionAt = Date.now() + Math.max(1, delayMs);
     runtime.timer = setTimeout(
         () => {
             if (runtime.generation !== generation || !isCurrentRuntime(runtime)) return;
@@ -130,6 +150,7 @@ function schedule(runtime: Runtime, delayMs: number, callback: () => Promise<voi
 }
 
 async function beginDisplay(runtime: Runtime, startIndex: number) {
+    runtime.nextTransitionAt = null;
     const next = await findNextValid(runtime, startIndex);
     if (!runtimes.has(runtime.slideshow.id) || runtimes.get(runtime.slideshow.id) !== runtime)
         return;
@@ -145,6 +166,7 @@ async function beginDisplay(runtime: Runtime, startIndex: number) {
     runtime.index = next.index;
     runtime.current = next.resolved;
     runtime.phase = 'display';
+    runtime.nextTransitionAt = null;
     await applyRuntime(runtime);
     const displayDuration =
         next.resolved.entry.displayDurationMs ?? runtime.slideshow.defaultDisplayDurationMs;
@@ -153,11 +175,13 @@ async function beginDisplay(runtime: Runtime, startIndex: number) {
 
 async function beginGap(runtime: Runtime) {
     if (!isCurrentRuntime(runtime)) return;
+    runtime.nextTransitionAt = null;
     if (!runtime.current) return beginDisplay(runtime, runtime.index + 1);
     const gapDuration =
         runtime.current.entry.gapDurationMs ?? runtime.slideshow.defaultGapDurationMs;
     if (gapDuration <= 0) return beginDisplay(runtime, runtime.index + 1);
     runtime.phase = 'gap';
+    runtime.nextTransitionAt = null;
     await applyRuntime(runtime);
     schedule(runtime, gapDuration, () => beginDisplay(runtime, runtime.index + 1));
 }
@@ -221,7 +245,9 @@ export async function reconcileSignageRuntimes() {
             index: -1,
             phase: 'display',
             current: null,
-            timer: null
+            timer: null,
+            nextTransitionAt: null,
+            lastBindErrors: new Map()
         };
         runtimes.set(slideshow.id, runtime);
         void beginDisplay(runtime, 0);
@@ -238,6 +264,54 @@ export function resumeSignageWall(wallId: string) {
     const slideshowId = targetOwnerByWall.get(wallId);
     const runtime = slideshowId ? runtimes.get(slideshowId) : null;
     if (runtime) void applyRuntimeToWall(runtime, wallId);
+}
+
+export function getSignageRuntimeStatus(
+    slideshow: Pick<Slideshow, 'id' | 'enabled' | 'targetWallIds'>
+): SignageRuntimeStatus {
+    if (!slideshow.enabled) {
+        return {
+            state: 'disabled',
+            phase: null,
+            currentEntryId: null,
+            currentIndex: null,
+            nextTransitionAt: null,
+            walls: slideshow.targetWallIds.map((wallId) => ({
+                wallId,
+                suppressed: false,
+                lastBindError: null
+            }))
+        };
+    }
+
+    const runtime = runtimes.get(slideshow.id);
+    if (!runtime) {
+        return {
+            state: 'starting',
+            phase: null,
+            currentEntryId: null,
+            currentIndex: null,
+            nextTransitionAt: null,
+            walls: slideshow.targetWallIds.map((wallId) => ({
+                wallId,
+                suppressed: suppressedWalls.has(wallId),
+                lastBindError: null
+            }))
+        };
+    }
+
+    return {
+        state: runtime.current ? 'running' : 'waiting',
+        phase: runtime.phase,
+        currentEntryId: runtime.current?.entry.id ?? null,
+        currentIndex: runtime.current ? runtime.index : null,
+        nextTransitionAt: runtime.nextTransitionAt,
+        walls: runtime.slideshow.targetWallIds.map((wallId) => ({
+            wallId,
+            suppressed: suppressedWalls.has(wallId),
+            lastBindError: runtime.lastBindErrors.get(wallId) ?? null
+        }))
+    };
 }
 
 export function startSignageRunner() {

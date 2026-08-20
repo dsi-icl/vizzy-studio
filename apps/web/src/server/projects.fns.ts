@@ -34,7 +34,6 @@ import {
     getProject,
     getProjectCommits,
     getStageLayoutLimits,
-    getDefaultStage,
     listAssets,
     listAssetsByUrlsForPicker,
     listKnownTags,
@@ -277,7 +276,9 @@ export const $getProject = createServerFn({ method: 'GET' })
         if (!allowed) {
             const isPublicPublishedProject =
                 project.visibility === 'public' &&
-                Boolean(getDefaultStage(project)?.publishedCommitId);
+                project.stages.some(
+                    (stage) => !stage.archivedAt && Boolean(stage.publishedCommitId)
+                );
             if (!isPublicPublishedProject) {
                 await denyProjectFn({
                     context,
@@ -316,7 +317,12 @@ export const $getCommit = createServerFn({ method: 'GET' })
             const project = await getProject(commitProjectId);
             const isPublishedCommitOfPublicProject =
                 project?.visibility === 'public' &&
-                getDefaultStage(project)?.publishedCommitId === commit.id;
+                project.stages.some(
+                    (stage) =>
+                        !stage.archivedAt &&
+                        stage.id === commit.stageId &&
+                        stage.publishedCommitId === commit.id
+                );
             if (!isPublishedCommitOfPublicProject) {
                 await denyProjectFn({
                     context,
