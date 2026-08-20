@@ -984,6 +984,11 @@ The following are intentionally deferred and must be recorded when the MVP is ha
 9. Add distributed/multi-process slideshow coordination.
 10. Revisit commit-layout snapshots only if reproducible historical dimensions become a product
     requirement.
+11. Decide whether wall clients should report physical viewport width, height, and device pixel
+    ratio. The MVP deliberately observes only the existing row/column peer coordinates and lets
+    admins configure logical panel dimensions, avoiding another wall-handshake protocol change.
+12. Add richer runner telemetry (current entry, phase, next transition, and last bind error) to the
+    signage panel if operational feedback beyond per-entry validation is needed.
 
 ## Acceptance Summary
 

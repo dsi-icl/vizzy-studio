@@ -14,6 +14,7 @@ import {
     peers,
     removeFromIndex,
     wallBindings,
+    signageBlankWalls,
     wallPeersByScope,
     wallsByIntendedWallSlug,
     wallsByWallId,
@@ -45,7 +46,7 @@ export function registerPeer(peer: Peer, meta: PeerMeta): PeerEntry {
                 addToIndex(wallsByIntendedWallSlug, meta.intendedWallSlug, entry);
             }
             const boundScopeId = wallBindings.get(meta.wallId);
-            if (boundScopeId !== undefined) {
+            if (boundScopeId !== undefined && !signageBlankWalls.has(meta.wallId)) {
                 addToIndex(wallPeersByScope, boundScopeId, entry);
             }
             break;

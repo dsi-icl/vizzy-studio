@@ -23,6 +23,7 @@ export interface UserDocument {
     image?: string | null;
     role?: string | null;
     trustedPublisher?: boolean | null;
+    canManageSignage?: boolean | null;
     lastSeen?: Date | null;
     banned?: boolean | null;
     emailVerified?: boolean | null;
@@ -131,6 +132,33 @@ export interface WallDocument {
     updatedAt?: number;
 }
 
+export interface SignageSlideEntry {
+    id: string;
+    projectId: string;
+    slideId: string;
+    displayDurationMs?: number;
+    gapDurationMs?: number;
+}
+
+export interface SignageSlideshowDocument {
+    _id: ObjectId;
+    id: string;
+    name: string;
+    layout: StageLayout;
+    defaultDisplayDurationMs: number;
+    defaultGapDurationMs: number;
+    gapMode: 'hold' | 'blank';
+    entries: SignageSlideEntry[];
+    targetWallIds: string[];
+    enabled: boolean;
+    createdBy: string;
+    collaborators: Array<{ email: string; role: 'viewer' | 'editor' }>;
+    deletedAt?: number | null;
+    deletedBy?: string | null;
+    createdAt: number;
+    updatedAt: number;
+}
+
 export type DeviceKind = 'wall' | 'gallery' | 'controller';
 export type DeviceStatus = 'pending' | 'active' | 'revoked';
 
@@ -165,6 +193,7 @@ export interface AuthContext {
         email: string;
         role: 'admin' | 'operator' | 'user';
         trustedPublisher?: boolean;
+        canManageSignage?: boolean;
         impersonatedBy?: string;
     };
     device?: {
@@ -204,6 +233,7 @@ export type AuditResourceType =
     | 'config'
     | 'smtp'
     | 'scope'
+    | 'signage_slideshow'
     | 'unknown';
 
 export interface AuditLogDocument {

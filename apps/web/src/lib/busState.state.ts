@@ -66,7 +66,8 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     allGalleries: new Set<PeerEntry>(),
     allEditors: new Set<PeerEntry>(),
     wallBindings: new Map<string, ScopeId>(),
-    wallBindingSources: new Map<string, 'live' | 'gallery'>(),
+    wallBindingSources: new Map<string, 'live' | 'gallery' | 'signage'>(),
+    signageBlankWalls: new Set<string>(),
     scopeWatchers: new Map<ScopeId, Set<string>>(),
     wallPeersByScope: new Map<ScopeId, Set<PeerEntry>>(),
     activeVideos: new Map<number, { scopeId: ScopeId; layer: Layer }>(),
@@ -94,6 +95,9 @@ if (!_hmr.allGalleries) {
 }
 if (!_hmr.wallUnbindTimers) {
     _hmr.wallUnbindTimers = new Map<string, ReturnType<typeof setTimeout>>();
+}
+if (!_hmr.signageBlankWalls) {
+    _hmr.signageBlankWalls = new Set<string>();
 }
 if (typeof _hmr.peerCounts.gallery !== 'number') {
     _hmr.peerCounts.gallery = 0;
@@ -207,7 +211,9 @@ export const allEditors: Set<PeerEntry> = _hmr.allEditors;
 
 // wallId > ScopeId: which content a wall displays
 export const wallBindings: Map<string, ScopeId> = _hmr.wallBindings;
-export const wallBindingSources: Map<string, 'live' | 'gallery'> = _hmr.wallBindingSources;
+export const wallBindingSources: Map<string, 'live' | 'gallery' | 'signage'> =
+    _hmr.wallBindingSources;
+export const signageBlankWalls: Set<string> = _hmr.signageBlankWalls;
 
 // scopeId > Set<wallId>: reverse index used only for binding cleanup
 export const scopeWatchers: Map<ScopeId, Set<string>> = _hmr.scopeWatchers;

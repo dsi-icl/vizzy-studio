@@ -31,6 +31,7 @@ import {
     touchPing,
     unbindWall,
     unregisterPeer,
+    wallBindingSources,
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
@@ -64,6 +65,7 @@ import {
 import { handleEditorScopeVacated, recomputePeerAuthContexts } from '~/server/bus/bus.peers';
 import { dbCol } from '~/server/collections';
 import { markDeviceDisconnectedById } from '~/server/devices';
+import { startSignageRunner } from '~/server/signageRunner';
 
 // ── Binary opcodes ──────────────────────────────────────────────────────────
 
@@ -323,6 +325,12 @@ const hooks = defineHooks({
                 scheduleWallUnbindGrace(meta.wallId, () => {
                     // Wall may have reconnected during grace period.
                     if (getWallNodeCount(meta.wallId) > 0) return;
+                    if (
+                        wallBindingSources.get(meta.wallId) === 'signage' ||
+                        process.__SIGNAGE_IS_TARGET_WALL__?.(meta.wallId)
+                    ) {
+                        return;
+                    }
 
                     unbindWall(meta.wallId);
                     hydrateWallNodes(meta.wallId);
@@ -448,7 +456,10 @@ process.__BROADCAST_WALL_BINDING_CHANGED__ = (wallId: string) => {
 
 process.__BROADCAST_PROJECTS_CHANGED__ = (projectId?: string) => {
     broadcastProjectsChanged(projectId);
+    process.__SIGNAGE_CONFIG_CHANGED__?.();
 };
+
+startSignageRunner();
 
 process.__DISCONNECT_DEVICE__ = (deviceId: string) => {
     const normalized = deviceId.trim();

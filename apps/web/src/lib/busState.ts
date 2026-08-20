@@ -15,6 +15,7 @@ export {
     allEditors,
     wallBindings,
     wallBindingSources,
+    signageBlankWalls,
     scopeWatchers,
     wallPeersByScope,
     controllerTransientByWallId,
@@ -67,6 +68,7 @@ export {
 export {
     bindWall,
     unbindWall,
+    setSignageWallBlank,
     scheduleWallUnbindGrace,
     cancelWallUnbindGrace
 } from './busState.binding';

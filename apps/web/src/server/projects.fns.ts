@@ -38,6 +38,7 @@ import {
     listAssets,
     listAssetsByUrlsForPicker,
     listKnownTags,
+    listWallLayoutTemplates,
     listProjects,
     listPublishedProjects,
     promoteBranchHead,
@@ -94,6 +95,7 @@ const AuditResourceTypeEnum = z.enum([
     'config',
     'smtp',
     'scope',
+    'signage_slideshow',
     'unknown'
 ]);
 const AuditSurfaceEnum = z.enum(['http', 'serverfn', 'ws', 'yjs', 'job', 'system', 'unknown']);
@@ -379,6 +381,10 @@ export const $updateProject = createServerFn({ method: 'POST' })
 export const $getStageLayoutLimits = createServerFn({ method: 'GET' })
     .middleware([authMiddleware])
     .handler(() => getStageLayoutLimits());
+
+export const $listWallLayoutTemplates = createServerFn({ method: 'GET' })
+    .middleware([authMiddleware])
+    .handler(() => listWallLayoutTemplates());
 
 export const $createStage = createServerFn({ method: 'POST' })
     .validator(z.object({ projectId: z.string(), name: z.string().min(1), layout: StageLayout }))

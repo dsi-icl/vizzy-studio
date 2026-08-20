@@ -13,6 +13,7 @@ import {
 import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import type { PublicDoc } from '@repo/db/collections';
 import type { CommitDocument, ProjectStage } from '@repo/db/documents';
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
@@ -37,6 +38,7 @@ import {
     $ensureMutableHead,
     $getCommit,
     $getStageLayoutLimits,
+    $listWallLayoutTemplates,
     $promoteBranchHead,
     $publishCommit,
     $setDefaultStage,
@@ -225,15 +227,19 @@ function StageList({
     const queryClient = useQueryClient();
     const [creating, setCreating] = useState(false);
     const [name, setName] = useState('New stage');
-    const [layout, setLayout] = useState({
+    const [layout, setLayout] = useState<StageLayout>({
         columns: 1,
         rows: 1,
-        screenWidth: 1920,
-        screenHeight: 1080
+        screenWidth: DEFAULT_STAGE_LAYOUT.screenWidth,
+        screenHeight: DEFAULT_STAGE_LAYOUT.screenHeight
     });
     const { data: limits } = useSuspenseQuery({
         queryKey: ['stage-layout-limits'],
         queryFn: () => $getStageLayoutLimits()
+    });
+    const { data: wallTemplates } = useSuspenseQuery({
+        queryKey: ['wall-layout-templates'],
+        queryFn: () => $listWallLayoutTemplates()
     });
     const createMutation = useMutation({
         mutationFn: () => $createStage({ data: { projectId, name, layout } }),
@@ -265,6 +271,37 @@ function StageList({
                         />
                     </div>
                     <LayoutFields values={layout} onChange={setLayout} />
+                    {wallTemplates.length > 0 && (
+                        <div className="space-y-1">
+                            <Label htmlFor="wall-template">Prefill from wall</Label>
+                            <select
+                                id="wall-template"
+                                className="h-8 w-full border border-input bg-input/30 px-2 text-sm"
+                                defaultValue=""
+                                onChange={(event) => {
+                                    const template = wallTemplates.find(
+                                        ({ wallId }) => wallId === event.target.value
+                                    );
+                                    if (template) {
+                                        setLayout({
+                                            columns: template.layout.columns,
+                                            rows: template.layout.rows,
+                                            screenWidth: template.layout.screenWidth,
+                                            screenHeight: template.layout.screenHeight
+                                        });
+                                    }
+                                }}
+                            >
+                                <option value="">Custom values</option>
+                                {wallTemplates.map((template) => (
+                                    <option key={template.wallId} value={template.wallId}>
+                                        {template.name} ({template.layout.columns}×
+                                        {template.layout.rows})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                         Current grid maximum: {limits.maxColumns}×{limits.maxRows}
                     </p>

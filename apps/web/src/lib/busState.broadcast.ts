@@ -275,7 +275,7 @@ export function notifyControllers(
     commitId?: string,
     slideId?: string,
     customRenderUrl?: string,
-    boundSource?: 'live' | 'gallery'
+    boundSource?: 'live' | 'gallery' | 'signage'
 ) {
     const entries = controllersByWallId.get(wallId);
     if (!entries) return;

@@ -45,3 +45,16 @@ export type Collaborator = z.infer<typeof Collaborator>;
 
 export const ProjectVisibility = z.enum(['public', 'private']);
 export type ProjectVisibility = z.infer<typeof ProjectVisibility>;
+
+export const SignageCollaborator = z.object({
+    email: z.email(),
+    role: z.enum(['viewer', 'editor'])
+});
+
+export const SignageSlideEntry = z.object({
+    id: z.string().min(1),
+    projectId: z.string().min(1),
+    slideId: z.string().min(1),
+    displayDurationMs: z.int().positive().optional(),
+    gapDurationMs: z.int().nonnegative().optional()
+});

@@ -193,13 +193,18 @@ function AdminWalls() {
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        disabled={unbindMutation.isPending}
+                                                        disabled={
+                                                            unbindMutation.isPending ||
+                                                            wall.boundSource === 'signage'
+                                                        }
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             unbindMutation.mutate(wall.wallId);
                                                         }}
                                                     >
-                                                        Unbind
+                                                        {wall.boundSource === 'signage'
+                                                            ? 'Signage managed'
+                                                            : 'Unbind'}
                                                     </Button>
                                                 )}
                                             </div>
