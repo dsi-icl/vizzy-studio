@@ -100,6 +100,7 @@ export function EditorSlate() {
 
     const stageSlot = useRef<HTMLDivElement>(null);
     const stageWrapper = useRef<HTMLDivElement>(null);
+    const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
     const hoverTrRef = useRef<Konva.Transformer>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
@@ -1417,6 +1418,7 @@ export function EditorSlate() {
                     className="min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
                 >
                     <Stage
+                        ref={stageInstance}
                         width={columns * screenWidth * stageScaleFactor}
                         height={rows * screenHeight * stageScaleFactor}
                         onMouseDown={handleStageInteractionStart}
