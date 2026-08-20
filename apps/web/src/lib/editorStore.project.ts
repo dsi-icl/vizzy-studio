@@ -16,6 +16,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                 loading: true,
                 projectId,
                 commitId,
+                stageId: null,
                 layers: new Map(),
                 hoveredLayerId: null,
                 slides: [],
@@ -24,17 +25,29 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                 headCommitId: null
             });
 
-            const project = await $getProject({ data: { id: projectId } });
-            if (project) {
-                set({ projectName: project.name });
+            const [project, commit] = await Promise.all([
+                $getProject({ data: { id: projectId } }),
+                $getCommit({ data: { id: commitId } })
+            ]);
+            if (!project) throw new Error('Project not found');
+            if (!commit || commit.projectId !== projectId) {
+                throw new Error('Commit does not belong to this project');
             }
+            const stage = project.stages.find(({ id }) => id === commit.stageId);
+            if (!stage) throw new Error('Commit stage not found');
+            if (stage.archivedAt) throw new Error('Archived stages cannot be edited');
+            set({
+                projectName: project.name,
+                stageId: stage.id,
+                stageLayout: stage.layout,
+                headCommitId: stage.headCommitId
+            });
 
             const engine = EditorEngine.getInstance();
             engine.clearBufferedHydration();
             engine.joinScope(projectId, commitId, slideId);
             const hydrate = await engine.waitForHydrate();
 
-            const commit = await $getCommit({ data: { id: commitId } });
             if (commit?.content?.slides) {
                 const commitSlides = commit.content.slides as Array<{
                     id: string;
@@ -47,7 +60,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                     order: s.order ?? i,
                     name: s.name || `Slide ${(s.order ?? i) + 1}`
                 }));
-                set({ slides, headCommitId: commitId });
+                set({ slides });
             }
             if (commit.parentId) {
                 const lastSavedCommit = await $getCommit({ data: { id: commit.parentId } });

@@ -433,44 +433,47 @@ function HomePage() {
 
     const projectsData: ProjectWithId[] = useMemo(
         () =>
-            publishedProjects.map((p) => ({
-                id: p.id,
-                name: p.name,
-                author: p.authorOrganisation,
-                description: p.description,
-                tags: p.tags,
-                publishedCommitId: p.publishedCommitId,
-                customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
-                customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
-                imageUrl: p.heroImages[0] ?? '',
-                blurhash: (p as { heroImageBlurhash?: string }).heroImageBlurhash,
-                sizes: (p as { heroImageSizes?: number[] }).heroImageSizes,
-                images: (() => {
-                    const heroImages = Array.isArray(p.heroImages) ? p.heroImages : [];
-                    const metaBySrc = new Map(
-                        (
+            publishedProjects.map((p) => {
+                const defaultStage = p.stages.find(({ id }) => id === p.defaultStageId);
+                return {
+                    id: p.id,
+                    name: p.name,
+                    author: p.authorOrganisation,
+                    description: p.description,
+                    tags: p.tags,
+                    publishedCommitId: defaultStage?.publishedCommitId,
+                    customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
+                    customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
+                    imageUrl: p.heroImages[0] ?? '',
+                    blurhash: (p as { heroImageBlurhash?: string }).heroImageBlurhash,
+                    sizes: (p as { heroImageSizes?: number[] }).heroImageSizes,
+                    images: (() => {
+                        const heroImages = Array.isArray(p.heroImages) ? p.heroImages : [];
+                        const metaBySrc = new Map(
                             (
-                                p as {
-                                    heroImageMeta?: Array<{
-                                        src: string;
-                                        blurhash?: string;
-                                        sizes?: number[];
-                                    }>;
-                                }
-                            ).heroImageMeta ?? []
-                        ).map((entry) => [entry.src, entry])
-                    );
+                                (
+                                    p as {
+                                        heroImageMeta?: Array<{
+                                            src: string;
+                                            blurhash?: string;
+                                            sizes?: number[];
+                                        }>;
+                                    }
+                                ).heroImageMeta ?? []
+                            ).map((entry) => [entry.src, entry])
+                        );
 
-                    return heroImages.map((src) => {
-                        const meta = metaBySrc.get(src);
-                        return {
-                            src,
-                            blurhash: meta?.blurhash,
-                            sizes: meta?.sizes
-                        };
-                    });
-                })()
-            })),
+                        return heroImages.map((src) => {
+                            const meta = metaBySrc.get(src);
+                            return {
+                                src,
+                                blurhash: meta?.blurhash,
+                                sizes: meta?.sizes
+                            };
+                        });
+                    })()
+                };
+            }),
         [publishedProjects]
     );
 

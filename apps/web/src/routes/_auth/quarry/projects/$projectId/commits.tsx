@@ -1,18 +1,23 @@
 import {
+    ArchiveIcon,
     ArrowUpIcon,
     CircleNotchIcon,
     EyeIcon,
     GitBranchIcon,
     GlobeIcon,
     GlobeXIcon,
-    PencilSimpleIcon
+    PencilSimpleIcon,
+    PlusIcon,
+    StarIcon
 } from '@phosphor-icons/react';
 import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import type { PublicDoc } from '@repo/db/collections';
-import type { CommitDocument } from '@repo/db/documents';
+import type { CommitDocument, ProjectStage } from '@repo/db/documents';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
+import { Input } from '@repo/ui/components/input';
+import { Label } from '@repo/ui/components/label';
 import {
     Table,
     TableBody,
@@ -26,22 +31,26 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { $promoteBranchHead, $publishCommit } from '~/server/projects.fns';
+import {
+    $archiveStage,
+    $createStage,
+    $ensureMutableHead,
+    $getCommit,
+    $getStageLayoutLimits,
+    $promoteBranchHead,
+    $publishCommit,
+    $setDefaultStage,
+    $updateStage
+} from '~/server/projects.fns';
 import { commitsQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
 type Commit = PublicDoc<CommitDocument>;
 
-/**
- * Sort commits topologically by walking the parentId chain from HEAD,
- * then from any other branch heads. Project HEAD branch comes first.
- */
 function topoSort(commits: Commit[], headCommitId: string | null): Commit[] {
     if (commits.length === 0) return [];
-    const byId = new Map(commits.map((c) => [c.id, c]));
+    const byId = new Map(commits.map((commit) => [commit.id, commit]));
     const sorted: Commit[] = [];
     const visited = new Set<string>();
-
-    // Walk a chain from a starting commit
     const walkChain = (start: Commit | undefined) => {
         let current = start;
         while (current && !visited.has(current.id)) {
@@ -50,27 +59,16 @@ function topoSort(commits: Commit[], headCommitId: string | null): Commit[] {
             current = current.parentId ? byId.get(current.parentId) : undefined;
         }
     };
-
-    // 1. Walk from the project HEAD first
-    const projectHead = headCommitId ? byId.get(headCommitId) : undefined;
-    walkChain(projectHead);
-
-    // 2. Walk from other mutable branch heads
-    for (const c of commits) {
-        if (c.isMutableHead && !visited.has(c.id)) {
-            walkChain(c);
-        }
+    walkChain(headCommitId ? byId.get(headCommitId) : undefined);
+    for (const commit of commits) {
+        if (commit.isMutableHead && !visited.has(commit.id)) walkChain(commit);
     }
-
-    // 3. Append any orphan commits not reachable from any head
-    for (const c of commits) {
-        if (!visited.has(c.id)) sorted.push(c);
+    for (const commit of commits) {
+        if (!visited.has(commit.id)) sorted.push(commit);
     }
-
     return sorted;
 }
 
-/** Graph node for a single commit row */
 function CommitGraphNode({
     isFirst,
     isLast,
@@ -82,37 +80,32 @@ function CommitGraphNode({
     isMutableHead: boolean;
     isPublished: boolean;
 }) {
-    const cx = 12;
-    const r = isMutableHead ? 5 : 4;
     return (
         <svg width={24} height="100%" className="min-h-10" aria-hidden>
-            {/* Line above */}
             {!isFirst && (
                 <line
-                    x1={cx}
+                    x1={12}
                     y1={0}
-                    x2={cx}
+                    x2={12}
                     y2="50%"
                     className="stroke-muted-foreground/40"
                     strokeWidth={2}
                 />
             )}
-            {/* Line below */}
             {!isLast && (
                 <line
-                    x1={cx}
+                    x1={12}
                     y1="50%"
-                    x2={cx}
+                    x2={12}
                     y2="100%"
                     className="stroke-muted-foreground/40"
                     strokeWidth={2}
                 />
             )}
-            {/* Node circle */}
             <circle
-                cx={cx}
+                cx={12}
                 cy="50%"
-                r={r}
+                r={isMutableHead ? 5 : 4}
                 className={
                     isMutableHead
                         ? 'fill-primary stroke-primary'
@@ -120,7 +113,6 @@ function CommitGraphNode({
                           ? 'fill-green-500 stroke-green-500'
                           : 'fill-muted-foreground/60 stroke-muted-foreground/60'
                 }
-                strokeWidth={isMutableHead ? 2 : 1.5}
             />
         </svg>
     );
@@ -128,83 +120,353 @@ function CommitGraphNode({
 
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId/commits')({
     loader: async ({ context, params }) => {
-        context.queryClient.ensureQueryData(commitsQueryOptions(params.projectId));
         const project = await context.queryClient.ensureQueryData(
             projectQueryOptions(params.projectId)
         );
-        return {
-            projectName: project?.name ?? 'Project'
-        };
+        if (project?.defaultStageId) {
+            await context.queryClient.ensureQueryData(
+                commitsQueryOptions(params.projectId, project.defaultStageId)
+            );
+        }
+        return { projectName: project?.name ?? 'Project' };
     },
-    component: CommitsTab,
+    component: StagesTab,
     head: ({ loaderData }) => ({
-        meta: [{ title: `Commits · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
+        meta: [{ title: `Stages · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
     })
 });
 
-function CommitsTab() {
+function LayoutFields({
+    values,
+    onChange
+}: {
+    values: { columns: number; rows: number; screenWidth: number; screenHeight: number };
+    onChange: (values: {
+        columns: number;
+        rows: number;
+        screenWidth: number;
+        screenHeight: number;
+    }) => void;
+}) {
+    const fields = [
+        ['columns', 'Columns'],
+        ['rows', 'Rows'],
+        ['screenWidth', 'Screen width'],
+        ['screenHeight', 'Screen height']
+    ] as const;
+    return (
+        <div className="grid grid-cols-2 gap-3">
+            {fields.map(([key, label]) => (
+                <div key={key} className="space-y-1">
+                    <Label htmlFor={`stage-${key}`}>{label}</Label>
+                    <Input
+                        id={`stage-${key}`}
+                        type="number"
+                        min={1}
+                        value={values[key]}
+                        onChange={(event) =>
+                            onChange({ ...values, [key]: Number(event.target.value) })
+                        }
+                    />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function StagesTab() {
     const { projectId } = Route.useParams();
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
-    const { data: commits } = useSuspenseQuery(commitsQueryOptions(projectId));
-    const queryClient = useQueryClient();
-    const navigate = useNavigate();
-    const [openingEditorForCommitId, setOpeningEditorForCommitId] = useState<string | null>(null);
+    const [selectedStageId, setSelectedStageId] = useState(project.defaultStageId);
+    const selectedStage =
+        project.stages.find(({ id }) => id === selectedStageId) ??
+        project.stages.find(({ id }) => id === project.defaultStageId) ??
+        project.stages[0];
+    if (!selectedStage) throw new Error('Project has no stages');
 
-    const publishMutation = useMutation({
-        mutationFn: (commitId: string | null) => $publishCommit({ data: { projectId, commitId } }),
-        onSuccess: (isPublished) => {
-            toast.success(isPublished ? 'Commit published' : 'Project unpublished');
+    return (
+        <div className="grid min-h-0 gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <StageList
+                projectId={projectId}
+                stages={project.stages}
+                defaultStageId={project.defaultStageId}
+                selectedStageId={selectedStage.id}
+                onSelect={setSelectedStageId}
+            />
+            <StageDetail
+                key={selectedStage.id}
+                projectId={projectId}
+                stage={selectedStage}
+                isDefault={selectedStage.id === project.defaultStageId}
+                canPublish={
+                    user?.role === 'admin' ||
+                    user?.role === 'operator' ||
+                    user?.trustedPublisher === true
+                }
+            />
+        </div>
+    );
+}
+
+function StageList({
+    projectId,
+    stages,
+    defaultStageId,
+    selectedStageId,
+    onSelect
+}: {
+    projectId: string;
+    stages: ProjectStage[];
+    defaultStageId: string;
+    selectedStageId: string;
+    onSelect: (stageId: string) => void;
+}) {
+    const queryClient = useQueryClient();
+    const [creating, setCreating] = useState(false);
+    const [name, setName] = useState('New stage');
+    const [layout, setLayout] = useState({
+        columns: 1,
+        rows: 1,
+        screenWidth: 1920,
+        screenHeight: 1080
+    });
+    const { data: limits } = useSuspenseQuery({
+        queryKey: ['stage-layout-limits'],
+        queryFn: () => $getStageLayoutLimits()
+    });
+    const createMutation = useMutation({
+        mutationFn: () => $createStage({ data: { projectId, name, layout } }),
+        onSuccess: (stage) => {
             queryClient.invalidateQueries({ queryKey: ['projects'] });
+            setCreating(false);
+            onSelect(stage.id);
+            toast.success('Stage created');
         },
-        onError: (e) => toast.error(e.message)
+        onError: (error) => toast.error(error.message)
     });
 
+    return (
+        <div className="space-y-3">
+            <div className="flex items-center justify-between">
+                <h3 className="font-medium">Project stages</h3>
+                <Button size="xs" variant="outline" onClick={() => setCreating((value) => !value)}>
+                    <PlusIcon /> Add
+                </Button>
+            </div>
+            {creating && (
+                <div className="space-y-3 rounded-xl border p-3">
+                    <div className="space-y-1">
+                        <Label htmlFor="new-stage-name">Name</Label>
+                        <Input
+                            id="new-stage-name"
+                            value={name}
+                            onChange={(event) => setName(event.target.value)}
+                        />
+                    </div>
+                    <LayoutFields values={layout} onChange={setLayout} />
+                    <p className="text-xs text-muted-foreground">
+                        Current grid maximum: {limits.maxColumns}×{limits.maxRows}
+                    </p>
+                    <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={createMutation.isPending}
+                        onClick={() => createMutation.mutate()}
+                    >
+                        Create stage
+                    </Button>
+                </div>
+            )}
+            <div className="space-y-2">
+                {[...stages]
+                    .sort((left, right) => left.order - right.order)
+                    .map((stage) => (
+                        <button
+                            type="button"
+                            key={stage.id}
+                            className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                                selectedStageId === stage.id
+                                    ? 'border-primary bg-primary/5'
+                                    : 'hover:bg-muted/50'
+                            } ${stage.archivedAt ? 'opacity-60' : ''}`}
+                            onClick={() => onSelect(stage.id)}
+                        >
+                            <span className="flex items-center gap-2 font-medium">
+                                {stage.name}
+                                {stage.id === defaultStageId && <StarIcon weight="fill" />}
+                            </span>
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                                {stage.layout.columns}×{stage.layout.rows} ·{' '}
+                                {stage.layout.screenWidth}×{stage.layout.screenHeight}px
+                            </span>
+                            <span className="mt-2 flex gap-1">
+                                {stage.publishedCommitId && (
+                                    <Badge variant="default">Published</Badge>
+                                )}
+                                {stage.archivedAt && <Badge variant="secondary">Archived</Badge>}
+                            </span>
+                        </button>
+                    ))}
+            </div>
+        </div>
+    );
+}
+
+function StageDetail({
+    projectId,
+    stage,
+    isDefault,
+    canPublish
+}: {
+    projectId: string;
+    stage: ProjectStage;
+    isDefault: boolean;
+    canPublish: boolean;
+}) {
+    const { data: commits } = useSuspenseQuery(commitsQueryOptions(projectId, stage.id));
+    const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const [name, setName] = useState(stage.name);
+    const [layout, setLayout] = useState(stage.layout);
+    const [openingEditor, setOpeningEditor] = useState(false);
+    const invalidate = () => queryClient.invalidateQueries({ queryKey: ['projects'] });
+
+    const updateMutation = useMutation({
+        mutationFn: () => $updateStage({ data: { projectId, stageId: stage.id, name, layout } }),
+        onSuccess: () => {
+            invalidate();
+            toast.success('Stage updated');
+        },
+        onError: (error) => toast.error(error.message)
+    });
+    const defaultMutation = useMutation({
+        mutationFn: () => $setDefaultStage({ data: { projectId, stageId: stage.id } }),
+        onSuccess: () => {
+            invalidate();
+            toast.success('Default Gallery stage updated');
+        },
+        onError: (error) => toast.error(error.message)
+    });
+    const archiveMutation = useMutation({
+        mutationFn: () => $archiveStage({ data: { projectId, stageId: stage.id } }),
+        onSuccess: () => {
+            invalidate();
+            toast.success('Stage archived');
+        },
+        onError: (error) => toast.error(error.message)
+    });
+    const publishMutation = useMutation({
+        mutationFn: (commitId: string | null) =>
+            $publishCommit({ data: { projectId, stageId: stage.id, commitId } }),
+        onSuccess: (published) => {
+            invalidate();
+            toast.success(published ? 'Stage published' : 'Stage unpublished');
+        },
+        onError: (error) => toast.error(error.message)
+    });
     const promoteMutation = useMutation({
         mutationFn: (branchCommitId: string) =>
             $promoteBranchHead({ data: { projectId, branchCommitId } }),
         onSuccess: () => {
-            toast.success('Branch promoted to project HEAD');
-            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            invalidate();
+            queryClient.invalidateQueries({
+                queryKey: ['projects', projectId, 'stages', stage.id, 'commits']
+            });
+            toast.success('Branch promoted to stage HEAD');
         },
-        onError: (e) => toast.error(e.message)
+        onError: (error) => toast.error(error.message)
     });
-
     const sorted = useMemo(
-        () => topoSort(commits, project.headCommitId ?? null),
-        [commits, project.headCommitId]
+        () => topoSort(commits, stage.headCommitId),
+        [commits, stage.headCommitId]
     );
-    const canPublish =
-        user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
 
-    const handleOpenEditor = async (input: { commitId: string; slideId: string }) => {
-        setOpeningEditorForCommitId(input.commitId);
+    const openStageEditor = async () => {
+        setOpeningEditor(true);
         try {
+            const commitId = await $ensureMutableHead({
+                data: { projectId, stageId: stage.id }
+            });
+            const commit = await $getCommit({ data: { id: commitId } });
+            const slideId = commit?.content.slides[0]?.id;
+            if (!slideId) throw new Error('Stage has no slides');
             await navigate({
                 to: '/quarry/editor/$projectId/$commitId/$slideId',
-                params: {
-                    projectId,
-                    commitId: input.commitId,
-                    slideId: input.slideId
-                }
+                params: { projectId, commitId, slideId }
             });
         } catch (error) {
-            toast.error(error instanceof Error ? error.message : 'Failed to open editor');
-            setOpeningEditorForCommitId(null);
+            setOpeningEditor(false);
+            toast.error(error instanceof Error ? error.message : 'Could not open stage');
         }
     };
 
-    if (commits.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-12 text-muted-foreground">
-                <p>No commits yet</p>
-                <p className="text-xs">Commits will appear here as changes are saved.</p>
-            </div>
-        );
-    }
-
     return (
-        <div className="flex flex-col gap-4">
+        <div className="min-w-0 space-y-5">
+            <div className="space-y-4 rounded-2xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h3 className="font-medium">{stage.name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                            {isDefault
+                                ? 'Default editing and Gallery stage'
+                                : 'Independent stage history'}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {!stage.archivedAt && (
+                            <Button size="sm" onClick={openStageEditor} disabled={openingEditor}>
+                                {openingEditor ? (
+                                    <CircleNotchIcon className="animate-spin" />
+                                ) : (
+                                    <PencilSimpleIcon />
+                                )}
+                                Edit stage
+                            </Button>
+                        )}
+                        {!isDefault && !stage.archivedAt && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => defaultMutation.mutate()}
+                            >
+                                <StarIcon /> Present to Gallery
+                            </Button>
+                        )}
+                        {!stage.archivedAt && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => archiveMutation.mutate()}
+                            >
+                                <ArchiveIcon /> Archive
+                            </Button>
+                        )}
+                    </div>
+                </div>
+                {!stage.archivedAt && (
+                    <>
+                        <div className="space-y-1">
+                            <Label htmlFor="stage-name">Stage name</Label>
+                            <Input
+                                id="stage-name"
+                                value={name}
+                                onChange={(event) => setName(event.target.value)}
+                            />
+                        </div>
+                        <LayoutFields values={layout} onChange={setLayout} />
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={updateMutation.isPending}
+                            onClick={() => updateMutation.mutate()}
+                        >
+                            Save stage settings
+                        </Button>
+                    </>
+                )}
+            </div>
+
             <div className="overflow-hidden rounded-2xl border">
                 <Table>
                     <TableHeader>
@@ -218,14 +480,24 @@ function CommitsTab() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {sorted.map((commit, idx) => {
-                            const isPublished = commit.id === project.publishedCommitId;
+                        {sorted.length === 0 && (
+                            <TableRow>
+                                <TableCell
+                                    colSpan={6}
+                                    className="py-8 text-center text-muted-foreground"
+                                >
+                                    Open this stage in the Editor to create its HEAD.
+                                </TableCell>
+                            </TableRow>
+                        )}
+                        {sorted.map((commit, index) => {
+                            const isPublished = commit.id === stage.publishedCommitId;
                             return (
                                 <TableRow key={commit.id}>
                                     <TableCell className="h-12 w-6 px-0 py-0!">
                                         <CommitGraphNode
-                                            isFirst={idx === 0}
-                                            isLast={idx === sorted.length - 1}
+                                            isFirst={index === 0}
+                                            isLast={index === sorted.length - 1}
                                             isMutableHead={commit.isMutableHead}
                                             isPublished={isPublished}
                                         />
@@ -241,14 +513,10 @@ function CommitsTab() {
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        {isPublished && (
-                                            <Badge variant="default" className="text-xs">
-                                                Published
-                                            </Badge>
-                                        )}
+                                        {isPublished && <Badge>Published</Badge>}
                                         {commit.isMutableHead &&
-                                            commit.id !== project.headCommitId && (
-                                                <Badge variant="outline" className="text-xs">
+                                            commit.id !== stage.headCommitId && (
+                                                <Badge variant="outline">
                                                     <GitBranchIcon /> Branch
                                                 </Badge>
                                             )}
@@ -258,10 +526,7 @@ function CommitsTab() {
                                             render={
                                                 <Link
                                                     to="/quarry/view/$projectId/$commitId"
-                                                    params={{
-                                                        projectId,
-                                                        commitId: commit.id
-                                                    }}
+                                                    params={{ projectId, commitId: commit.id }}
                                                 />
                                             }
                                             variant="outline"
@@ -271,14 +536,13 @@ function CommitsTab() {
                                             <EyeIcon /> View
                                         </Button>
                                         {commit.isMutableHead &&
-                                            commit.id !== project.headCommitId && (
+                                            commit.id !== stage.headCommitId && (
                                                 <Button
                                                     variant="outline"
                                                     size="xs"
                                                     onClick={() =>
                                                         promoteMutation.mutate(commit.id)
                                                     }
-                                                    disabled={promoteMutation.isPending}
                                                 >
                                                     <ArrowUpIcon /> Promote
                                                 </Button>
@@ -289,7 +553,6 @@ function CommitsTab() {
                                                     variant="outline"
                                                     size="xs"
                                                     onClick={() => publishMutation.mutate(null)}
-                                                    disabled={publishMutation.isPending}
                                                 >
                                                     <GlobeXIcon /> Unpublish
                                                 </Button>
@@ -300,35 +563,10 @@ function CommitsTab() {
                                                     onClick={() =>
                                                         publishMutation.mutate(commit.id)
                                                     }
-                                                    disabled={publishMutation.isPending}
                                                 >
                                                     <GlobeIcon /> Publish
                                                 </Button>
                                             ))}
-                                        {commit.isMutableHead && commit.content?.slides?.[0]?.id ? (
-                                            <Button
-                                                variant="outline"
-                                                size="xs"
-                                                onClick={() =>
-                                                    handleOpenEditor({
-                                                        commitId: commit.id,
-                                                        slideId: commit.content.slides[0].id
-                                                    })
-                                                }
-                                                disabled={openingEditorForCommitId !== null}
-                                            >
-                                                {openingEditorForCommitId === commit.id ? (
-                                                    <>
-                                                        <CircleNotchIcon className="animate-spin" />
-                                                        Opening...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <PencilSimpleIcon /> Edit
-                                                    </>
-                                                )}
-                                            </Button>
-                                        ) : null}
                                     </TableCell>
                                 </TableRow>
                             );

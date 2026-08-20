@@ -134,8 +134,13 @@ function CommitViewer() {
     const handleEditFromVersion = async () => {
         setBranching(true);
         try {
-            if (commit.isMutableHead && project.headCommitId === commitId) {
-                // This IS the project head — just navigate to the editor
+            const stage = project.stages.find(({ id }) => id === commit.stageId);
+            if (!stage) {
+                toast.error('This commit no longer belongs to a project stage');
+                return;
+            }
+            if (commit.isMutableHead && stage.headCommitId === commitId) {
+                // This is the stage head — just navigate to the editor.
                 const firstSlideId = slides[0]?.id;
                 if (!firstSlideId) {
                     toast.error('No slides in this commit');

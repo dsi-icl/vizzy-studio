@@ -1,3 +1,5 @@
+import type { StageLayout } from '@repo/db/schema';
+
 import type { ConnectionStatus } from './reconnectingWs';
 import type { Layer, LayerWithEditorState, Slide } from './types';
 
@@ -13,6 +15,8 @@ export interface EditorState {
     // ── State ──
     projectId: string | null;
     projectName: string | null;
+    stageId: string | null;
+    stageLayout: StageLayout;
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
     selectedLayerIds: string[];

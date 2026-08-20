@@ -519,12 +519,26 @@ async function seed() {
                 { email: actors.user_editor.email, role: 'owner' },
                 { email: actors.user_viewer.email, role: 'viewer' }
             ],
-            headCommitId: privateCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: privateCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: publicProjectId,
@@ -535,12 +549,26 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: publicCommitId,
-            publishedCommitId: publicCommitId,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: publicCommitId,
+                    publishedCommitId: publicCommitId
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: renderingProjectId,
@@ -551,12 +579,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: renderingCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: renderingCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: editorProjectId,
@@ -567,12 +609,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: editorCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: editorCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: multiWallProjectId,
@@ -583,12 +639,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: multiWallCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: multiWallCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: convergenceProjectId,
@@ -599,12 +669,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: convergenceCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: convergenceCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: webCaptureProjectId,
@@ -615,12 +699,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: webCaptureCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: webCaptureCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: mediaProjectId,
@@ -631,12 +729,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: mediaCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: mediaCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: interactionProjectId,
@@ -647,12 +759,26 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: interactionCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: interactionCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: customRenderProjectId,
@@ -666,12 +792,26 @@ async function seed() {
             customRenderCompat: false,
             customRenderProxy: false,
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: customRenderCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: customRenderCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: galleryAlpha2ProjectId,
@@ -682,12 +822,26 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: galleryAlpha2CommitId,
-            publishedCommitId: galleryAlpha2CommitId,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: galleryAlpha2CommitId,
+                    publishedCommitId: galleryAlpha2CommitId
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: galleryAlpha10ProjectId,
@@ -698,12 +852,26 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: galleryAlpha10CommitId,
-            publishedCommitId: galleryAlpha10CommitId,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: galleryAlpha10CommitId,
+                    publishedCommitId: galleryAlpha10CommitId
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         }
     ]);
 
@@ -711,6 +879,7 @@ async function seed() {
         {
             _id: privateCommitId,
             projectId: privateProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness private head',
@@ -739,11 +908,12 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         },
         {
             _id: publicCommitId,
             projectId: publicProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness public head',
@@ -771,6 +941,7 @@ async function seed() {
         {
             _id: renderingCommitId,
             projectId: renderingProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness rendering head',
@@ -792,6 +963,7 @@ async function seed() {
         {
             _id: editorCommitId,
             projectId: editorProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness editor head',
@@ -808,11 +980,12 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         },
         {
             _id: multiWallCommitId,
             projectId: multiWallProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness multi-wall head',
@@ -834,6 +1007,7 @@ async function seed() {
         {
             _id: convergenceCommitId,
             projectId: convergenceProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness convergence head',
@@ -855,6 +1029,7 @@ async function seed() {
         {
             _id: webCaptureCommitId,
             projectId: webCaptureProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness web capture head',
@@ -876,6 +1051,7 @@ async function seed() {
         {
             _id: mediaCommitId,
             projectId: mediaProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness media head',
@@ -897,6 +1073,7 @@ async function seed() {
         {
             _id: interactionCommitId,
             projectId: interactionProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness interaction head',
@@ -949,6 +1126,7 @@ async function seed() {
         {
             _id: customRenderCommitId,
             projectId: customRenderProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness custom render head',
@@ -965,6 +1143,7 @@ async function seed() {
         {
             _id: galleryAlpha2CommitId,
             projectId: galleryAlpha2ProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Gallery alpha 2 published head',
@@ -979,6 +1158,7 @@ async function seed() {
         {
             _id: galleryAlpha10CommitId,
             projectId: galleryAlpha10ProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Gallery alpha 10 published head',
