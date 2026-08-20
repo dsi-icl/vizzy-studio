@@ -76,6 +76,28 @@ async function resetDatabase(db) {
     await db.dropDatabase();
 }
 
+async function markBootstrapComplete(db, now) {
+    const updatedAt = new Date(now).toISOString();
+    await db.collection('config').insertMany([
+        {
+            key: 'bootstrap.phase',
+            value: 'completed',
+            encrypted: false,
+            updatedAt,
+            updatedBy: 'test-harness',
+            version: 1
+        },
+        {
+            key: 'bootstrap.completedAt',
+            value: updatedAt,
+            encrypted: false,
+            updatedAt,
+            updatedBy: 'test-harness',
+            version: 1
+        }
+    ]);
+}
+
 async function createActor(testHelpers, input) {
     const user = await testHelpers.saveUser(
         testHelpers.createUser({
@@ -481,6 +503,7 @@ async function seed() {
     };
 
     const now = Date.now();
+    await markBootstrapComplete(db, now);
     const privateProjectId = new ObjectId('000000000000000000000101');
     const publicProjectId = new ObjectId('000000000000000000000102');
     const renderingProjectId = new ObjectId('000000000000000000000103');
@@ -526,10 +549,10 @@ async function seed() {
                     name: 'Main',
                     order: 0,
                     layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
+                        columns: 3,
+                        rows: 2,
+                        screenWidth: 1280,
+                        screenHeight: 1024
                     },
                     headCommitId: privateCommitId,
                     publishedCommitId: null
