@@ -1,26 +1,50 @@
+import type { StageLayout } from '@repo/db/schema';
 import { Line } from 'react-konva';
 
-export const getDOGridLines = (width: number, height: number, strokeWidth = 1) => {
-    const lines = [];
-    for (let i = 1; i < 16; i++)
-        lines.push(
-            <Line
-                key={`v-${i}`}
-                points={[(i * width) / 16, 0, (i * width) / 16, height]}
-                strokeWidth={strokeWidth}
-                listening={false}
-                stroke="black"
-            />
-        );
-    for (let i = 1; i < 5; i++)
-        lines.push(
-            <Line
-                key={`h-${i}`}
-                points={[0, (i * height) / 4, width, (i * height) / 4]}
-                strokeWidth={strokeWidth}
-                listening={false}
-                stroke="black"
-            />
-        );
-    return lines;
+export type StageGridLine = {
+    key: string;
+    points: [number, number, number, number];
 };
+
+export function getStageLogicalSize(layout: StageLayout) {
+    return {
+        width: layout.columns * layout.screenWidth,
+        height: layout.rows * layout.screenHeight
+    };
+}
+
+export function getStageGridLineSegments(layout: StageLayout): StageGridLine[] {
+    const columns = Math.max(1, Math.trunc(layout.columns));
+    const rows = Math.max(1, Math.trunc(layout.rows));
+    const { width, height } = getStageLogicalSize({
+        ...layout,
+        columns,
+        rows
+    });
+    const lines: StageGridLine[] = [];
+
+    for (let column = 1; column < columns; column++) {
+        const x = column * layout.screenWidth;
+        lines.push({ key: `v-${column}`, points: [x, 0, x, height] });
+    }
+
+    for (let row = 1; row < rows; row++) {
+        const y = row * layout.screenHeight;
+        lines.push({ key: `h-${row}`, points: [0, y, width, y] });
+    }
+
+    return lines;
+}
+
+export function getStageGridLines(layout: StageLayout, strokeWidth = 1) {
+    return getStageGridLineSegments(layout).map((line) => (
+        <Line
+            key={line.key}
+            points={line.points}
+            strokeWidth={strokeWidth}
+            strokeScaleEnabled={false}
+            listening={false}
+            stroke="black"
+        />
+    ));
+}

@@ -16,7 +16,6 @@ import {
 import { Separator } from '@repo/ui/components/separator';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Stage, Layer as KonvaLayer, Rect, Circle, Line } from 'react-konva';
@@ -25,7 +24,7 @@ import { toast } from 'sonner';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
-import { getDOGridLines } from '~/lib/editorHelpers';
+import { getStageGridLines } from '~/lib/editorHelpers';
 import type { LayerWithEditorState } from '~/lib/types';
 import { $createBranchHead } from '~/server/projects.fns';
 import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
@@ -58,7 +57,6 @@ function CommitViewer() {
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const navigate = useNavigate();
     const stageSlot = useRef<HTMLDivElement>(null);
-    const stageInstance = useRef<Konva.Stage>(null);
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
     const [branching, setBranching] = useState(false);
@@ -242,7 +240,6 @@ function CommitViewer() {
 
                                 <ViewerSlatePreview
                                     stageSlot={stageSlot}
-                                    stageInstance={stageInstance}
                                     stageScaleFactor={stageScaleFactor}
                                     layers={sortedLayers}
                                     layout={stageLayout}
@@ -252,7 +249,6 @@ function CommitViewer() {
                                     className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-black"
                                 >
                                     <Stage
-                                        ref={stageInstance}
                                         width={columns * screenWidth * stageScaleFactor}
                                         height={rows * screenHeight * stageScaleFactor}
                                         onWheel={handleStageWheel}
@@ -400,11 +396,7 @@ function CommitViewer() {
                                                         />
                                                     );
                                                 })}
-                                            {getDOGridLines(
-                                                columns * screenWidth,
-                                                rows * screenHeight,
-                                                20
-                                            )}
+                                            {getStageGridLines(stageLayout, 2)}
                                         </KonvaLayer>
                                     </Stage>
                                 </div>
