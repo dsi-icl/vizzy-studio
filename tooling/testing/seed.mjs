@@ -157,6 +157,35 @@ function layerConfig(cx, cy, width, height, zIndex, extra = {}) {
     };
 }
 
+const DEFAULT_HARNESS_STAGE_LAYOUT = {
+    columns: 16,
+    rows: 4,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+const MULTI_WALL_STAGE_LAYOUT = {
+    columns: 2,
+    rows: 2,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+function createMainStage(
+    headCommitId,
+    publishedCommitId = null,
+    layout = DEFAULT_HARNESS_STAGE_LAYOUT
+) {
+    return {
+        id: 'main',
+        name: 'Main',
+        order: 0,
+        layout: { ...layout },
+        headCommitId,
+        publishedCommitId
+    };
+}
+
 function createToolbarTextLayers() {
     return [
         {
@@ -603,21 +632,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: renderingCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(renderingCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -633,21 +648,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: editorCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(editorCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -663,21 +664,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: multiWallCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(multiWallCommitId, null, MULTI_WALL_STAGE_LAYOUT)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -693,21 +680,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: convergenceCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(convergenceCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -723,21 +696,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: webCaptureCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(webCaptureCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -753,21 +712,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: mediaCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(mediaCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -783,21 +728,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: interactionCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(interactionCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -816,21 +747,7 @@ async function seed() {
             customRenderProxy: false,
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: customRenderCommitId,
-                    publishedCommitId: null
-                }
-            ],
+            stages: [createMainStage(customRenderCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -846,21 +763,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: galleryAlpha2CommitId,
-                    publishedCommitId: galleryAlpha2CommitId
-                }
-            ],
+            stages: [createMainStage(galleryAlpha2CommitId, galleryAlpha2CommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -876,21 +779,7 @@ async function seed() {
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
-            stages: [
-                {
-                    id: 'main',
-                    name: 'Main',
-                    order: 0,
-                    layout: {
-                        columns: 16,
-                        rows: 4,
-                        screenWidth: 1920,
-                        screenHeight: 1080
-                    },
-                    headCommitId: galleryAlpha10CommitId,
-                    publishedCommitId: galleryAlpha10CommitId
-                }
-            ],
+            stages: [createMainStage(galleryAlpha10CommitId, galleryAlpha10CommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -1195,19 +1084,13 @@ async function seed() {
         }
     ]);
 
-    const singlePanelLayout = {
-        columns: 1,
-        rows: 1,
-        screenWidth: 1280,
-        screenHeight: 720,
+    const defaultStageLayout = {
+        ...DEFAULT_HARNESS_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
     const multiPanelLayout = {
-        columns: 2,
-        rows: 2,
-        screenWidth: 640,
-        screenHeight: 360,
+        ...MULTI_WALL_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
@@ -1256,7 +1139,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Gallery',
             notes: 'Wall reserved for gallery and controller convergence tests',
             createdAt: now,
@@ -1273,7 +1156,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Controller',
             notes: 'Wall reserved for deterministic controller rendering tests',
             createdAt: now,
@@ -1290,7 +1173,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Ownership',
             notes: 'Wall reserved for editor ownership and handoff tests',
             createdAt: now,
@@ -1307,7 +1190,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Media',
             notes: 'Wall reserved for deterministic media readiness tests',
             createdAt: now,
