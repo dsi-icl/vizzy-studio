@@ -95,11 +95,11 @@ export function renderBackgroundWaves(
     );
 
     // Every displacement below is authored in the wall's native pixel space
-    // (one SCREEN_W x SCREEN_H panel).  The full-wall preview rasters many
+    // (one layout.screenWidth x layout.screenHeight panel).  The full-wall preview rasters many
     // screens into one small canvas, so convert to that raster's pixels.
     // Both factors are exactly 1 on the per-screen wall path.
-    const pxScale = h / worldSpanRow / SCREEN_H;
-    const xStep = Math.max(1, Math.round(15 * (w / worldSpanCol / SCREEN_W)));
+    const pxScale = h / worldSpanRow / layout.screenHeight;
+    const xStep = Math.max(1, Math.round(15 * (w / worldSpanCol / layout.screenWidth)));
     // Strokes are the one term that cannot shrink linearly: under ~1 device
     // pixel the ribbons fade out entirely.  Floor the factor so downscaled
     // previews stay visible, while keeping the near/far thickness ratio.
