@@ -20,6 +20,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
+    const stageLayout = useEditorStore((s) => s.stageLayout);
 
     const stageWidth = stageInstance.current?.width() || 0;
     const stageHeight = stageInstance.current?.height() || 0;
@@ -159,6 +160,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                                         key={`bg_${shape.numericId}`}
                                         layer={shape}
                                         previewScale={1}
+                                        layout={stageLayout}
                                     />
                                 );
                             }

@@ -1,3 +1,4 @@
+import type { StageLayout } from '@repo/db/schema';
 import type { Peer } from 'crossws';
 
 import type { GSMessage } from '~/lib/types';
@@ -219,6 +220,26 @@ export function updateProjectCustomRenderSettings(
         const boundScope = wallBindings.get(wallId);
         if (boundScope !== undefined) {
             broadcastToControllersByWallRaw(wallId, getWallHydratePayload(boundScope, wallId));
+        }
+    }
+}
+
+export function updateRuntimeStageLayout(projectId: string, stageId: string, layout: StageLayout) {
+    const affectedWallIds = new Set<string>();
+    for (const [scopeId, scope] of scopedState) {
+        if (scope.projectId !== projectId || scope.stageId !== stageId) continue;
+        scope.layout = layout;
+        scope.hydrateCache = null;
+        broadcastToEditorsRaw(scopeId, getEditorHydratePayload(scopeId));
+        for (const [wallId, boundScopeId] of wallBindings) {
+            if (boundScopeId === scopeId) affectedWallIds.add(wallId);
+        }
+    }
+    for (const wallId of affectedWallIds) {
+        hydrateWallNodes(wallId);
+        const scopeId = wallBindings.get(wallId);
+        if (scopeId !== undefined) {
+            broadcastToControllersByWallRaw(wallId, getWallHydratePayload(scopeId, wallId));
         }
     }
 }

@@ -96,8 +96,14 @@ export const useEditorStore =
                   loading: true,
                   saveStatus: 'idle',
                   headCommitId: null,
-                  insertionCenter: { x: 1920 / 2, y: 1080 / 2 },
-                  insertionViewport: { width: 1920, height: 1080 },
+                  insertionCenter: {
+                      x: (DEFAULT_STAGE_LAYOUT.columns * DEFAULT_STAGE_LAYOUT.screenWidth) / 2,
+                      y: (DEFAULT_STAGE_LAYOUT.rows * DEFAULT_STAGE_LAYOUT.screenHeight) / 2
+                  },
+                  insertionViewport: {
+                      width: DEFAULT_STAGE_LAYOUT.screenWidth,
+                      height: DEFAULT_STAGE_LAYOUT.screenHeight
+                  },
 
                   // ── Slices ──
                   ...createProjectSlice(set, get, helpers),

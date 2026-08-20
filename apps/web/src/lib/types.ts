@@ -1,3 +1,5 @@
+import { StageLayout as StageLayoutSchema, type StageLayout } from '@repo/db/schema';
+
 import { z } from '~/lib/zod';
 
 /**
@@ -256,6 +258,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
+        layout: StageLayoutSchema.optional(),
         customRender: z
             .object({
                 url: z.string(),
@@ -263,7 +266,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
                 proxy: z.boolean().default(false)
             })
             .optional(),
-        boundSource: z.enum(['live', 'gallery']).optional()
+        boundSource: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({ type: z.literal('rehydrate_please') }),
     z.object({
@@ -508,6 +511,8 @@ export interface ScopeState {
     projectId: string;
     commitId: string;
     slideId: string;
+    stageId?: string;
+    layout: StageLayout;
     dirty: boolean;
     /**
      * Incremented on every mutation. A persist records the revision it covers so

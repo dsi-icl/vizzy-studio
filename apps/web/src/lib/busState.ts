@@ -99,6 +99,7 @@ export {
     notifyControllersByCommit,
     hydrateWallNodes,
     updateProjectCustomRenderSettings,
+    updateRuntimeStageLayout,
     notifyControllers
 } from './busState.broadcast';
 

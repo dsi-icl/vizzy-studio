@@ -75,7 +75,8 @@ export interface ProjectAuditListInput {
 import {
     runCommitPersistenceTask,
     scopedState,
-    updateProjectCustomRenderSettings
+    updateProjectCustomRenderSettings,
+    updateRuntimeStageLayout
 } from '~/lib/busState';
 import { revokeUploadToken, validateUploadToken } from '~/lib/uploadTokens';
 import { logAuditSuccess } from '~/server/audit';
@@ -442,6 +443,9 @@ export async function updateStage(
     );
     const updated = await dbCol.projects.replaceStages(projectId, stages, project.defaultStageId);
     if (!updated) throw new Error('Project not found');
+    if (!stageLayoutsEqual(existingStage.layout, layout)) {
+        updateRuntimeStageLayout(projectId, stageId, layout);
+    }
 
     await logAuditSuccess({
         action: 'STAGE_UPDATED',

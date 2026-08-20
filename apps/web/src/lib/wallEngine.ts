@@ -37,7 +37,7 @@ export class WallEngine {
     public viewport: Viewport;
     public wallId: string;
     public customRenderUrl: string | undefined;
-    public boundSource: 'live' | 'gallery' | undefined;
+    public boundSource: 'live' | 'gallery' | 'signage' | undefined;
 
     private constructor(wallId: string, viewport: Viewport) {
         this.wallId = wallId;
@@ -47,8 +47,8 @@ export class WallEngine {
             auth: {
                 kind: 'wall',
                 wallId: this.wallId,
-                col: Math.round(viewport.x / 1920),
-                row: Math.round(viewport.y / 1080)
+                col: Math.round(viewport.x / Math.max(1, viewport.w)),
+                row: Math.round(viewport.y / Math.max(1, viewport.h))
             },
             onOpen: () => {
                 console.log('Wall Engine: Connected to Master Server');
@@ -106,6 +106,8 @@ export class WallEngine {
         if (!window.__WALL_ENGINE__) {
             if (!viewport) throw new Error('Viewport must be provided on first initialization');
             window.__WALL_ENGINE__ = new WallEngine(wallId, viewport);
+        } else if (viewport) {
+            window.__WALL_ENGINE__.viewport = viewport;
         }
         return window.__WALL_ENGINE__;
     }
