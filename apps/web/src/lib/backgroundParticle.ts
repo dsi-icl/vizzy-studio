@@ -2,9 +2,7 @@ import { DEFAULT_STAGE_LAYOUT, stageLayoutKey, type StageLayout } from '@repo/db
 import { createNoise2D } from 'simplex-noise';
 
 import type { BackgroundNoiseLayer } from '~/lib/backgroundNoise';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 
-const PARTICLE_COUNT = 5_400;
 const PARTICLES_PER_PANEL = 84;
 const MAX_PARTICLE_COUNT = 12_000;
 const MAX_DIST = 280;
