@@ -1013,15 +1013,6 @@ export function EditorSlate() {
             const layer = layersRef.current.get(numericId);
             if (!layer || layer.config.locked) return;
 
-            if (isSnapping) {
-                const left = node.x() - node.width() / 2;
-                const top = node.y() - node.height() / 2;
-                node.position({
-                    x: snapToGrid(left, SNAP_GRID) + node.width() / 2,
-                    y: snapToGrid(top, SNAP_GRID) + node.height() / 2
-                });
-            }
-
             const updatedConfig: Layer['config'] = {
                 ...layer.config,
                 cx: Math.round(node.x()),
@@ -1048,7 +1039,7 @@ export function EditorSlate() {
                 layer: { ...layer, config: updatedConfig }
             });
         },
-        [engine, isSnapping]
+        [engine]
     );
 
     const handleTransformEnd = useCallback(
@@ -1060,9 +1051,26 @@ export function EditorSlate() {
             if (groupDrag && e.type === 'dragend') {
                 groupDragRef.current = null;
                 const stage = node.getStage();
+
+                let snapDx = 0;
+                let snapDy = 0;
+                if (isSnapping) {
+                    const left = node.x() - node.width() / 2;
+                    const top = node.y() - node.height() / 2;
+                    snapDx = snapToGrid(left, SNAP_GRID) + node.width() / 2 - node.x();
+                    snapDy = snapToGrid(top, SNAP_GRID) + node.height() / 2 - node.y();
+                }
+
                 for (const id of groupDrag.start.keys()) {
                     const target = id === numericId ? node : stage?.findOne<Konva.Shape>(`#${id}`);
-                    if (target) persistDraggedLayer(target, id);
+                    if (!target) continue;
+                    if (snapDx !== 0 || snapDy !== 0) {
+                        target.position({ x: target.x() + snapDx, y: target.y() + snapDy });
+                        stage
+                            ?.findOne<Konva.Rect>(`#selbox_${id}`)
+                            ?.position({ x: target.x(), y: target.y() });
+                    }
+                    persistDraggedLayer(target, id);
                 }
                 return;
             }
