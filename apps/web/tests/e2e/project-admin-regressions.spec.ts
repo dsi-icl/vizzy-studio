@@ -35,10 +35,10 @@ test.describe('project scoped audits tab access control', () => {
             await page.goto(`/quarry/projects/${projectId}`);
             await expect(page.getByRole('tab', { name: 'Audits' })).toHaveCount(0);
 
-            await page.goto(`/quarry/projects/${projectId}/audits`);
+            const response = await page.goto(`/quarry/projects/${projectId}/audits`);
+            expect(response?.status()).toBeGreaterThanOrEqual(400);
             await expect(page.getByText('History Filters')).toHaveCount(0);
             await expect(page.getByText('No audit events found')).toHaveCount(0);
-            await expect(page.getByRole('button', { name: 'Try Again' })).toBeVisible();
         });
     });
 
