@@ -677,7 +677,10 @@ handlers.set('bind_override_decision', ({ entry, data }) => {
 
 handlers.set('unbind_wall', ({ data }) => {
     void (async () => {
-        if (await isWallTargetedBySignage(data.wallId)) return;
+        if (await isWallTargetedBySignage(data.wallId)) {
+            process.__SIGNAGE_RESUME_WALL__?.(data.wallId);
+            return;
+        }
         cancelWallUnbindGrace(data.wallId);
         unbindWall(data.wallId);
         hydrateWallNodes(data.wallId);

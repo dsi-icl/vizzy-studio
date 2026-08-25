@@ -168,6 +168,18 @@ export function isWsMessageAuthorized(
         if (type === 'reboot' && entry.meta.specimen === 'controller')
             return isControllerDevice(entry) || isControllerPortal(entry) || isAdminUser(entry);
         if (entry.meta.specimen === 'gallery') return isAdminUser(entry) || isGalleryDevice(entry);
+        if (
+            type === 'unbind_wall' &&
+            entry.meta.specimen === 'editor' &&
+            scopeId !== null &&
+            wallBindings.get(data.wallId) === scopeId &&
+            wallBindingSources.get(data.wallId) === 'live'
+        ) {
+            const boundProjectId = getScopeProjectId(scopeId);
+            return Boolean(
+                boundProjectId && getCachedEditorPermission(entry, boundProjectId)?.canEdit
+            );
+        }
         return isAdminUser(entry);
     }
 
