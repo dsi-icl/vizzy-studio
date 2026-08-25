@@ -1131,7 +1131,7 @@ function Controller() {
                                     }`}
                                 >
                                     <span className="flex items-center justify-between gap-2">
-                                        <span className="font-medium">Slide {slide.name}</span>
+                                        <span className="font-medium">{slide.name}</span>
                                         {pendingSlideId === slide.id ? (
                                             <CircleNotchIcon
                                                 size={14}
