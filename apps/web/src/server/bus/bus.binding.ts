@@ -1,3 +1,4 @@
+import { stageLayoutsEqual } from '@repo/db/schema';
 import type { Peer } from 'crossws';
 
 import {
@@ -306,6 +307,10 @@ async function performLiveBindNow(
         }
         const stage = project.stages.find(({ id }) => id === commit.stageId);
         if (!stage) return { ok: false, error: 'invalid_stage' };
+        const wallLayout = wallExists.layoutTemplate;
+        if (source === 'live' && wallLayout && !stageLayoutsEqual(stage.layout, wallLayout)) {
+            return { ok: false, error: 'layout_mismatch' };
+        }
 
         const scopeId = internScope(projectId, commitId, resolvedSlideId);
         const scope = getOrCreateScope(

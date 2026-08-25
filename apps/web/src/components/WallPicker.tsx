@@ -1,4 +1,5 @@
 import { CircleNotchIcon, MonitorIcon, XIcon } from '@phosphor-icons/react';
+import { stageLayoutsEqual } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@repo/ui/components/popover';
 import { useQuery } from '@tanstack/react-query';
@@ -10,6 +11,7 @@ import { wallsQueryOptions } from '~/server/walls.queries';
 function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
     const { data: walls = [], isLoading } = useQuery(wallsQueryOptions());
     const liveNodeCounts = useEditorStore((s) => s.wallNodeCounts);
+    const stageLayout = useEditorStore((s) => s.stageLayout);
 
     if (isLoading) {
         return (
@@ -29,17 +31,30 @@ function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
         <div className="flex flex-col gap-1">
             {walls.map((wall) => {
                 const connectedNodes = liveNodeCounts[wall.wallId] ?? wall.connectedNodes;
+                const mismatched = Boolean(
+                    wall.layoutTemplate && !stageLayoutsEqual(stageLayout, wall.layoutTemplate)
+                );
                 return (
                     <button
                         key={wall.id}
+                        disabled={mismatched}
                         onClick={() => onSelect(wall.wallId)}
-                        className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                        className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors not-disabled:cursor-pointer not-disabled:hover:bg-accent disabled:opacity-50"
                     >
                         <div>
                             <div className="font-medium">{wall.name}</div>
                             <div className="text-xs text-muted-foreground">
-                                {connectedNodes} node{connectedNodes !== 1 ? 's' : ''}
-                                {wall.boundProjectId && ' · bound'}
+                                {mismatched ? (
+                                    <>
+                                        Needs {wall.layoutTemplate!.columns}×
+                                        {wall.layoutTemplate!.rows} layout
+                                    </>
+                                ) : (
+                                    <>
+                                        {connectedNodes} node{connectedNodes !== 1 ? 's' : ''}
+                                        {wall.boundProjectId && ' · bound'}
+                                    </>
+                                )}
                             </div>
                         </div>
                         <MonitorIcon
