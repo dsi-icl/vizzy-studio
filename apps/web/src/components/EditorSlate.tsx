@@ -30,7 +30,7 @@ import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { PeerCursors } from '~/components/PeerCursors';
-import { EditorEngine } from '~/lib/editorEngine';
+import { EditorEngine, type LayerBinaryMove } from '~/lib/editorEngine';
 import { computeGroupTranslation } from '~/lib/editorGroupDrag';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import {
@@ -833,6 +833,7 @@ export function EditorSlate() {
             });
 
             const stage = node.getStage();
+            const moves: LayerBinaryMove[] = [];
             for (const id of selectedIds) {
                 const newPos = translated.get(id);
                 const target = layersRef.current.get(id);
@@ -847,17 +848,18 @@ export function EditorSlate() {
                     x: newPos.cx,
                     y: newPos.cy
                 });
-                engine?.broadcastBinaryMove(
-                    id,
-                    newPos.cx,
-                    newPos.cy,
-                    target.config.width,
-                    target.config.height,
-                    target.config.scaleX,
-                    target.config.scaleY,
-                    target.config.rotation
-                );
+                moves.push({
+                    numericId: id,
+                    x: newPos.cx,
+                    y: newPos.cy,
+                    width: target.config.width,
+                    height: target.config.height,
+                    scaleX: target.config.scaleX,
+                    scaleY: target.config.scaleY,
+                    rotation: target.config.rotation
+                });
             }
+            engine?.broadcastBinaryMoves(moves);
             node.getLayer()?.batchDraw();
             return;
         }
