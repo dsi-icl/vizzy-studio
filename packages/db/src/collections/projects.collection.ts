@@ -57,15 +57,21 @@ export class ProjectsCollection extends BaseCollection<ProjectDocument> {
         };
     }
 
-    async findByUser(
-        userEmail: string,
-        includeArchived = false
-    ): Promise<PublicDoc<ProjectDocument>[]> {
-        const filter: Record<string, unknown> = {
-            $or: [{ createdBy: userEmail }, { 'collaborators.email': userEmail }]
-        };
-        if (!includeArchived) filter.deletedAt = { $exists: false };
-        return this.find(filter);
+    async findManageableByUser(userEmail: string): Promise<PublicDoc<ProjectDocument>[]> {
+        return this.find(
+            {
+                deletedAt: { $exists: false },
+                $or: [
+                    { createdBy: userEmail },
+                    {
+                        collaborators: {
+                            $elemMatch: { email: userEmail, role: { $in: ['owner', 'editor'] } }
+                        }
+                    }
+                ]
+            },
+            { sort: { name: 1 } }
+        );
     }
 
     async findPublished(): Promise<PublicDoc<ProjectDocument>[]> {

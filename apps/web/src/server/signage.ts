@@ -273,7 +273,7 @@ export async function resolveSignageEntries(
 export async function listSignageSources(actor: SignageActor, layout: StageLayout) {
     const projects = isGlobalManager(actor)
         ? await dbCol.projects.find({ deletedAt: { $exists: false } }, { sort: { name: 1 } })
-        : await dbCol.projects.findByUser(actor.email);
+        : await dbCol.projects.findManageableByUser(actor.email);
     const sources = [];
     for (const project of projects) {
         const stages = project.stages.filter(
