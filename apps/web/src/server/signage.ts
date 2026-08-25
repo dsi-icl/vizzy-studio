@@ -52,6 +52,21 @@ function sanitizeCollaborators(
     return Array.from(byEmail, ([email, role]) => ({ email, role }));
 }
 
+async function assertEntryProjectsPermitted(actor: SignageActor, entries: SignageSlideEntry[]) {
+    if (isGlobalManager(actor)) return;
+    const projectIds = new Set(entries.map(({ projectId }) => projectId));
+    if (projectIds.size === 0) return;
+    const permitted = new Set(
+        (await dbCol.projects.findManageableByUser(actor.email)).map(({ id }) => id)
+    );
+    const denied = Array.from(projectIds).filter((projectId) => !permitted.has(projectId));
+    if (denied.length > 0) {
+        throw new Error(
+            `Slideshow entries reference ${denied.length} project(s) you cannot manage`
+        );
+    }
+}
+
 async function assertLayoutWithinConfiguredGrid(layout: StageLayout) {
     const limits = await getStageLayoutLimits();
     if (layout.columns > limits.maxColumns || layout.rows > limits.maxRows) {
@@ -155,6 +170,7 @@ export async function updateSignageSlideshow(
     if (new Set(input.entries.map(({ id: entryId }) => entryId)).size !== input.entries.length) {
         throw new Error('Slideshow entry IDs must be unique');
     }
+    await assertEntryProjectsPermitted(actor, input.entries);
 
     const targetWallIds = input.enabled
         ? await assertTargetsAvailable(id, input.targetWallIds)
