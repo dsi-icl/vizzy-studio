@@ -1,12 +1,10 @@
 import {
     ArrowLeftIcon,
-    CircleNotchIcon,
     ClockIcon,
     FolderIcon,
     GlobeIcon,
     GitBranchIcon,
     ImageIcon,
-    PencilSimpleIcon,
     UsersIcon,
     CodeIcon
 } from '@phosphor-icons/react';
@@ -28,12 +26,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
-import {
-    $ensureMutableHead,
-    $getCommit,
-    $publishCommit,
-    $publishCustomRenderProject
-} from '~/server/projects.fns';
+import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
 
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId')({
@@ -140,7 +133,6 @@ function ProjectLayout() {
         hasCustomRender ? ALL_TABS.filter((t) => !CUSTOM_RENDER_HIDDEN_TABS.has(t.key)) : ALL_TABS
     ).filter((t) => t.key !== 'controller' || user?.role === 'admin');
     const queryClient = useQueryClient();
-    const [openingEditor, setOpeningEditor] = useState(false);
     const impersonatedBy =
         sessionData?.session && typeof sessionData.session === 'object'
             ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
@@ -193,53 +185,6 @@ function ProjectLayout() {
                             <Badge variant="default" className="text-xs">
                                 Default stage published
                             </Badge>
-                        )}
-                        {!hasCustomRender && (
-                            <Button
-                                variant="default"
-                                size="sm"
-                                className="ml-auto"
-                                disabled={openingEditor}
-                                onClick={async () => {
-                                    setOpeningEditor(true);
-                                    try {
-                                        const headCommitId = await $ensureMutableHead({
-                                            data: { projectId }
-                                        });
-                                        const commit = await $getCommit({
-                                            data: { id: headCommitId }
-                                        });
-                                        const firstSlideId =
-                                            commit?.content?.slides?.[0]?.id ?? 'default';
-                                        await navigate({
-                                            to: '/quarry/editor/$projectId/$commitId/$slideId',
-                                            params: {
-                                                projectId,
-                                                commitId: headCommitId,
-                                                slideId: firstSlideId
-                                            }
-                                        });
-                                    } catch (error) {
-                                        toast.error(
-                                            error instanceof Error
-                                                ? error.message
-                                                : 'Failed to open editor'
-                                        );
-                                        setOpeningEditor(false);
-                                    }
-                                }}
-                            >
-                                {openingEditor ? (
-                                    <>
-                                        <CircleNotchIcon className="animate-spin" />
-                                        Opening editor...
-                                    </>
-                                ) : (
-                                    <>
-                                        <PencilSimpleIcon weight="bold" /> Edit
-                                    </>
-                                )}
-                            </Button>
                         )}
                         {hasCustomRender &&
                             canPublish &&
