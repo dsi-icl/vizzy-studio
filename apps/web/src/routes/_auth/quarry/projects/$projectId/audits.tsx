@@ -229,7 +229,7 @@ function AuditsTab() {
         <div className="flex flex-col gap-4">
             <div className="sticky top-2 z-10 rounded-xl border bg-background/90 p-3 backdrop-blur">
                 <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-foreground">History Filters</span>
+                    <span className="text-xs font-medium text-foreground">Audit Filters</span>
                     <Button
                         variant="outline"
                         size="sm"
@@ -499,7 +499,7 @@ function AuditsTab() {
                         ? 'Loading more events...'
                         : hasNextPage
                           ? 'Scroll for more'
-                          : 'End of audit history'}
+                          : 'End of audit log'}
                 </div>
             </div>
         </div>

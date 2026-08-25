@@ -37,7 +37,7 @@ test.describe('project scoped audits tab access control', () => {
 
             const response = await page.goto(`/quarry/projects/${projectId}/audits`);
             expect(response?.status()).toBeGreaterThanOrEqual(400);
-            await expect(page.getByText('History Filters')).toHaveCount(0);
+            await expect(page.getByText('Audit Filters')).toHaveCount(0);
             await expect(page.getByText('No audit events found')).toHaveCount(0);
         });
     });
@@ -57,7 +57,7 @@ test.describe('project scoped audits tab access control', () => {
             await expect(page).toHaveURL(new RegExp(`/quarry/projects/${projectId}/audits$`));
 
             await expect(
-                page.getByText('History Filters').or(page.getByText('No audit events found'))
+                page.getByText('Audit Filters').or(page.getByText('No audit events found'))
             ).toBeVisible();
         });
     });
