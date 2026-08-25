@@ -45,7 +45,7 @@ export class SignageSlideshowsCollection extends BaseCollection<SignageSlideshow
     }
 
     async findActive(): Promise<PublicDoc<SignageSlideshowDocument>[]> {
-        return this.find({ enabled: true, deletedAt: { $exists: false } });
+        return this.find({ enabled: true, deletedAt: null });
     }
 
     async findAccessible(
@@ -54,9 +54,9 @@ export class SignageSlideshowsCollection extends BaseCollection<SignageSlideshow
     ): Promise<PublicDoc<SignageSlideshowDocument>[]> {
         return this.find(
             hasGlobalAccess
-                ? { deletedAt: { $exists: false } }
+                ? { deletedAt: null }
                 : {
-                      deletedAt: { $exists: false },
+                      deletedAt: null,
                       $or: [{ createdBy: email }, { 'collaborators.email': email }]
                   },
             { sort: { updatedAt: -1 } }
@@ -68,7 +68,7 @@ export class SignageSlideshowsCollection extends BaseCollection<SignageSlideshow
     ): Promise<PublicDoc<SignageSlideshowDocument> | null> {
         return this.findOne({
             enabled: true,
-            deletedAt: { $exists: false },
+            deletedAt: null,
             targetWallIds: wallId
         });
     }
