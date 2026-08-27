@@ -25,10 +25,11 @@
 }
 
 /* Translucent so a run's font background colour stays visible while selected.
+   Light fill because the editing canvas is black.
    Kept in sync with the ::highlight rule in TextEditorToolbar.tsx. */
 .editor-input ::selection {
     color: inherit;
-    background-color: rgb(36 36 36 / 0.35);
+    background-color: rgb(255 255 255 / 0.35);
 }
 
 .editor-placeholder {
