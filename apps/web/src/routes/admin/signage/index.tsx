@@ -1,5 +1,5 @@
 import { PlusIcon, SlideshowIcon } from '@phosphor-icons/react';
-import { DEFAULT_STAGE_LAYOUT } from '@repo/db/schema';
+import type { StageLayout } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
@@ -8,6 +8,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { WallPresetPicker } from '~/components/WallPresetPicker';
 import { $createSignageSlideshow } from '~/server/signage.fns';
 import { signageSlideshowsQueryOptions } from '~/server/signage.queries';
 
@@ -22,14 +23,14 @@ function SignageIndex() {
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [name, setName] = useState('');
-    const [layout, setLayout] = useState({ ...DEFAULT_STAGE_LAYOUT });
+    const [layout, setLayout] = useState<StageLayout | null>(null);
 
     const createMutation = useMutation({
         mutationFn: () =>
             $createSignageSlideshow({
                 data: {
                     name: name.trim(),
-                    layout,
+                    layout: layout!,
                     defaultDisplayDurationMs: 10_000,
                     defaultGapDurationMs: 0,
                     gapMode: 'hold'
@@ -45,21 +46,14 @@ function SignageIndex() {
         onError: (error: Error) => toast.error(error.message)
     });
 
-    const setDimension = (key: keyof typeof layout, value: string) => {
-        setLayout((current) => ({
-            ...current,
-            [key]: Math.max(1, Number.parseInt(value, 10) || 1)
-        }));
-    };
-
     return (
         <div className="space-y-6">
             <section className="space-y-3 rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 font-medium">
                     <PlusIcon size={16} /> New slideshow
                 </div>
-                <div className="grid gap-3 md:grid-cols-5">
-                    <div className="space-y-1 md:col-span-1">
+                <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
                         <Label htmlFor="signage-name">Name</Label>
                         <Input
                             id="signage-name"
@@ -68,28 +62,14 @@ function SignageIndex() {
                             placeholder="Lobby loop"
                         />
                     </div>
-                    {(
-                        [
-                            ['columns', 'Columns'],
-                            ['rows', 'Rows'],
-                            ['screenWidth', 'Screen width'],
-                            ['screenHeight', 'Screen height']
-                        ] as const
-                    ).map(([key, label]) => (
-                        <div key={key} className="space-y-1">
-                            <Label htmlFor={`signage-${key}`}>{label}</Label>
-                            <Input
-                                id={`signage-${key}`}
-                                type="number"
-                                min={1}
-                                value={layout[key]}
-                                onChange={(event) => setDimension(key, event.target.value)}
-                            />
-                        </div>
-                    ))}
+                    <WallPresetPicker
+                        idPrefix="signage-new"
+                        value={layout}
+                        onChange={(nextLayout) => setLayout(nextLayout)}
+                    />
                 </div>
                 <Button
-                    disabled={!name.trim() || createMutation.isPending}
+                    disabled={!name.trim() || !layout || createMutation.isPending}
                     onClick={() => createMutation.mutate()}
                 >
                     Create slideshow

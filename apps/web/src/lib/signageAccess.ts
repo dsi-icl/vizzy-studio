@@ -1,8 +1,12 @@
+export function isGlobalManager(user: { role?: string | null } | null | undefined): boolean {
+    return user?.role === 'admin' || user?.role === 'operator';
+}
+
 export function canAccessSignage(
     user: { role?: string | null; canManageSignage?: boolean | null } | null | undefined
 ): boolean {
     if (!user) return false;
-    return user.role === 'admin' || user.role === 'operator' || user.canManageSignage === true;
+    return isGlobalManager(user) || user.canManageSignage === true;
 }
 
 export function canBindWall(

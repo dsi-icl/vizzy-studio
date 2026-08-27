@@ -6,11 +6,13 @@ import {
     $getCommit,
     $getProject,
     $getProjectCommits,
+    $getStageLayoutLimits,
     $listAssets,
     $listAssetsByUrlsForPicker,
     $listKnownTags,
     $listProjects,
-    $listPublishedProjects
+    $listPublishedProjects,
+    $listWallLayoutTemplates
 } from './projects.fns';
 
 export interface AuditHistoryFilters {
@@ -64,6 +66,18 @@ export const publishedProjectsQueryOptions = () =>
     queryOptions({
         queryKey: ['projects', 'published'],
         queryFn: () => $listPublishedProjects()
+    });
+
+export const wallLayoutTemplatesQueryOptions = () =>
+    queryOptions({
+        queryKey: ['walls', 'layout-templates'],
+        queryFn: () => $listWallLayoutTemplates()
+    });
+
+export const stageLayoutLimitsQueryOptions = () =>
+    queryOptions({
+        queryKey: ['stage-layout-limits'],
+        queryFn: () => $getStageLayoutLimits()
     });
 
 export const projectTagSuggestionsQueryOptions = () =>

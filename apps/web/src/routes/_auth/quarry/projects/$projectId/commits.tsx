@@ -13,7 +13,7 @@ import {
 import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import type { PublicDoc } from '@repo/db/collections';
 import type { CommitDocument, ProjectStage } from '@repo/db/documents';
-import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
+import { stageLayoutKey, stageLayoutsEqual, type StageLayout } from '@repo/db/schema';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
 import { DateDisplay } from '@repo/ui/components/date-display';
@@ -32,19 +32,24 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { WallPresetPicker } from '~/components/WallPresetPicker';
+import { isGlobalManager } from '~/lib/signageAccess';
 import {
     $archiveStage,
     $createStage,
     $ensureMutableHead,
     $getCommit,
-    $getStageLayoutLimits,
-    $listWallLayoutTemplates,
     $promoteBranchHead,
     $publishCommit,
     $setDefaultStage,
     $updateStage
 } from '~/server/projects.fns';
-import { commitsQueryOptions, projectQueryOptions } from '~/server/projects.queries';
+import {
+    commitsQueryOptions,
+    projectQueryOptions,
+    stageLayoutLimitsQueryOptions,
+    wallLayoutTemplatesQueryOptions
+} from '~/server/projects.queries';
 
 type Commit = PublicDoc<CommitDocument>;
 
@@ -122,9 +127,10 @@ function CommitGraphNode({
 
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId/commits')({
     loader: async ({ context, params }) => {
-        const project = await context.queryClient.ensureQueryData(
-            projectQueryOptions(params.projectId)
-        );
+        const [project] = await Promise.all([
+            context.queryClient.ensureQueryData(projectQueryOptions(params.projectId)),
+            context.queryClient.ensureQueryData(wallLayoutTemplatesQueryOptions())
+        ]);
         if (project?.defaultStageId) {
             await context.queryClient.ensureQueryData(
                 commitsQueryOptions(params.projectId, project.defaultStageId)
@@ -138,48 +144,11 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/commits'
     })
 });
 
-function LayoutFields({
-    values,
-    onChange
-}: {
-    values: { columns: number; rows: number; screenWidth: number; screenHeight: number };
-    onChange: (values: {
-        columns: number;
-        rows: number;
-        screenWidth: number;
-        screenHeight: number;
-    }) => void;
-}) {
-    const fields = [
-        ['columns', 'Columns'],
-        ['rows', 'Rows'],
-        ['screenWidth', 'Screen width'],
-        ['screenHeight', 'Screen height']
-    ] as const;
-    return (
-        <div className="grid grid-cols-2 gap-3">
-            {fields.map(([key, label]) => (
-                <div key={key} className="space-y-1">
-                    <Label htmlFor={`stage-${key}`}>{label}</Label>
-                    <Input
-                        id={`stage-${key}`}
-                        type="number"
-                        min={1}
-                        value={values[key]}
-                        onChange={(event) =>
-                            onChange({ ...values, [key]: Number(event.target.value) })
-                        }
-                    />
-                </div>
-            ))}
-        </div>
-    );
-}
-
 function StagesTab() {
     const { projectId } = Route.useParams();
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
+    const globalManager = isGlobalManager(user);
     const [selectedStageId, setSelectedStageId] = useState(project.defaultStageId);
     const selectedStage =
         project.stages.find(({ id }) => id === selectedStageId) ??
@@ -200,12 +169,9 @@ function StagesTab() {
                 key={selectedStage.id}
                 projectId={projectId}
                 stage={selectedStage}
+                stages={project.stages}
                 isDefault={selectedStage.id === project.defaultStageId}
-                canPublish={
-                    user?.role === 'admin' ||
-                    user?.role === 'operator' ||
-                    user?.trustedPublisher === true
-                }
+                canPublish={globalManager || user?.trustedPublisher === true}
             />
         </div>
     );
@@ -226,23 +192,21 @@ function StageList({
 }) {
     const queryClient = useQueryClient();
     const [creating, setCreating] = useState(false);
-    const [name, setName] = useState('New stage');
-    const [layout, setLayout] = useState<StageLayout>({
-        columns: 1,
-        rows: 1,
-        screenWidth: DEFAULT_STAGE_LAYOUT.screenWidth,
-        screenHeight: DEFAULT_STAGE_LAYOUT.screenHeight
-    });
-    const { data: limits } = useSuspenseQuery({
-        queryKey: ['stage-layout-limits'],
-        queryFn: () => $getStageLayoutLimits()
-    });
-    const { data: wallTemplates } = useSuspenseQuery({
-        queryKey: ['wall-layout-templates'],
-        queryFn: () => $listWallLayoutTemplates()
-    });
+    const [name, setName] = useState('');
+    const [nameEdited, setNameEdited] = useState(false);
+    const [layout, setLayout] = useState<StageLayout | null>(null);
+    const { data: limits } = useSuspenseQuery(stageLayoutLimitsQueryOptions());
+    const takenLayoutKeys = useMemo(
+        () =>
+            new Set(
+                stages
+                    .filter((stage) => !stage.archivedAt)
+                    .map((stage) => stageLayoutKey(stage.layout))
+            ),
+        [stages]
+    );
     const createMutation = useMutation({
-        mutationFn: () => $createStage({ data: { projectId, name, layout } }),
+        mutationFn: () => $createStage({ data: { projectId, name: name.trim(), layout: layout! } }),
         onSuccess: (stage) => {
             queryClient.invalidateQueries({ queryKey: ['projects'] });
             setCreating(false);
@@ -252,63 +216,57 @@ function StageList({
         onError: (error) => toast.error(error.message)
     });
 
+    const resetDraft = () => {
+        setName('');
+        setNameEdited(false);
+        setLayout(null);
+    };
+
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
                 <h3 className="font-medium">Project stages</h3>
-                <Button size="xs" variant="outline" onClick={() => setCreating((value) => !value)}>
+                <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => {
+                        if (!creating) resetDraft();
+                        setCreating((value) => !value);
+                    }}
+                >
                     <PlusIcon /> Add
                 </Button>
             </div>
             {creating && (
                 <div className="space-y-3 rounded-xl border p-3">
+                    <WallPresetPicker
+                        idPrefix="new-stage"
+                        value={layout}
+                        takenLayoutKeys={takenLayoutKeys}
+                        onChange={(nextLayout, preset) => {
+                            setLayout(nextLayout);
+                            if (!nameEdited) setName(preset?.name ?? '');
+                        }}
+                    />
                     <div className="space-y-1">
                         <Label htmlFor="new-stage-name">Name</Label>
                         <Input
                             id="new-stage-name"
                             value={name}
-                            onChange={(event) => setName(event.target.value)}
+                            placeholder="Stage name"
+                            onChange={(event) => {
+                                setName(event.target.value);
+                                setNameEdited(true);
+                            }}
                         />
                     </div>
-                    <LayoutFields values={layout} onChange={setLayout} />
-                    {wallTemplates.length > 0 && (
-                        <div className="space-y-1">
-                            <Label htmlFor="wall-template">Prefill from wall</Label>
-                            <select
-                                id="wall-template"
-                                className="h-8 w-full border border-input bg-input/30 px-2 text-sm"
-                                defaultValue=""
-                                onChange={(event) => {
-                                    const template = wallTemplates.find(
-                                        ({ wallId }) => wallId === event.target.value
-                                    );
-                                    if (template) {
-                                        setLayout({
-                                            columns: template.layout.columns,
-                                            rows: template.layout.rows,
-                                            screenWidth: template.layout.screenWidth,
-                                            screenHeight: template.layout.screenHeight
-                                        });
-                                    }
-                                }}
-                            >
-                                <option value="">Custom values</option>
-                                {wallTemplates.map((template) => (
-                                    <option key={template.wallId} value={template.wallId}>
-                                        {template.name} ({template.layout.columns}×
-                                        {template.layout.rows})
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
                     <p className="text-xs text-muted-foreground">
                         Current grid maximum: {limits.maxColumns}×{limits.maxRows}
                     </p>
                     <Button
                         size="sm"
                         className="w-full"
-                        disabled={createMutation.isPending}
+                        disabled={createMutation.isPending || !layout || !name.trim()}
                         onClick={() => createMutation.mutate()}
                     >
                         Create stage
@@ -353,11 +311,13 @@ function StageList({
 function StageDetail({
     projectId,
     stage,
+    stages,
     isDefault,
     canPublish
 }: {
     projectId: string;
     stage: ProjectStage;
+    stages: ProjectStage[];
     isDefault: boolean;
     canPublish: boolean;
 }) {
@@ -365,12 +325,24 @@ function StageDetail({
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [name, setName] = useState(stage.name);
-    const [layout, setLayout] = useState(stage.layout);
+    const [layout, setLayout] = useState<StageLayout | null>(stage.layout);
     const [openingEditor, setOpeningEditor] = useState(false);
+    const takenLayoutKeys = useMemo(
+        () =>
+            new Set(
+                stages
+                    .filter((other) => !other.archivedAt && other.id !== stage.id)
+                    .map((other) => stageLayoutKey(other.layout))
+            ),
+        [stages, stage.id]
+    );
     const invalidate = () => queryClient.invalidateQueries({ queryKey: ['projects'] });
 
     const updateMutation = useMutation({
-        mutationFn: () => $updateStage({ data: { projectId, stageId: stage.id, name, layout } }),
+        mutationFn: () =>
+            $updateStage({
+                data: { projectId, stageId: stage.id, name: name.trim(), layout: layout! }
+            }),
         onSuccess: () => {
             invalidate();
             toast.success('Stage updated');
@@ -491,11 +463,25 @@ function StageDetail({
                                 onChange={(event) => setName(event.target.value)}
                             />
                         </div>
-                        <LayoutFields values={layout} onChange={setLayout} />
+                        <WallPresetPicker
+                            idPrefix="stage-layout"
+                            value={layout}
+                            takenLayoutKeys={takenLayoutKeys}
+                            onChange={(nextLayout) => setLayout(nextLayout)}
+                        />
+                        {stage.publishedCommitId &&
+                            layout &&
+                            !stageLayoutsEqual(layout, stage.layout) && (
+                                <p className="text-xs text-amber-600 dark:text-amber-500">
+                                    This stage has a published commit. Changing the wall re-renders
+                                    that published content on the new grid, and layers keep their
+                                    current pixel positions — you will need to reposition them.
+                                </p>
+                            )}
                         <Button
                             size="sm"
                             variant="outline"
-                            disabled={updateMutation.isPending}
+                            disabled={updateMutation.isPending || !layout || !name.trim()}
                             onClick={() => updateMutation.mutate()}
                         >
                             Save stage settings

@@ -17,6 +17,8 @@ import {
 
 import type { AuditExecutionContextInput } from '~/server/audit';
 
+const INITIAL_STAGE_NAME = 'DO';
+
 interface CreateProjectInput {
     name: string;
     authorOrganisation: string;
@@ -316,7 +318,7 @@ export async function createProject(
         stages: [
             {
                 id: 'main',
-                name: 'Main',
+                name: INITIAL_STAGE_NAME,
                 order: 0,
                 layout: { ...DEFAULT_STAGE_LAYOUT },
                 headCommitId: null,

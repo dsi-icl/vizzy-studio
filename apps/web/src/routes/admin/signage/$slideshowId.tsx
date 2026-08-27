@@ -19,7 +19,10 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { SignageEntryList } from '~/components/SignageEntryList';
+import { WallPresetPicker } from '~/components/WallPresetPicker';
+import { isGlobalManager } from '~/lib/signageAccess';
 import { adminWallsQueryOptions } from '~/server/admin.queries';
+import { wallLayoutTemplatesQueryOptions } from '~/server/projects.queries';
 import { $deleteSignageSlideshow, $updateSignageSlideshow } from '~/server/signage.fns';
 import {
     signageEntryStatusQueryOptions,
@@ -33,7 +36,8 @@ export const Route = createFileRoute('/admin/signage/$slideshowId')({
     loader: ({ context, params }) =>
         Promise.all([
             context.queryClient.ensureQueryData(signageSlideshowQueryOptions(params.slideshowId)),
-            context.queryClient.ensureQueryData(signageEntryStatusQueryOptions(params.slideshowId))
+            context.queryClient.ensureQueryData(signageEntryStatusQueryOptions(params.slideshowId)),
+            context.queryClient.ensureQueryData(wallLayoutTemplatesQueryOptions())
         ]),
     component: SignageDetail,
     head: () => ({ meta: [{ title: 'Configure Signage · Vizzy Studio' }] })
@@ -55,12 +59,12 @@ function SignageEditor({
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const { data: persistedStatus } = useSuspenseQuery(signageEntryStatusQueryOptions(initial.id));
     const [draft, setDraft] = useState(initial);
-    const isGlobalManager = user?.role === 'admin' || user?.role === 'operator';
+    const globalManager = isGlobalManager(user);
     const sourcesQuery = useQuery(signageSourcesQueryOptions(draft.layout));
     const runtimeQuery = useQuery(signageRuntimeStatusQueryOptions(initial.id));
     const wallsQuery = useQuery({
         ...adminWallsQueryOptions(),
-        enabled: isGlobalManager
+        enabled: globalManager
     });
     const statusByEntryId = new Map(persistedStatus.map((status) => [status.entry.id, status]));
 
@@ -104,16 +108,6 @@ function SignageEditor({
         },
         onError: (error: Error) => toast.error(error.message)
     });
-
-    const updateDimension = (key: keyof typeof draft.layout, value: string) => {
-        setDraft((current) => ({
-            ...current,
-            layout: {
-                ...current.layout,
-                [key]: Math.max(1, Number.parseInt(value, 10) || 1)
-            }
-        }));
-    };
 
     const addSlides = (projectId: string, slides: Array<{ id: string }>) => {
         setDraft((current) => ({
@@ -202,7 +196,7 @@ function SignageEditor({
 
             <section className="space-y-4 rounded-lg border p-4">
                 <h3 className="font-medium">Configuration</h3>
-                <div className="grid gap-3 md:grid-cols-5">
+                <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                         <Label htmlFor="slideshow-name">Name</Label>
                         <Input
@@ -216,25 +210,14 @@ function SignageEditor({
                             }
                         />
                     </div>
-                    {(
-                        [
-                            ['columns', 'Columns'],
-                            ['rows', 'Rows'],
-                            ['screenWidth', 'Screen width'],
-                            ['screenHeight', 'Screen height']
-                        ] as const
-                    ).map(([key, label]) => (
-                        <div key={key} className="space-y-1">
-                            <Label htmlFor={`layout-${key}`}>{label}</Label>
-                            <Input
-                                id={`layout-${key}`}
-                                type="number"
-                                min={1}
-                                value={draft.layout[key]}
-                                onChange={(event) => updateDimension(key, event.target.value)}
-                            />
-                        </div>
-                    ))}
+                    <WallPresetPicker
+                        idPrefix="slideshow-layout"
+                        value={draft.layout}
+                        onChange={(layout) => {
+                            if (!layout) return;
+                            setDraft((current) => ({ ...current, layout }));
+                        }}
+                    />
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                     <div className="space-y-1">
@@ -563,7 +546,7 @@ function SignageEditor({
                         Only admins and operators can change targets or activation.
                     </p>
                 </div>
-                {isGlobalManager &&
+                {globalManager &&
                     wallsQuery.data?.map((wall) => {
                         const template = wall.layoutTemplate;
                         const layoutMatches = template && stageLayoutsEqual(template, draft.layout);
@@ -608,7 +591,7 @@ function SignageEditor({
                             </label>
                         );
                     })}
-                {!isGlobalManager && (
+                {!globalManager && (
                     <p className="text-sm text-muted-foreground">
                         {draft.targetWallIds.length
                             ? draft.targetWallIds.join(', ')
@@ -619,7 +602,7 @@ function SignageEditor({
                     <input
                         type="checkbox"
                         checked={draft.enabled}
-                        disabled={!isGlobalManager}
+                        disabled={!globalManager}
                         onChange={(event) =>
                             setDraft((current) => ({
                                 ...current,
