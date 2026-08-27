@@ -8,7 +8,7 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { WallPickerPopover } from '~/components/WallPicker';
+import { useBindableWalls, WallPickerPopover } from '~/components/WallPicker';
 import type { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 
@@ -18,6 +18,7 @@ interface WallBindingBarProps {
 }
 
 export function WallBindingBar({ engine, boundWallId }: WallBindingBarProps) {
+    const { walls: bindableWalls, isLoading: wallsLoading } = useBindableWalls();
     const [bindPending, setBindPending] = useState<{ requestId: string; wallId: string } | null>(
         null
     );
@@ -112,6 +113,11 @@ export function WallBindingBar({ engine, boundWallId }: WallBindingBarProps) {
             setLastBindAttempt((prev) => (prev ? { ...prev, denied: false } : prev));
         }
     }, [boundWallId]);
+
+    const canBindSomeWall =
+        bindableWalls.some((wall) => wall.wallId === boundWallId) ||
+        (!boundWallId && bindableWalls.length > 0);
+    if (wallsLoading || !canBindSomeWall) return null;
 
     if (boundWallId) {
         return (

@@ -369,6 +369,7 @@ export async function adminGetWall(wallId: string) {
         site: wall.site ?? null,
         notes: wall.notes ?? null,
         layoutTemplate: wall.layoutTemplate ?? null,
+        openToEditors: wall.openToEditors === true,
         observedLayout:
             observedColumns && observedRows
                 ? {
@@ -468,6 +469,27 @@ export async function adminUpdateWallLayoutTemplate(input: {
         changes: { layoutTemplate }
     });
     return updated.layoutTemplate ?? null;
+}
+
+export async function adminUpdateWallOpenToEditors(input: {
+    wallId: string;
+    openToEditors: boolean;
+    actorEmail: string;
+}) {
+    const existing = await findWallById(input.wallId);
+    if (!existing) throw new Error('Wall not found');
+    const updated = await dbCol.walls.update(existing.id, {
+        openToEditors: input.openToEditors
+    });
+    if (!updated) throw new Error('Wall not found');
+    await logAuditSuccess({
+        action: 'WALL_OPEN_TO_EDITORS_UPDATED',
+        actorId: input.actorEmail,
+        resourceType: 'wall',
+        resourceId: String(existing.wallId),
+        changes: { openToEditors: input.openToEditors }
+    });
+    return updated.openToEditors === true;
 }
 
 export async function adminListDevicesForWall(wallId: string) {

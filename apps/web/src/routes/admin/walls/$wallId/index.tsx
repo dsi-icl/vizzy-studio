@@ -8,6 +8,7 @@ import {
 } from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@repo/ui/components/select';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -17,7 +18,8 @@ import { toast } from 'sonner';
 import {
     $adminDeleteWall,
     $adminUpdateWallLayoutTemplate,
-    $adminUpdateWallMetadata
+    $adminUpdateWallMetadata,
+    $adminUpdateWallOpenToEditors
 } from '~/server/admin.fns';
 import { adminWallQueryOptions } from '~/server/admin.queries';
 
@@ -93,6 +95,21 @@ function WallInfoTab() {
             navigate({ to: '/admin/walls' });
         },
         onError: (e: any) => toast.error(e.message ?? 'Failed to delete wall')
+    });
+
+    const openToEditorsMutation = useMutation({
+        mutationFn: (openToEditors: boolean) =>
+            $adminUpdateWallOpenToEditors({ data: { wallId, openToEditors } }),
+        onSuccess: (openToEditors) => {
+            queryClient.invalidateQueries({ queryKey: adminWallQueryOptions(wallId).queryKey });
+            queryClient.invalidateQueries({ queryKey: ['walls'] });
+            toast.success(
+                openToEditors
+                    ? 'Any editor can now live-preview on this wall'
+                    : 'This wall is now signage-only'
+            );
+        },
+        onError: (e: any) => toast.error(e.message ?? 'Failed to open wall for editors')
     });
 
     const templateMutation = useMutation({
@@ -203,6 +220,28 @@ function WallInfoTab() {
                         </Button>
                     )}
                 </div>
+            </div>
+            <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                    <h3 className="font-medium">Live preview access</h3>
+                    <p className="text-xs text-muted-foreground">
+                        Signage managers, admins and operators can always bind this wall. Open it to
+                        let any project editor push a live preview here too.
+                    </p>
+                </div>
+                <Select
+                    value={wall.openToEditors ? 'open' : 'signage'}
+                    onValueChange={(value) => openToEditorsMutation.mutate(value === 'open')}
+                    disabled={openToEditorsMutation.isPending}
+                >
+                    <SelectTrigger className="w-64">
+                        {wall.openToEditors ? 'Open to all editors' : 'Signage access only'}
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="signage">Signage access only</SelectItem>
+                        <SelectItem value="open">Open to all editors</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
             <div className="mt-4 flex items-center gap-2">
                 <Button disabled={metadataMutation.isPending} onClick={() => form.handleSubmit()}>

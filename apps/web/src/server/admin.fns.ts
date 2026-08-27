@@ -38,6 +38,7 @@ import {
     adminSetConfig,
     adminUpdateWallMetadata,
     adminUpdateWallLayoutTemplate,
+    adminUpdateWallOpenToEditors,
     adminUnbindWall
 } from './admin';
 import { logAuditSuccess } from './audit';
@@ -205,6 +206,22 @@ export const $adminUpdateWallLayoutTemplate = createServerFn({ method: 'POST' })
         adminUpdateWallLayoutTemplate({
             wallId: data.wallId,
             layout: data.layout,
+            actorEmail: context.user.email
+        })
+    );
+
+export const $adminUpdateWallOpenToEditors = createServerFn({ method: 'POST' })
+    .middleware([adminMiddleware])
+    .validator(
+        z.object({
+            wallId: z.string(),
+            openToEditors: z.boolean()
+        })
+    )
+    .handler(({ data, context }) =>
+        adminUpdateWallOpenToEditors({
+            wallId: data.wallId,
+            openToEditors: data.openToEditors,
             actorEmail: context.user.email
         })
     );

@@ -1,15 +1,27 @@
 import { CircleNotchIcon, MonitorIcon, XIcon } from '@phosphor-icons/react';
+import { useAuth } from '@repo/auth/tanstack/hooks';
 import { stageLayoutsEqual } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@repo/ui/components/popover';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
+import { canBindWall } from '~/lib/signageAccess';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
+export function useBindableWalls() {
+    const { user } = useAuth();
+    const { data, isLoading } = useQuery(wallsQueryOptions());
+    const walls = useMemo(
+        () => (data ?? []).filter((wall) => canBindWall(user, wall)),
+        [data, user]
+    );
+    return { walls, isLoading };
+}
+
 function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
-    const { data: walls = [], isLoading } = useQuery(wallsQueryOptions());
+    const { walls, isLoading } = useBindableWalls();
     const liveNodeCounts = useEditorStore((s) => s.wallNodeCounts);
     const stageLayout = useEditorStore((s) => s.stageLayout);
 
@@ -23,7 +35,7 @@ function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
 
     if (walls.length === 0) {
         return (
-            <div className="py-4 text-center text-xs text-muted-foreground">No walls connected</div>
+            <div className="py-4 text-center text-xs text-muted-foreground">No walls available</div>
         );
     }
 

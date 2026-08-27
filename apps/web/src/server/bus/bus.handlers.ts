@@ -56,6 +56,7 @@ import {
 } from '~/lib/busState.projectContext';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopePersistence';
+import { canBindWall } from '~/lib/signageAccess';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -72,6 +73,7 @@ import {
     pendingBindOverrides,
     pendingBindOverrideByWall,
     performLiveBind,
+    findWallForBind,
     isWallTargetedBySignage,
     resolveBoundSlideId,
     sendBindOverrideResult,
@@ -474,10 +476,35 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
         });
         return;
     }
-    const userEmail =
-        entry.meta.specimen === 'editor' ? entry.meta.authContext?.user?.email : undefined;
+    const user = entry.meta.authContext?.user;
+    const userEmail = entry.meta.specimen === 'editor' ? user?.email : undefined;
 
     void (async () => {
+        if (!canBindWall(user, await findWallForBind(data.wallId))) {
+            await logAuditDenied({
+                action: 'WS_BIND_WALL_DENIED',
+                actorId: userEmail ?? entry.peer.id,
+                projectId: data.projectId,
+                reasonCode: 'SIGNAGE_ONLY_WALL',
+                resourceType: 'wall',
+                resourceId: data.wallId,
+                executionContext: {
+                    surface: 'ws',
+                    operation: 'request_bind_wall',
+                    peerId: entry.peer.id,
+                    details: { commitId: data.commitId }
+                }
+            });
+            sendBindOverrideResult(entry.peer.id, {
+                type: 'bind_override_result',
+                requestId: data.requestId,
+                wallId: data.wallId,
+                allow: false,
+                reason: 'denied'
+            });
+            return;
+        }
+
         const resolvedSlideId = await resolveBoundSlideId(
             data.projectId,
             data.commitId,

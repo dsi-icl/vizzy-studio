@@ -268,6 +268,15 @@ export function broadcastGalleryStateSnapshot(wallId: string) {
     }
 }
 
+export async function findWallForBind(wallId: string) {
+    try {
+        return await dbCol.walls.findByWallId(wallId);
+    } catch (error) {
+        console.warn(`[WS] Failed to read wall ${wallId} for bind authorization:`, error);
+        return null;
+    }
+}
+
 export async function isWallTargetedBySignage(wallId: string): Promise<boolean> {
     if (process.__SIGNAGE_IS_TARGET_WALL__?.(wallId)) return true;
     return Boolean(await dbCol.signageSlideshows.findEnabledByTargetWall(wallId));
