@@ -148,7 +148,7 @@ function SignageEditor({
                 return [...retained.slice(0, target), ...refreshed, ...retained.slice(target)];
             })()
         }));
-        toast.success('Project entries refreshed from the latest published stage');
+        toast.success('Project entries refreshed from the latest stage content');
     };
 
     const updateDefaultSeconds = (
@@ -350,7 +350,7 @@ function SignageEditor({
 
             <section className="space-y-3 rounded-lg border p-4">
                 <div>
-                    <h3 className="font-medium">Published sources</h3>
+                    <h3 className="font-medium">Slide sources</h3>
                     <p className="text-xs text-muted-foreground">
                         Only the unique active stage matching all four layout values is shown.
                     </p>
@@ -411,7 +411,7 @@ function SignageEditor({
                     </div>
                 ) : (
                     <p className="text-sm text-muted-foreground">
-                        No accessible published stage matches this layout.
+                        No accessible stage matches this layout.
                     </p>
                 )}
             </section>
@@ -425,7 +425,7 @@ function SignageEditor({
                 </div>
                 {draft.entries.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                        Import a project or add individual published slides.
+                        Import a project or add individual slides.
                     </p>
                 ) : (
                     <SignageEntryList

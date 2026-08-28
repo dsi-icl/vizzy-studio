@@ -249,16 +249,16 @@ export async function resolveSignageEntries(
                 };
             }
             const stage = stages[0];
-            if (!stage.publishedCommitId) {
+            if (!stage.headCommitId) {
                 return {
                     entry,
                     valid: false,
                     projectName: project.name,
                     stageName: stage.name,
-                    reason: 'Stage is not published'
+                    reason: 'Stage has no content'
                 };
             }
-            const commit = await dbCol.commits.findById(stage.publishedCommitId);
+            const commit = await dbCol.commits.findById(stage.headCommitId);
             const slide = commit?.content.slides.find(({ id }) => id === entry.slideId);
             if (
                 !commit ||
@@ -271,7 +271,7 @@ export async function resolveSignageEntries(
                     valid: false,
                     projectName: project.name,
                     stageName: stage.name,
-                    reason: 'Published slide missing'
+                    reason: 'Slide missing from stage'
                 };
             }
             return {
@@ -295,11 +295,11 @@ export async function listSignageSources(actor: SignageActor, layout: StageLayou
         const stages = project.stages.filter(
             (stage) => !stage.archivedAt && stageLayoutsEqual(stage.layout, layout)
         );
-        if (stages.length !== 1 || !stages[0].publishedCommitId) continue;
+        if (stages.length !== 1) continue;
         const stage = stages[0];
-        const publishedCommitId = stage.publishedCommitId;
-        if (!publishedCommitId) continue;
-        const commit = await dbCol.commits.findById(publishedCommitId);
+        const headCommitId = stage.headCommitId;
+        if (!headCommitId) continue;
+        const commit = await dbCol.commits.findById(headCommitId);
         if (!commit || commit.projectId !== project.id || commit.stageId !== stage.id) continue;
         sources.push({
             projectId: project.id,

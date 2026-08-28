@@ -77,8 +77,8 @@ async function resolveEntry(
     );
     if (stages.length !== 1) return null;
     const stage = stages[0];
-    if (!stage.publishedCommitId) return null;
-    const commit = await dbCol.commits.findById(stage.publishedCommitId);
+    if (!stage.headCommitId) return null;
+    const commit = await dbCol.commits.findById(stage.headCommitId);
     if (!commit || commit.projectId !== project.id || commit.stageId !== stage.id) return null;
     if (!commit.content.slides.some(({ id }) => id === entry.slideId)) return null;
     return {
