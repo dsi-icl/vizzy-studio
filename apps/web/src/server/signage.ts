@@ -29,12 +29,13 @@ function canViewSlideshow(actor: SignageActor, slideshow: Slideshow): boolean {
 
 function sanitizeCollaborators(
     collaborators: Slideshow['collaborators'],
-    actorEmail: string
+    creatorEmail: string
 ): Slideshow['collaborators'] {
+    const creator = creatorEmail.trim().toLowerCase();
     const byEmail = new Map<string, 'viewer' | 'editor'>();
     for (const collaborator of collaborators) {
         const email = collaborator.email.trim().toLowerCase();
-        if (!email || email === actorEmail) continue;
+        if (!email || email === creator) continue;
         byEmail.set(email, collaborator.role);
     }
     return Array.from(byEmail, ([email, role]) => ({ email, role }));
@@ -187,7 +188,7 @@ export async function updateSignageSlideshow(
             entries: input.entries,
             targetWallIds,
             enabled: input.enabled,
-            collaborators: sanitizeCollaborators(input.collaborators, actor.email)
+            collaborators: sanitizeCollaborators(input.collaborators, current.createdBy)
         });
     } catch (error) {
         if (error && typeof error === 'object' && 'code' in error && error.code === 11_000) {
