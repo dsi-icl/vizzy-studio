@@ -69,6 +69,9 @@ function SignageEditor({
         enabled: globalManager
     });
     const statusByEntryId = new Map(persistedStatus.map((status) => [status.entry.id, status]));
+    const slidesInLoop = new Set(
+        draft.entries.map((entry) => `${entry.projectId}:${entry.slideId}`)
+    );
 
     const saveMutation = useMutation({
         mutationFn: () =>
@@ -412,17 +415,27 @@ function SignageEditor({
                                     </div>
                                 </div>
                                 <div className="mt-2 flex flex-wrap gap-2">
-                                    {source.slides.map((slide) => (
-                                        <Button
-                                            key={slide.id}
-                                            size="sm"
-                                            variant="ghost"
-                                            disabled={!canEdit}
-                                            onClick={() => addSlides(source.projectId, [slide])}
-                                        >
-                                            <PlusIcon /> {slide.name}
-                                        </Button>
-                                    ))}
+                                    {source.slides.map((slide) => {
+                                        const inLoop = slidesInLoop.has(
+                                            `${source.projectId}:${slide.id}`
+                                        );
+                                        return (
+                                            <Button
+                                                key={slide.id}
+                                                size="sm"
+                                                variant={inLoop ? 'secondary' : 'ghost'}
+                                                disabled={!canEdit}
+                                                aria-label={
+                                                    inLoop
+                                                        ? `Add ${slide.name} again — already in the loop`
+                                                        : `Add ${slide.name}`
+                                                }
+                                                onClick={() => addSlides(source.projectId, [slide])}
+                                            >
+                                                <PlusIcon /> {slide.name}
+                                            </Button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         ))}
