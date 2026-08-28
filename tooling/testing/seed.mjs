@@ -1099,6 +1099,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000301'),
             wallId: 'test-wall-1',
+            openToEditors: true,
             name: 'Test Wall 1',
             connectedNodes: 0,
             lastSeen: now,
@@ -1115,6 +1116,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000302'),
             wallId: 'test-wall-grid',
+            openToEditors: true,
             name: 'Test Grid Wall',
             connectedNodes: 0,
             lastSeen: now,
@@ -1166,6 +1168,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000306'),
             wallId: 'test-wall-ownership',
+            openToEditors: true,
             name: 'Test Ownership Wall',
             connectedNodes: 0,
             lastSeen: now,
@@ -1183,6 +1186,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000307'),
             wallId: 'test-wall-media',
+            openToEditors: true,
             name: 'Test Media Wall',
             connectedNodes: 0,
             lastSeen: now,
