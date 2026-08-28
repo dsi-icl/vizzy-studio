@@ -40,17 +40,30 @@ function sanitizeCollaborators(
     return Array.from(byEmail, ([email, role]) => ({ email, role }));
 }
 
-async function assertEntryProjectsPermitted(actor: SignageActor, entries: SignageSlideEntry[]) {
+function slideReference({ projectId, slideId }: SignageSlideEntry): string {
+    return `${projectId}\0${slideId}`;
+}
+
+async function assertAddedEntryProjectsPermitted(
+    actor: SignageActor,
+    currentEntries: SignageSlideEntry[],
+    nextEntries: SignageSlideEntry[]
+) {
     if (isGlobalManager(actor)) return;
-    const projectIds = new Set(entries.map(({ projectId }) => projectId));
-    if (projectIds.size === 0) return;
+    const alreadyReferenced = new Set(currentEntries.map(slideReference));
+    const addedProjectIds = new Set(
+        nextEntries
+            .filter((entry) => !alreadyReferenced.has(slideReference(entry)))
+            .map(({ projectId }) => projectId)
+    );
+    if (addedProjectIds.size === 0) return;
     const permitted = new Set(
         (await dbCol.projects.findManageableByUser(actor.email)).map(({ id }) => id)
     );
-    const denied = Array.from(projectIds).filter((projectId) => !permitted.has(projectId));
+    const denied = Array.from(addedProjectIds).filter((projectId) => !permitted.has(projectId));
     if (denied.length > 0) {
         throw new Error(
-            `Slideshow entries reference ${denied.length} project(s) you cannot manage`
+            `Cannot add slides from project(s) you cannot manage: ${denied.join(', ')}`
         );
     }
 }
@@ -158,7 +171,7 @@ export async function updateSignageSlideshow(
     if (new Set(input.entries.map(({ id: entryId }) => entryId)).size !== input.entries.length) {
         throw new Error('Slideshow entry IDs must be unique');
     }
-    await assertEntryProjectsPermitted(actor, input.entries);
+    await assertAddedEntryProjectsPermitted(actor, current.entries, input.entries);
 
     const targetWallIds = input.enabled
         ? await assertTargetsAvailable(id, input.targetWallIds)
