@@ -29,7 +29,7 @@ import {
 } from '@repo/ui/components/table';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { WallPresetPicker } from '~/components/WallPresetPicker';
@@ -129,7 +129,8 @@ export const Route = createFileRoute('/_auth/quarry/projects/$projectId/commits'
     loader: async ({ context, params }) => {
         const [project] = await Promise.all([
             context.queryClient.ensureQueryData(projectQueryOptions(params.projectId)),
-            context.queryClient.ensureQueryData(wallLayoutTemplatesQueryOptions())
+            context.queryClient.ensureQueryData(wallLayoutTemplatesQueryOptions()),
+            context.queryClient.ensureQueryData(stageLayoutLimitsQueryOptions())
         ]);
         if (project?.defaultStageId) {
             await context.queryClient.ensureQueryData(
@@ -165,14 +166,25 @@ function StagesTab() {
                 selectedStageId={selectedStage.id}
                 onSelect={setSelectedStageId}
             />
-            <StageDetail
-                key={selectedStage.id}
-                projectId={projectId}
-                stage={selectedStage}
-                stages={project.stages}
-                isDefault={selectedStage.id === project.defaultStageId}
-                canPublish={globalManager || user?.trustedPublisher === true}
-            />
+            <div className="min-w-0">
+                <Suspense
+                    fallback={
+                        <CircleNotchIcon
+                            size={24}
+                            className="mx-auto my-24 block animate-spin text-muted-foreground"
+                        />
+                    }
+                >
+                    <StageDetail
+                        key={selectedStage.id}
+                        projectId={projectId}
+                        stage={selectedStage}
+                        stages={project.stages}
+                        isDefault={selectedStage.id === project.defaultStageId}
+                        canPublish={globalManager || user?.trustedPublisher === true}
+                    />
+                </Suspense>
+            </div>
         </div>
     );
 }
