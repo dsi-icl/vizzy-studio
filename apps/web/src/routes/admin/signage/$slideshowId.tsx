@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 
 import { SignageEntryList } from '~/components/SignageEntryList';
 import { WallPresetPicker } from '~/components/WallPresetPicker';
-import { isGlobalManager } from '~/lib/signageAccess';
+import { canEditSlideshow, isGlobalManager } from '~/lib/signageAccess';
 import { adminWallsQueryOptions } from '~/server/admin.queries';
 import { wallLayoutTemplatesQueryOptions } from '~/server/projects.queries';
 import { $deleteSignageSlideshow, $updateSignageSlideshow } from '~/server/signage.fns';
@@ -60,6 +60,8 @@ function SignageEditor({
     const { data: persistedStatus } = useSuspenseQuery(signageEntryStatusQueryOptions(initial.id));
     const [draft, setDraft] = useState(initial);
     const globalManager = isGlobalManager(user);
+    const canEdit = canEditSlideshow(user, initial);
+    const canDelete = canEdit && (globalManager || !initial.enabled);
     const sourcesQuery = useQuery(signageSourcesQueryOptions(draft.layout));
     const runtimeQuery = useQuery(signageRuntimeStatusQueryOptions(initial.id));
     const wallsQuery = useQuery({
@@ -180,19 +182,25 @@ function SignageEditor({
                 <div className="flex gap-2">
                     <Button
                         variant="destructive"
-                        disabled={deleteMutation.isPending}
+                        disabled={!canDelete || deleteMutation.isPending}
                         onClick={() => deleteMutation.mutate()}
                     >
                         <TrashIcon /> Delete
                     </Button>
                     <Button
-                        disabled={saveMutation.isPending || !draft.name.trim()}
+                        disabled={!canEdit || saveMutation.isPending || !draft.name.trim()}
                         onClick={() => saveMutation.mutate()}
                     >
                         Save
                     </Button>
                 </div>
             </div>
+
+            {!canEdit && (
+                <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                    You have read-only access to this slideshow.
+                </p>
+            )}
 
             <section className="space-y-4 rounded-lg border p-4">
                 <h3 className="font-medium">Configuration</h3>
@@ -202,6 +210,7 @@ function SignageEditor({
                         <Input
                             id="slideshow-name"
                             value={draft.name}
+                            disabled={!canEdit}
                             onChange={(event) =>
                                 setDraft((current) => ({
                                     ...current,
@@ -213,6 +222,7 @@ function SignageEditor({
                     <WallPresetPicker
                         idPrefix="slideshow-layout"
                         value={draft.layout}
+                        disabled={!canEdit}
                         onChange={(layout) => {
                             if (!layout) return;
                             setDraft((current) => ({ ...current, layout }));
@@ -227,6 +237,7 @@ function SignageEditor({
                             type="number"
                             min={0.1}
                             step={0.1}
+                            disabled={!canEdit}
                             value={draft.defaultDisplayDurationMs / 1_000}
                             onChange={(event) =>
                                 updateDefaultSeconds(
@@ -244,6 +255,7 @@ function SignageEditor({
                             type="number"
                             min={0}
                             step={0.1}
+                            disabled={!canEdit}
                             value={draft.defaultGapDurationMs / 1_000}
                             onChange={(event) =>
                                 updateDefaultSeconds('defaultGapDurationMs', event.target.value, 0)
@@ -254,8 +266,9 @@ function SignageEditor({
                         <Label htmlFor="gap-mode">Gap mode</Label>
                         <select
                             id="gap-mode"
-                            className="h-8 w-full border border-input bg-input/30 px-2.5 text-sm"
+                            className="h-8 w-full border border-input bg-input/30 px-2.5 text-sm disabled:opacity-50"
                             value={draft.gapMode}
+                            disabled={!canEdit}
                             onChange={(event) =>
                                 setDraft((current) => ({
                                     ...current,
@@ -317,7 +330,9 @@ function SignageEditor({
                     </div>
                 )}
 
-                {runtime?.walls.length ? (
+                {runtimeQuery.isLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading walls…</p>
+                ) : runtime?.walls.length ? (
                     <div className="grid gap-2 md:grid-cols-2">
                         {runtime.walls.map((wall) => (
                             <div
@@ -374,6 +389,7 @@ function SignageEditor({
                                         <Button
                                             size="sm"
                                             variant="outline"
+                                            disabled={!canEdit}
                                             onClick={() =>
                                                 addSlides(source.projectId, source.slides)
                                             }
@@ -383,6 +399,7 @@ function SignageEditor({
                                         <Button
                                             size="sm"
                                             variant="ghost"
+                                            disabled={!canEdit}
                                             onClick={() =>
                                                 refreshProjectSlides(
                                                     source.projectId,
@@ -400,6 +417,7 @@ function SignageEditor({
                                             key={slide.id}
                                             size="sm"
                                             variant="ghost"
+                                            disabled={!canEdit}
                                             onClick={() => addSlides(source.projectId, [slide])}
                                         >
                                             <PlusIcon /> {slide.name}
@@ -434,6 +452,7 @@ function SignageEditor({
                         defaultDisplayDurationMs={draft.defaultDisplayDurationMs}
                         defaultGapDurationMs={draft.defaultGapDurationMs}
                         onChange={(entries) => setDraft((current) => ({ ...current, entries }))}
+                        readOnly={!canEdit}
                     />
                 )}
             </section>
@@ -449,6 +468,7 @@ function SignageEditor({
                     <Button
                         size="sm"
                         variant="outline"
+                        disabled={!canEdit}
                         onClick={() =>
                             setDraft((current) => ({
                                 ...current,
@@ -478,6 +498,7 @@ function SignageEditor({
                                     aria-label={`Collaborator ${index + 1} email`}
                                     placeholder="person@example.com"
                                     value={collaborator.email}
+                                    disabled={!canEdit}
                                     onChange={(event) =>
                                         setDraft((current) => ({
                                             ...current,
@@ -495,8 +516,9 @@ function SignageEditor({
                                 />
                                 <select
                                     aria-label={`Collaborator ${index + 1} role`}
-                                    className="h-8 rounded-md border border-input bg-transparent px-2.5 text-sm dark:bg-input/30"
+                                    className="h-8 rounded-md border border-input bg-transparent px-2.5 text-sm disabled:opacity-50 dark:bg-input/30"
                                     value={collaborator.role}
+                                    disabled={!canEdit}
                                     onChange={(event) =>
                                         setDraft((current) => ({
                                             ...current,
@@ -522,6 +544,7 @@ function SignageEditor({
                                     size="icon-sm"
                                     variant="ghost"
                                     aria-label={`Remove collaborator ${index + 1}`}
+                                    disabled={!canEdit}
                                     onClick={() =>
                                         setDraft((current) => ({
                                             ...current,
@@ -539,15 +562,15 @@ function SignageEditor({
                 )}
             </section>
 
-            <section className="space-y-3 rounded-lg border p-4">
-                <div>
-                    <h3 className="font-medium">Wall targets</h3>
-                    <p className="text-xs text-muted-foreground">
-                        Only admins and operators can change targets or activation.
-                    </p>
-                </div>
-                {globalManager &&
-                    wallsQuery.data?.map((wall) => {
+            {globalManager && (
+                <section className="space-y-3 rounded-lg border p-4">
+                    <div>
+                        <h3 className="font-medium">Wall targets</h3>
+                        <p className="text-xs text-muted-foreground">
+                            A wall can only be targeted by one enabled slideshow at a time.
+                        </p>
+                    </div>
+                    {wallsQuery.data?.map((wall) => {
                         const template = wall.layoutTemplate;
                         const layoutMatches = template && stageLayoutsEqual(template, draft.layout);
                         return (
@@ -591,28 +614,21 @@ function SignageEditor({
                             </label>
                         );
                     })}
-                {!globalManager && (
-                    <p className="text-sm text-muted-foreground">
-                        {draft.targetWallIds.length
-                            ? draft.targetWallIds.join(', ')
-                            : 'No walls assigned.'}
-                    </p>
-                )}
-                <label className="flex items-center gap-2 text-sm font-medium">
-                    <input
-                        type="checkbox"
-                        checked={draft.enabled}
-                        disabled={!globalManager}
-                        onChange={(event) =>
-                            setDraft((current) => ({
-                                ...current,
-                                enabled: event.target.checked
-                            }))
-                        }
-                    />
-                    Enable server-driven loop
-                </label>
-            </section>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                        <input
+                            type="checkbox"
+                            checked={draft.enabled}
+                            onChange={(event) =>
+                                setDraft((current) => ({
+                                    ...current,
+                                    enabled: event.target.checked
+                                }))
+                            }
+                        />
+                        Enable server-driven loop
+                    </label>
+                </section>
+            )}
         </div>
     );
 }

@@ -3,6 +3,7 @@ import type { PublicDoc } from '@repo/db/collections';
 import type { AuthContext, SignageSlideEntry, SignageSlideshowDocument } from '@repo/db/documents';
 import { stageLayoutsEqual, type StageLayout } from '@repo/db/schema';
 
+import { canEditSlideshow, isGlobalManager } from '~/lib/signageAccess';
 import { logAuditSuccess } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { getStageLayoutLimits } from '~/server/projects';
@@ -20,23 +21,10 @@ export interface ResolvedSignageEntry {
     commitId?: string;
 }
 
-function isGlobalManager(actor: SignageActor): boolean {
-    return actor.role === 'admin' || actor.role === 'operator';
-}
-
 function canViewSlideshow(actor: SignageActor, slideshow: Slideshow): boolean {
     if (isGlobalManager(actor)) return true;
     if (slideshow.createdBy === actor.email) return true;
     return slideshow.collaborators.some(({ email }) => email === actor.email);
-}
-
-function canEditSlideshow(actor: SignageActor, slideshow: Slideshow): boolean {
-    if (isGlobalManager(actor)) return true;
-    if (!actor.canManageSignage) return false;
-    if (slideshow.createdBy === actor.email) return true;
-    return slideshow.collaborators.some(
-        ({ email, role }) => email === actor.email && role === 'editor'
-    );
 }
 
 function sanitizeCollaborators(

@@ -28,6 +28,7 @@ interface WallPresetPickerProps {
     label?: string;
     idPrefix?: string;
     className?: string;
+    disabled?: boolean;
 }
 
 export function WallPresetPicker({
@@ -36,7 +37,8 @@ export function WallPresetPicker({
     takenLayoutKeys,
     label = 'Wall',
     idPrefix = 'wall-preset',
-    className
+    className,
+    disabled = false
 }: WallPresetPickerProps) {
     const { data: presets = [], isLoading } = useQuery(wallLayoutTemplatesQueryOptions());
     const matchedPreset = value
@@ -72,7 +74,12 @@ export function WallPresetPicker({
                     No wall templates are configured yet.
                 </p>
                 {value && (
-                    <LayoutFields idPrefix={idPrefix} value={value} onChange={updateDimension} />
+                    <LayoutFields
+                        idPrefix={idPrefix}
+                        value={value}
+                        onChange={updateDimension}
+                        disabled={disabled}
+                    />
                 )}
             </div>
         );
@@ -86,7 +93,7 @@ export function WallPresetPicker({
                     id={`${idPrefix}-select`}
                     className={SELECT_CLASS}
                     value={selectValue}
-                    disabled={isLoading}
+                    disabled={isLoading || disabled}
                     onChange={(event) => handleSelect(event.target.value)}
                 >
                     {selectValue === '' && (
@@ -106,7 +113,12 @@ export function WallPresetPicker({
             </div>
             {custom && value && (
                 <>
-                    <LayoutFields idPrefix={idPrefix} value={value} onChange={updateDimension} />
+                    <LayoutFields
+                        idPrefix={idPrefix}
+                        value={value}
+                        onChange={updateDimension}
+                        disabled={disabled}
+                    />
                     <p className="mt-2 text-xs text-muted-foreground">
                         A custom size will not match any wall, so this content cannot be shown on
                         one until a wall is configured with the same grid.
@@ -120,11 +132,13 @@ export function WallPresetPicker({
 function LayoutFields({
     idPrefix,
     value,
-    onChange
+    onChange,
+    disabled = false
 }: {
     idPrefix: string;
     value: StageLayout;
     onChange: (key: keyof StageLayout, raw: string) => void;
+    disabled?: boolean;
 }) {
     const fields = [
         ['columns', 'Columns'],
@@ -142,6 +156,7 @@ function LayoutFields({
                         type="number"
                         min={1}
                         value={value[key]}
+                        disabled={disabled}
                         onChange={(event) => onChange(key, event.target.value)}
                     />
                 </div>

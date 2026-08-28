@@ -51,7 +51,8 @@ function SortableEntry({
     defaultGapDurationMs,
     onUpdate,
     onMove,
-    onRemove
+    onRemove,
+    readOnly
 }: {
     entry: SignageSlideEntry;
     index: number;
@@ -62,9 +63,11 @@ function SortableEntry({
     onUpdate: (patch: Partial<SignageSlideEntry>) => void;
     onMove: (direction: -1 | 1) => void;
     onRemove: () => void;
+    readOnly: boolean;
 }) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-        id: entry.id
+        id: entry.id,
+        disabled: readOnly
     });
 
     return (
@@ -79,7 +82,8 @@ function SortableEntry({
         >
             <button
                 type="button"
-                className="cursor-grab rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing"
+                disabled={readOnly}
+                className="cursor-grab rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground active:cursor-grabbing disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
                 aria-label={`Reorder ${status?.slideName ?? entry.slideId}`}
                 {...attributes}
                 {...listeners}
@@ -113,6 +117,7 @@ function SortableEntry({
                 min={0.1}
                 step={0.1}
                 placeholder={`Default (${defaultDisplayDurationMs / 1_000}s)`}
+                disabled={readOnly}
                 value={entry.displayDurationMs === undefined ? '' : entry.displayDurationMs / 1_000}
                 onChange={(event) =>
                     onUpdate({
@@ -126,6 +131,7 @@ function SortableEntry({
                 min={0}
                 step={0.1}
                 placeholder={`Default (${defaultGapDurationMs / 1_000}s)`}
+                disabled={readOnly}
                 value={entry.gapDurationMs === undefined ? '' : entry.gapDurationMs / 1_000}
                 onChange={(event) =>
                     onUpdate({
@@ -139,7 +145,7 @@ function SortableEntry({
                     size="icon-sm"
                     variant="ghost"
                     aria-label="Move entry up"
-                    disabled={index === 0}
+                    disabled={readOnly || index === 0}
                     onClick={() => onMove(-1)}
                 >
                     <ArrowUpIcon />
@@ -148,12 +154,18 @@ function SortableEntry({
                     size="icon-sm"
                     variant="ghost"
                     aria-label="Move entry down"
-                    disabled={index === count - 1}
+                    disabled={readOnly || index === count - 1}
                     onClick={() => onMove(1)}
                 >
                     <ArrowDownIcon />
                 </Button>
-                <Button size="icon-sm" variant="ghost" aria-label="Remove entry" onClick={onRemove}>
+                <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Remove entry"
+                    disabled={readOnly}
+                    onClick={onRemove}
+                >
                     <TrashIcon />
                 </Button>
             </div>
@@ -166,13 +178,15 @@ export function SignageEntryList({
     statuses,
     defaultDisplayDurationMs,
     defaultGapDurationMs,
-    onChange
+    onChange,
+    readOnly = false
 }: {
     entries: SignageSlideEntry[];
     statuses: EntryStatus[];
     defaultDisplayDurationMs: number;
     defaultGapDurationMs: number;
     onChange: (entries: SignageSlideEntry[]) => void;
+    readOnly?: boolean;
 }) {
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -181,6 +195,7 @@ export function SignageEntryList({
     const statusByEntryId = new Map(statuses.map((status) => [status.entry.id, status]));
 
     const handleDragEnd = ({ active, over }: DragEndEvent) => {
+        if (readOnly) return;
         if (!over || active.id === over.id) return;
         const from = entries.findIndex(({ id }) => id === active.id);
         const to = entries.findIndex(({ id }) => id === over.id);
@@ -219,6 +234,7 @@ export function SignageEntryList({
                                 onChange(arrayMove(entries, index, target));
                             }}
                             onRemove={() => onChange(entries.filter(({ id }) => id !== entry.id))}
+                            readOnly={readOnly}
                         />
                     ))}
                 </div>
