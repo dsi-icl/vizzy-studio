@@ -105,7 +105,7 @@ test('controller image zoom transforms the targeted bound image layer', async ({
             numericId: number,
             options: {
                 requestToken?: string | null;
-                body?: { scale: number; centerX: number; centerY: number };
+                body?: { scale: number; centerX: number; centerY: number; final?: boolean };
             } = {}
         ) =>
             galleryPage.evaluate(
@@ -180,7 +180,35 @@ test('controller image zoom transforms the targeted bound image layer', async ({
             body: { error: 'Wall is no longer bound to the requested slide' }
         });
 
-        const result = await postZoom(manifest.fixtures.publicSlideId, before.numericId);
+        const previewResult = await postZoom(manifest.fixtures.publicSlideId, before.numericId, {
+            body: { scale: 1.5, centerX: 0.5, centerY: 0.5, final: false }
+        });
+        expect(previewResult).toEqual({
+            status: 200,
+            body: { ok: true, numericId: before.numericId, scale: 1.5 }
+        });
+        await expect
+            .poll(() =>
+                wallPage.evaluate((numericId) => {
+                    type ImageLayer = {
+                        config: { scaleX: number; scaleY: number };
+                    };
+                    const engine = (
+                        window as Window & {
+                            __WALL_ENGINE__?: { layers: Map<number, ImageLayer> };
+                        }
+                    ).__WALL_ENGINE__;
+                    const layer = engine?.layers.get(numericId);
+                    return layer
+                        ? { scaleX: layer.config.scaleX, scaleY: layer.config.scaleY }
+                        : null;
+                }, before.numericId)
+            )
+            .toEqual({ scaleX: before.scaleX * 1.5, scaleY: before.scaleY * 1.5 });
+
+        const result = await postZoom(manifest.fixtures.publicSlideId, before.numericId, {
+            body: { scale: 2, centerX: 0.25, centerY: 0.75, final: true }
+        });
 
         expect(result).toEqual({
             status: 200,

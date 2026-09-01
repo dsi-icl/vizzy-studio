@@ -15,7 +15,8 @@ const routeParamsSchema = z.object({
 const requestSchema = z.object({
     scale: z.number().min(0.75).max(22),
     centerX: z.number(),
-    centerY: z.number()
+    centerY: z.number(),
+    final: z.boolean().optional().default(true)
 });
 
 const operation = 'POST /api/portal/v1/slides/:slideId/images/:numericId/zoom';
@@ -131,22 +132,24 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
 
                 const source = scope.layers.get(numericId);
                 if (!source || source.type !== 'image') {
-                    await logAuditSuccess({
-                        action: 'PORTAL_IMAGE_ZOOM_SUCCEEDED',
-                        projectId: scope.projectId,
-                        resourceType: 'scope',
-                        resourceId: String(scopeId),
-                        authContext,
-                        executionContext: { surface: 'http', operation, request },
-                        changes: { slideId, numericId, applied: false }
-                    });
+                    if (parsedRequest.data.final) {
+                        await logAuditSuccess({
+                            action: 'PORTAL_IMAGE_ZOOM_SUCCEEDED',
+                            projectId: scope.projectId,
+                            resourceType: 'scope',
+                            resourceId: String(scopeId),
+                            authContext,
+                            executionContext: { surface: 'http', operation, request },
+                            changes: { slideId, numericId, applied: false }
+                        });
+                    }
                     return new Response(null, {
                         status: 204,
                         headers: getCorsHeaders(request)
                     });
                 }
 
-                const { scale, centerX, centerY } = parsedRequest.data;
+                const { scale, centerX, centerY, final } = parsedRequest.data;
                 const dx = (0.5 - centerX) * source.config.width * source.config.scaleX * scale;
                 const dy = (0.5 - centerY) * source.config.height * source.config.scaleY * scale;
                 const layer = {
@@ -166,15 +169,17 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                     origin: 'controller:image_zoom'
                 });
 
-                await logAuditSuccess({
-                    action: 'PORTAL_IMAGE_ZOOM_SUCCEEDED',
-                    projectId: scope.projectId,
-                    resourceType: 'scope',
-                    resourceId: String(scopeId),
-                    authContext,
-                    executionContext: { surface: 'http', operation, request },
-                    changes: { slideId, numericId, scale, centerX, centerY, applied: true }
-                });
+                if (final) {
+                    await logAuditSuccess({
+                        action: 'PORTAL_IMAGE_ZOOM_SUCCEEDED',
+                        projectId: scope.projectId,
+                        resourceType: 'scope',
+                        resourceId: String(scopeId),
+                        authContext,
+                        executionContext: { surface: 'http', operation, request },
+                        changes: { slideId, numericId, scale, centerX, centerY, applied: true }
+                    });
+                }
 
                 return json(request, 200, { ok: true, numericId, scale });
             }
