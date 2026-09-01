@@ -21,6 +21,7 @@ import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
+import { adjustEraserWidth } from '~/lib/eraser';
 import { MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { eraseLinePaths } from '~/lib/lineEraser';
 import { isTouchEvent } from '~/lib/pointerEvents';
@@ -867,14 +868,23 @@ function Controller() {
         [handleDrawEnd]
     );
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
-        const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const delta = e.evt.deltaX + e.evt.deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            if (isErasing) {
+                if (e.evt.deltaY !== 0) {
+                    setEraserWidth(adjustEraserWidth(eraserWidth, e.evt.deltaY));
+                }
+                return;
+            }
+            slot.scrollLeft += delta;
+        },
+        [eraserWidth, isErasing, setEraserWidth]
+    );
 
     useLayoutEffect(() => {
         const slot = stageSlot.current;

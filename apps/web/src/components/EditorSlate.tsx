@@ -40,6 +40,7 @@ import {
 } from '~/lib/editorKeyboardMovement';
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
+import { adjustEraserWidth } from '~/lib/eraser';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import {
     appendEraserPoint,
@@ -91,6 +92,7 @@ export function EditorSlate() {
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
     const isErasing = useEditorStore((s) => s.isErasing);
     const eraserWidth = useEditorStore((s) => s.eraserWidth);
+    const setEraserWidth = useEditorStore((s) => s.setEraserWidth);
     const commitLineErase = useEditorStore((s) => s.commitLineErase);
 
     // Peer cursors are per-slide; remounting on scope change drops the previous
@@ -1476,14 +1478,23 @@ export function EditorSlate() {
         handleTouchEnd(e);
     };
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
-        const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const delta = e.evt.deltaX + e.evt.deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            if (isErasing) {
+                if (e.evt.deltaY !== 0) {
+                    setEraserWidth(adjustEraserWidth(eraserWidth, e.evt.deltaY));
+                }
+                return;
+            }
+            slot.scrollLeft += delta;
+        },
+        [eraserWidth, isErasing, setEraserWidth]
+    );
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
