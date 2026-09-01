@@ -8,7 +8,7 @@ import {
     waitForWallHydrated
 } from '../support/harness';
 
-test('controller image zoom replaces and transforms the bound image layer', async ({ browser }) => {
+test('controller image zoom transforms the targeted bound image layer', async ({ browser }) => {
     test.setTimeout(60_000);
     const manifest = readHarnessManifest();
     const context = await browser.newContext({ baseURL: manifest.baseUrl });
@@ -86,33 +86,101 @@ test('controller image zoom replaces and transforms the bound image layer', asyn
                     __WALL_ENGINE__?: { layers: Map<number, ImageLayer> };
                 }
             ).__WALL_ENGINE__;
-            const layer = [...(engine?.layers.values() ?? [])].find(
-                (candidate) => candidate.type === 'image'
-            );
+            const layers = [...(engine?.layers.values() ?? [])];
+            const layer = layers.find((candidate) => candidate.type === 'image');
             if (!layer) throw new Error('Image placeholder was not found');
-            return { numericId: layer.numericId, ...layer.config };
+            const nonImage = layers.find((candidate) => candidate.type !== 'image');
+            if (!nonImage) throw new Error('Non-image layer was not found');
+            return {
+                numericId: layer.numericId,
+                nonImageNumericId: nonImage.numericId,
+                missingNumericId: Math.max(...layers.map((candidate) => candidate.numericId)) + 1,
+                url: layer.url,
+                ...layer.config
+            };
         });
 
-        const imageUrl = `data:image/svg+xml,${encodeURIComponent(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#ef4444"/></svg>'
-        )}`;
-        const result = await galleryPage.evaluate(
-            async ({ token, imageUrl }) => {
-                const response = await fetch('/api/portal/v1/image/zoom', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ imageUrl, scale: 2, centerX: 0.25, centerY: 0.75 })
-                });
-                return {
-                    status: response.status,
-                    body: (await response.json()) as Record<string, unknown>
-                };
-            },
-            { token, imageUrl }
+        const postZoom = (
+            slideId: string,
+            numericId: number,
+            options: {
+                requestToken?: string | null;
+                body?: { scale: number; centerX: number; centerY: number };
+            } = {}
+        ) =>
+            galleryPage.evaluate(
+                async ({ requestToken, slideId, numericId, body }) => {
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'application/json'
+                    };
+                    if (requestToken) headers.Authorization = `Bearer ${requestToken}`;
+
+                    const response = await fetch(
+                        `/api/portal/v1/slides/${encodeURIComponent(slideId)}/images/${numericId}/zoom`,
+                        {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify(body)
+                        }
+                    );
+                    const responseText = await response.text();
+                    return {
+                        status: response.status,
+                        body: responseText
+                            ? (JSON.parse(responseText) as Record<string, unknown>)
+                            : null
+                    };
+                },
+                {
+                    requestToken: options.requestToken === undefined ? token : options.requestToken,
+                    slideId,
+                    numericId,
+                    body: options.body ?? { scale: 2, centerX: 0.25, centerY: 0.75 }
+                }
+            );
+
+        const missingTokenResult = await postZoom(
+            manifest.fixtures.publicSlideId,
+            before.numericId,
+            { requestToken: null }
         );
+        expect(missingTokenResult).toEqual({
+            status: 401,
+            body: { error: 'Missing bearer token' }
+        });
+
+        const invalidRequestResult = await postZoom(
+            manifest.fixtures.publicSlideId,
+            before.numericId,
+            { body: { scale: 23, centerX: 0.5, centerY: 0.5 } }
+        );
+        expect(invalidRequestResult).toEqual({
+            status: 400,
+            body: { error: 'Invalid zoom request' }
+        });
+
+        const missingImageResult = await postZoom(
+            manifest.fixtures.publicSlideId,
+            before.missingNumericId
+        );
+        expect(missingImageResult).toEqual({ status: 204, body: null });
+
+        const nonImageResult = await postZoom(
+            manifest.fixtures.publicSlideId,
+            before.nonImageNumericId
+        );
+        expect(nonImageResult).toEqual({ status: 204, body: null });
+
+        const wrongSlideResult = await postZoom(
+            manifest.fixtures.galleryAlternateSlideId,
+            before.numericId
+        );
+        expect(wrongSlideResult).toEqual({
+            status: 409,
+            body: { error: 'Wall is no longer bound to the requested slide' }
+        });
+
+        const result = await postZoom(manifest.fixtures.publicSlideId, before.numericId);
 
         expect(result).toEqual({
             status: 200,
@@ -144,7 +212,7 @@ test('controller image zoom replaces and transforms the bound image layer', asyn
                 }, before.numericId)
             )
             .toEqual({
-                url: imageUrl,
+                url: before.url,
                 cx: before.cx + 0.5 * before.width * before.scaleX,
                 cy: before.cy - 0.5 * before.height * before.scaleY,
                 scaleX: before.scaleX * 2,
