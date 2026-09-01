@@ -1,7 +1,12 @@
 import { EraserIcon } from '@phosphor-icons/react';
 import { Slider } from '@repo/ui/components/slider';
 
-import { ERASER_MAX_WIDTH, ERASER_MIN_WIDTH, ERASER_WHEEL_STEP } from '~/lib/eraser';
+import {
+    adjustEraserWidth,
+    ERASER_MAX_WIDTH,
+    ERASER_MIN_WIDTH,
+    ERASER_WHEEL_STEP
+} from '~/lib/eraser';
 
 interface EraserToolProps {
     eraserWidth: number;
@@ -11,7 +16,13 @@ interface EraserToolProps {
 
 export function EraserTool({ eraserWidth, setEraserWidth, showIcon = true }: EraserToolProps) {
     return (
-        <div className="flex min-w-72 items-center gap-3">
+        <div
+            className="flex min-w-72 items-center gap-3"
+            onWheel={(event) => {
+                event.preventDefault();
+                setEraserWidth(adjustEraserWidth(eraserWidth, event.deltaY));
+            }}
+        >
             {showIcon ? <EraserIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
             <Slider
                 aria-label="Eraser size"
