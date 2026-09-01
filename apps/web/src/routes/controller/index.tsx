@@ -711,7 +711,7 @@ function Controller() {
                 removeLayerFromSlide(gesture.slideId, target.layer.numericId);
                 engine.sendJSON({
                     type: 'delete_layer',
-                    origin: 'controller:add_line_layer',
+                    origin: 'controller:erase_line_layer',
                     numericId: target.layer.numericId
                 });
                 continue;
@@ -736,7 +736,7 @@ function Controller() {
             upsertLayerOnSlide(gesture.slideId, nextLayer);
             engine.sendJSON({
                 type: 'upsert_layer',
-                origin: 'controller:add_line_layer',
+                origin: 'controller:erase_line_layer',
                 layer: nextLayer
             });
         }
