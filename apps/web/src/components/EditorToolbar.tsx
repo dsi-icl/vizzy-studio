@@ -447,6 +447,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <AppearanceToolbar
+                            showShapeFill={isShape}
                             showRectangleCornerRadius={
                                 activeLayer?.type === 'shape' && activeLayer.shape === 'rectangle'
                             }
