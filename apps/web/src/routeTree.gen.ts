@@ -59,7 +59,7 @@ import { Route as AdminWallsWallIdDevicesRouteImport } from './routes/admin/wall
 import { Route as ApiPortalV1BindRouteImport } from './routes/api/portal/v1/bind'
 import { Route as ApiPortalV1RebootRouteImport } from './routes/api/portal/v1/reboot'
 import { Route as ApiPortalV1SlidesRouteImport } from './routes/api/portal/v1/slides'
-import { Route as ApiPortalV1SlidesSlideIdImagesNumericIdZoomRouteImport } from './routes/api/portal/v1/slides/$slideId/images/$numericId/zoom'
+import { Route as ApiPortalV1SlidesSlideIdImagesLayerIdZoomRouteImport } from './routes/api/portal/v1/slides/$slideId/images/$layerId/zoom'
 import { Route as AuthQuarryEditorProjectIdIndexRouteImport } from './routes/_auth/quarry/editor/$projectId/index'
 import { Route as AuthQuarryEditorProjectIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$slideId'
 import { Route as AuthQuarryProjectsProjectIdIndexRouteImport } from './routes/_auth/quarry/projects/$projectId/index'
@@ -321,10 +321,10 @@ const ApiPortalV1SlidesRoute = ApiPortalV1SlidesRouteImport.update({
   path: '/api/portal/v1/slides',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute =
-  ApiPortalV1SlidesSlideIdImagesNumericIdZoomRouteImport.update({
-    id: '/$slideId/images/$numericId/zoom',
-    path: '/$slideId/images/$numericId/zoom',
+const ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute =
+  ApiPortalV1SlidesSlideIdImagesLayerIdZoomRouteImport.update({
+    id: '/$slideId/images/$layerId/zoom',
+    path: '/$slideId/images/$layerId/zoom',
     getParentRoute: () => ApiPortalV1SlidesRoute,
   } as any)
 const AuthQuarryEditorProjectIdIndexRoute =
@@ -442,7 +442,7 @@ export interface FileRoutesByFullPath {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRouteWithChildren
-  '/api/portal/v1/slides/$slideId/images/$numericId/zoom': typeof ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute
+  '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
   '/admin/walls/$wallId/': typeof AdminWallsWallIdIndexRoute
   '/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -501,7 +501,7 @@ export interface FileRoutesByTo {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRouteWithChildren
-  '/api/portal/v1/slides/$slideId/images/$numericId/zoom': typeof ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute
+  '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
   '/admin/walls/$wallId': typeof AdminWallsWallIdIndexRoute
   '/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -566,7 +566,7 @@ export interface FileRoutesById {
   '/api/portal/v1/bind': typeof ApiPortalV1BindRoute
   '/api/portal/v1/reboot': typeof ApiPortalV1RebootRoute
   '/api/portal/v1/slides': typeof ApiPortalV1SlidesRouteWithChildren
-  '/api/portal/v1/slides/$slideId/images/$numericId/zoom': typeof ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute
+  '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
   '/admin/walls/$wallId/': typeof AdminWallsWallIdIndexRoute
   '/_auth/quarry/editor/$projectId/$slideId': typeof AuthQuarryEditorProjectIdSlideIdRoute
   '/_auth/quarry/projects/$projectId/assets': typeof AuthQuarryProjectsProjectIdAssetsRoute
@@ -630,7 +630,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
-    | '/api/portal/v1/slides/$slideId/images/$numericId/zoom'
+    | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
     | '/admin/walls/$wallId/'
     | '/quarry/editor/$projectId/$slideId'
     | '/quarry/projects/$projectId/assets'
@@ -689,7 +689,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
-    | '/api/portal/v1/slides/$slideId/images/$numericId/zoom'
+    | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
     | '/admin/walls/$wallId'
     | '/quarry/editor/$projectId/$slideId'
     | '/quarry/projects/$projectId/assets'
@@ -753,7 +753,7 @@ export interface FileRouteTypes {
     | '/api/portal/v1/bind'
     | '/api/portal/v1/reboot'
     | '/api/portal/v1/slides'
-    | '/api/portal/v1/slides/$slideId/images/$numericId/zoom'
+    | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
     | '/admin/walls/$wallId/'
     | '/_auth/quarry/editor/$projectId/$slideId'
     | '/_auth/quarry/projects/$projectId/assets'
@@ -1155,11 +1155,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPortalV1SlidesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/portal/v1/slides/$slideId/images/$numericId/zoom': {
-      id: '/api/portal/v1/slides/$slideId/images/$numericId/zoom'
-      path: '/$slideId/images/$numericId/zoom'
-      fullPath: '/api/portal/v1/slides/$slideId/images/$numericId/zoom'
-      preLoaderRoute: typeof ApiPortalV1SlidesSlideIdImagesNumericIdZoomRouteImport
+    '/api/portal/v1/slides/$slideId/images/$layerId/zoom': {
+      id: '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
+      path: '/$slideId/images/$layerId/zoom'
+      fullPath: '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
+      preLoaderRoute: typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRouteImport
       parentRoute: typeof ApiPortalV1SlidesRoute
     }
     '/_auth/quarry/editor/$projectId/': {
@@ -1385,12 +1385,12 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
 )
 
 interface ApiPortalV1SlidesRouteChildren {
-  ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute: typeof ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute
+  ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute: typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
 }
 
 const ApiPortalV1SlidesRouteChildren: ApiPortalV1SlidesRouteChildren = {
-  ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute:
-    ApiPortalV1SlidesSlideIdImagesNumericIdZoomRoute,
+  ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute:
+    ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute,
 }
 
 const ApiPortalV1SlidesRouteWithChildren =
