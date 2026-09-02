@@ -368,9 +368,14 @@ function SignageEditor({
 
             <section className="space-y-3 rounded-lg border p-4">
                 <div>
-                    <h3 className="font-medium">Slide sources</h3>
+                    <h3 className="font-medium">Slide Content</h3>
                     <p className="text-xs text-muted-foreground">
-                        Only the unique active stage matching all four layout values is shown.
+                        Add full projects or individual slides from this section to the Slideshow
+                        Playlist.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        Note: Only shows slides that have been created on a stage which has the same
+                        dimensions as this slideshow (columns, rows, width, height).
                     </p>
                 </div>
                 {sourcesQuery.isLoading ? (
@@ -410,7 +415,7 @@ function SignageEditor({
                                                 )
                                             }
                                         >
-                                            <ArrowsClockwiseIcon /> Refresh imported
+                                            <ArrowsClockwiseIcon /> Import latest autosaved version
                                         </Button>
                                     </div>
                                 </div>
@@ -449,9 +454,11 @@ function SignageEditor({
 
             <section className="space-y-3 rounded-lg border p-4">
                 <div>
-                    <h3 className="font-medium">Loop entries</h3>
+                    <h3 className="font-medium">Slideshow playlist</h3>
+                    <p className="text-xs text-muted-foreground">Shows live content on display.</p>
                     <p className="text-xs text-muted-foreground">
-                        Drag entries to reorder them. Timing overrides are in seconds.
+                        Note: Users can re-order, delete &amp; add slides. Timing overrides are in
+                        seconds.
                     </p>
                 </div>
                 {draft.entries.length === 0 ? (
