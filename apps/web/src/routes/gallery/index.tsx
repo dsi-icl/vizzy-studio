@@ -96,6 +96,20 @@ function HomePage() {
     }, [searchStr]);
 
     const galleryEnrollmentGateActive = enrollmentModeEnabled && Boolean(deviceEnrollmentId);
+    const canUserManageWalls = Boolean(user) && !galleryEnrollmentGateActive;
+
+    const availableWalls = useMemo(
+        () =>
+            canUserManageWalls
+                ? walls.map((wall) => ({
+                      id: wall.wallId,
+                      name: wall.name,
+                      connectedNodes: wall.connectedNodes,
+                      isBound: Boolean(wall.boundProjectId)
+                  }))
+                : [],
+        [user, galleryEnrollmentGateActive, walls]
+    );
 
     const galleryEngine = useMemo(
         () => (typeof window !== 'undefined' ? GalleryEngine.getInstance() : null),
@@ -711,6 +725,7 @@ function HomePage() {
                                             <GalleryProjectCard
                                                 project={project}
                                                 allowWallActions={!galleryEnrollmentGateActive}
+                                                availableWalls={availableWalls}
                                                 autoOpenSignal={
                                                     autoOpenProjectId === project.id
                                                         ? autoOpenSignal

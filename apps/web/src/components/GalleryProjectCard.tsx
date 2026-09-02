@@ -1,7 +1,6 @@
 import { useAuth } from '@repo/auth/tanstack/hooks';
 import type { Project } from '@repo/ui/components/project-card';
 import { ProjectCard } from '@repo/ui/components/project-card';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -9,7 +8,6 @@ import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
-import { wallsQueryOptions } from '~/server/walls.queries';
 
 interface GalleryProjectCardProps {
     project: Project & {
@@ -21,6 +19,12 @@ interface GalleryProjectCardProps {
     forceCloseMinimizedSignal?: string | number | null;
     forceCloseSignal?: string | number | null;
     allowWallActions?: boolean;
+    availableWalls?: Array<{
+        id: string;
+        name: string;
+        connectedNodes: number;
+        isBound?: boolean;
+    }>;
 }
 
 export function GalleryProjectCard({
@@ -29,7 +33,8 @@ export function GalleryProjectCard({
     forceDemoteFullscreenSignal,
     forceCloseMinimizedSignal,
     forceCloseSignal,
-    allowWallActions = true
+    allowWallActions = true,
+    availableWalls = []
 }: GalleryProjectCardProps) {
     const { user } = useAuth();
 
@@ -37,19 +42,6 @@ export function GalleryProjectCard({
     const isEnrolledDevice = useGalleryStore((s) => s.isEnrolledDevice);
     const canUserManageWalls = Boolean(user) && allowWallActions;
     const canEnrolledDeviceLoad = isEnrolledDevice && !user && allowWallActions;
-    const { data: walls = [] } = useQuery({
-        ...wallsQueryOptions(),
-        enabled: canUserManageWalls
-    });
-
-    const availableWalls = canUserManageWalls
-        ? walls.map((wall) => ({
-              id: wall.wallId,
-              name: wall.name,
-              connectedNodes: wall.connectedNodes,
-              isBound: Boolean(wall.boundProjectId)
-          }))
-        : [];
 
     const handleLoadProject = useCallback(
         async (wallId: string) => {
