@@ -9,7 +9,7 @@ import { applyControllerTransientLayer } from '~/server/bus/bus.transientLayers'
 
 const routeParamsSchema = z.object({
     slideId: z.string().trim().min(1),
-    numericId: z.coerce.number().int().nonnegative()
+    layerId: z.coerce.number().int().nonnegative()
 });
 
 const requestSchema = z.object({
@@ -19,9 +19,9 @@ const requestSchema = z.object({
     final: z.boolean().optional().default(true)
 });
 
-const operation = 'POST /api/portal/v1/slides/:slideId/images/:numericId/zoom';
+const operation = 'POST /api/portal/v1/slides/:slideId/images/:layerId/zoom';
 
-export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$numericId/zoom')({
+export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$layerId/zoom')({
     server: {
         handlers: {
             OPTIONS: async ({ request }: { request: Request }) =>
@@ -32,7 +32,7 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                 params
             }: {
                 request: Request;
-                params: { slideId: string; numericId: string };
+                params: { slideId: string; layerId: string };
             }) => {
                 pruneExpiredPortalTokens();
 
@@ -114,7 +114,7 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                     return json(request, 409, { error: 'Scope no longer exists' });
                 }
 
-                const { slideId, numericId } = parsedParams.data;
+                const { slideId, layerId } = parsedParams.data;
                 if (scope.slideId !== slideId) {
                     await logAuditFailure({
                         action: 'PORTAL_IMAGE_ZOOM_FAILED',
@@ -130,7 +130,7 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                     });
                 }
 
-                const source = scope.layers.get(numericId);
+                const source = scope.layers.get(layerId);
                 if (!source || source.type !== 'image') {
                     if (parsedRequest.data.final) {
                         await logAuditSuccess({
@@ -140,7 +140,7 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                             resourceId: String(scopeId),
                             authContext,
                             executionContext: { surface: 'http', operation, request },
-                            changes: { slideId, numericId, applied: false }
+                            changes: { slideId, layerId, applied: false }
                         });
                     }
                     return new Response(null, {
@@ -177,11 +177,11 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$num
                         resourceId: String(scopeId),
                         authContext,
                         executionContext: { surface: 'http', operation, request },
-                        changes: { slideId, numericId, scale, centerX, centerY, applied: true }
+                        changes: { slideId, layerId, scale, centerX, centerY, applied: true }
                     });
                 }
 
-                return json(request, 200, { ok: true, numericId, scale });
+                return json(request, 200, { ok: true, numericId: layerId, scale });
             }
         }
     }
