@@ -39,18 +39,17 @@ export function GalleryProjectCard({
     const canEnrolledDeviceLoad = isEnrolledDevice && !user && allowWallActions;
     const { data: walls = [] } = useQuery({
         ...wallsQueryOptions(),
-        enabled: canUserManageWalls || canEnrolledDeviceLoad
+        enabled: canUserManageWalls
     });
 
-    const availableWalls =
-        canUserManageWalls || canEnrolledDeviceLoad
-            ? walls.map((wall) => ({
-                  id: wall.wallId,
-                  name: wall.name,
-                  connectedNodes: wall.connectedNodes,
-                  isBound: Boolean(wall.boundProjectId)
-              }))
-            : [];
+    const availableWalls = canUserManageWalls
+        ? walls.map((wall) => ({
+              id: wall.wallId,
+              name: wall.name,
+              connectedNodes: wall.connectedNodes,
+              isBound: Boolean(wall.boundProjectId)
+          }))
+        : [];
 
     const handleLoadProject = useCallback(
         async (wallId: string) => {
