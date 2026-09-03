@@ -422,7 +422,9 @@ export const Route = createFileRoute('/api/proxy')({
                         headers: {
                             'content-type': 'text/html; charset=utf-8',
                             'cache-control': 'no-store',
-                            'x-content-type-options': 'nosniff'
+                            'x-content-type-options': 'nosniff',
+                            'content-security-policy':
+                                "sandbox allow-scripts allow-forms; default-src 'self' 'unsafe-inline' https: data: blob:;"
                         }
                     });
                 } catch {
