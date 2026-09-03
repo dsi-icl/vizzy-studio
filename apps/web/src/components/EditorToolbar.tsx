@@ -9,6 +9,7 @@ import {
     ArrowLineUpIcon,
     ArrowsClockwiseIcon,
     ArrowsInLineHorizontalIcon,
+    ArrowsOutLineHorizontalIcon,
     CircleNotchIcon,
     CheckCircleIcon,
     EraserIcon,
@@ -340,7 +341,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         variant={isSnapping ? 'outline' : 'ghost'}
                         onClick={toggleSnapping}
                     >
-                        <ArrowsInLineHorizontalIcon weight={showGrid ? 'fill' : 'regular'} />
+                        {isSnapping ? (
+                            <ArrowsOutLineHorizontalIcon weight="fill" />
+                        ) : (
+                            <ArrowsInLineHorizontalIcon weight="fill" />
+                        )}
                     </TipButton>
                     <TipButton
                         tip={showGrid ? 'Hide Grid' : 'Show Grid'}
