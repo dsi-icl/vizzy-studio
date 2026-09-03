@@ -900,9 +900,9 @@ export async function handleHelloAuth(peer: Peer, data: Record<string, any>) {
         resolvedAuth.user = user;
     }
 
-    sendJSON(peer, { type: 'hello_authenticated' });
     const registration = await completeHelloRegistration(peer, pending.hello, resolvedAuth);
     if (!registration.pendingEnrollment) {
+        sendJSON(peer, { type: 'hello_authenticated' });
         clearPendingHelloAuth(peer.id);
     }
 }

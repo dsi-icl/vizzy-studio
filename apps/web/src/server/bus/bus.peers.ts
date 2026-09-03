@@ -229,12 +229,36 @@ export async function completeHelloRegistration(
                   kind: 'wall'
               })
             : null;
+        if (wallDevice?.status === 'revoked') {
+            sendJSON(peer, {
+                type: 'auth_denied',
+                reason: 'device_revoked'
+            });
+            try {
+                peer.close();
+            } catch {
+                // no-op
+            }
+            return { pendingEnrollment: false };
+        }
         if (wallDevice?.status === 'pending') {
             sendJSON(peer, {
                 type: 'device_enrollment',
                 id: wallDevice.id
             });
             return { pendingEnrollment: true };
+        }
+        if (wallDevice?.assignedWallId && wallDevice.assignedWallId !== parsed.wallId) {
+            sendJSON(peer, {
+                type: 'auth_denied',
+                reason: 'wall_assignment_mismatch'
+            });
+            try {
+                peer.close();
+            } catch {
+                // no-op
+            }
+            return { pendingEnrollment: false };
         }
         const effectiveWallId = wallDevice?.assignedWallId ?? parsed.wallId;
         const intendedWallSlug = parsed.wallId;
@@ -292,6 +316,18 @@ export async function completeHelloRegistration(
                 publicKey: parsed.devicePublicKey,
                 kind: 'controller'
             });
+            if (controllerDevice.status === 'revoked') {
+                sendJSON(peer, {
+                    type: 'auth_denied',
+                    reason: 'device_revoked'
+                });
+                try {
+                    peer.close();
+                } catch {
+                    // no-op
+                }
+                return { pendingEnrollment: false };
+            }
             if (controllerDevice.status === 'pending') {
                 const hasPortalAccess = Boolean(passedAuthContext.portal?.wallId);
                 const isAdminUser = passedAuthContext.user?.role === 'admin';
@@ -305,13 +341,14 @@ export async function completeHelloRegistration(
             }
         }
 
+        const effectiveWallId = controllerDevice?.assignedWallId ?? parsed.wallId;
         const authContext: AuthContext = {
             ...(passedAuthContext.user ? { user: passedAuthContext.user } : {}),
             ...(controllerDevice
                 ? {
                       device: {
                           kind: 'controller' as const,
-                          wallId: parsed.wallId,
+                          wallId: effectiveWallId,
                           id: controllerDevice.id
                       }
                   }
@@ -319,7 +356,7 @@ export async function completeHelloRegistration(
                   ? {
                         device: {
                             kind: 'controller' as const,
-                            wallId: parsed.wallId,
+                            wallId: effectiveWallId,
                             id: passedAuthContext.device.id
                         }
                     }
@@ -329,15 +366,15 @@ export async function completeHelloRegistration(
 
         registerPeer(peer, {
             specimen: 'controller',
-            wallId: parsed.wallId,
+            wallId: effectiveWallId,
             authContext
         });
 
-        const boundScope = wallBindings.get(parsed.wallId);
+        const boundScope = wallBindings.get(effectiveWallId);
         const scope = boundScope !== undefined ? scopedState.get(boundScope) : null;
         sendJSON(peer, {
             type: 'wall_binding_status',
-            wallId: parsed.wallId,
+            wallId: effectiveWallId,
             bound: boundScope !== undefined,
             ...(scope
                 ? {
@@ -345,20 +382,20 @@ export async function completeHelloRegistration(
                       commitId: scope.commitId,
                       slideId: scope.slideId,
                       customRenderUrl: scope.customRenderUrl,
-                      boundSource: wallBindingSources.get(parsed.wallId)
+                      boundSource: wallBindingSources.get(effectiveWallId)
                   }
                 : {})
-        });
+        } satisfies GSMessage);
         peer.send(
             boundScope !== undefined
-                ? getWallHydratePayload(boundScope, parsed.wallId)
+                ? getWallHydratePayload(boundScope, effectiveWallId)
                 : EMPTY_HYDRATE
         );
         if (scope?.commitId) {
             void sendSlidesSnapshotToControllerPeer(peer, scope.commitId);
         }
 
-        console.log(`[WS] Controller joined wallId=${parsed.wallId}`);
+        console.log(`[WS] Controller joined wallId=${effectiveWallId}`);
         logPeerCounts();
         return { pendingEnrollment: false };
     }
