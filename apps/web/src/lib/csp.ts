@@ -16,6 +16,7 @@ export function buildBaseCsp(opts: {
         'base-uri': ["'self'"],
         'object-src': ["'none'"],
         'form-action': ["'self'"],
+        'frame-ancestors': ["'self'"],
         'connect-src': ["'self'", 'ws:', 'wss:', 'https:', ...(isDev ? ['http:'] : [])],
         'manifest-src': ["'self'"],
         'frame-src': ["'self'", 'https:', ...(isDev ? ['http:'] : [])],
