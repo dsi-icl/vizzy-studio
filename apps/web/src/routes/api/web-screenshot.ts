@@ -18,16 +18,20 @@ import {
 } from '~/server/rateLimit';
 import type { AuthContext } from '~/server/requestAuthContext';
 
+const WEBSHOT_BASE_ID_PATTERN = /^webshot_[0-9a-f]{32}$/;
+
 function generateBaseId(): string {
     return `webshot_${randomBytes(64).toString('hex').slice(0, 32)}`;
 }
 
 async function cleanupPreviousFiles(baseId: string): Promise<void> {
+    if (!WEBSHOT_BASE_ID_PATTERN.test(baseId)) return;
     try {
         const { readdir } = await import('node:fs/promises');
         const files = await readdir(ASSET_DIR);
+        const variantPattern = new RegExp(`^${baseId}(?:_\\d+)?\\.(?:png|webp)$`);
         for (const file of files) {
-            if (file.startsWith(baseId)) {
+            if (variantPattern.test(file)) {
                 await unlink(join(ASSET_DIR, file)).catch(() => {});
             }
         }
@@ -259,11 +263,30 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 }
 
                 // Clean up previous screenshot files and DB record if provided
-                if (body.previousBaseId) {
-                    await Promise.all([
-                        cleanupPreviousFiles(body.previousBaseId),
-                        dbCol.assets.hardDeleteByUrl(`${body.previousBaseId}.png`)
-                    ]);
+                if (
+                    typeof body.previousBaseId === 'string' &&
+                    body.previousBaseId.trim().length > 0
+                ) {
+                    const candidateBaseId = body.previousBaseId.trim();
+                    if (!WEBSHOT_BASE_ID_PATTERN.test(candidateBaseId)) {
+                        return new Response(
+                            JSON.stringify({ error: 'Invalid previousBaseId format' }),
+                            {
+                                status: 400,
+                                headers: { 'Content-Type': 'application/json' }
+                            }
+                        );
+                    }
+                    const previousAsset = await dbCol.assets.findOne({
+                        url: `${candidateBaseId}.png`,
+                        projectId
+                    });
+                    if (previousAsset) {
+                        await Promise.all([
+                            cleanupPreviousFiles(candidateBaseId),
+                            dbCol.assets.hardDeleteByUrl(`${candidateBaseId}.png`)
+                        ]);
+                    }
                 }
 
                 const baseId = generateBaseId();
