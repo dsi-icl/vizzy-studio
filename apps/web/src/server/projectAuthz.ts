@@ -64,6 +64,10 @@ export function canPublishProject(actor: Actor): boolean {
     return actor.trustedPublisher === true;
 }
 
+export function canViewProjectAudits(actor: Actor): boolean {
+    return isAdmin(actor.role) || isOperator(actor.role);
+}
+
 export async function resolveProjectIdForCommit(commitId: string): Promise<string | null> {
     if (!commitId) return null;
     const commit = await dbCol.commits.findById(commitId);
