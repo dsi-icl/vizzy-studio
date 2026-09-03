@@ -41,7 +41,6 @@ import {
     unbindWall,
     unregisterActiveVideo,
     unregisterPeer,
-    upsertControllerTransientLayer,
     galleriesByWallId,
     signageBlankWalls,
     wallBindings,
@@ -90,6 +89,10 @@ import {
     handleEditorScopeVacated,
     registerEditorPeer
 } from './bus.peers';
+import {
+    applyControllerTransientLayer,
+    relayControllerTransientLayer
+} from './bus.transientLayers';
 
 export interface HandlerCtx {
     entry: PeerEntry;
@@ -200,7 +203,14 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
             if (isControllerTransientUpsert) {
                 // Controller drawings are transient wall overlays: no DB persistence and no editor fanout.
                 if (entry.meta.specimen !== 'controller') return;
-                upsertControllerTransientLayer(entry.meta.wallId, layer);
+                applyControllerTransientLayer({
+                    wallId: entry.meta.wallId,
+                    layer,
+                    origin: data.origin,
+                    rawText: relayPayload,
+                    exclude: entry
+                });
+                return;
             } else {
                 // Playback timeline is authoritative via video_play/pause/seek handlers.
                 // Generic upsert_layer must never override live playback state.
@@ -262,11 +272,16 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
         // recomputeLayerNodes(layer.numericId, layer, scopeId);
         if (isControllerTransientUpsert) {
             if (entry.meta.specimen !== 'controller') return;
-            broadcastToWallNodesRaw(entry.meta.wallId, relayPayload);
-            broadcastToControllersByWallRaw(entry.meta.wallId, relayPayload, entry);
-        } else {
-            broadcastToScopeRaw(scopeId, relayPayload, entry);
+            relayControllerTransientLayer({
+                wallId: entry.meta.wallId,
+                layer,
+                origin: data.origin,
+                rawText: relayPayload,
+                exclude: entry
+            });
+            return;
         }
+        broadcastToScopeRaw(scopeId, relayPayload, entry);
     }
 });
 
@@ -945,8 +960,13 @@ export async function handleHelloAuth(peer: Peer, data: Record<string, any>) {
         resolvedAuth.user = user;
     }
 
-    sendJSON(peer, { type: 'hello_authenticated' });
     const registration = await completeHelloRegistration(peer, pending.hello, resolvedAuth);
+    if (registration.rejected) {
+        clearPendingHelloAuth(peer.id);
+        return;
+    }
+
+    sendJSON(peer, { type: 'hello_authenticated' });
     if (!registration.pendingEnrollment) {
         clearPendingHelloAuth(peer.id);
     }

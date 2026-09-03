@@ -102,6 +102,11 @@ export class AuditsCollection extends BaseCollection<AuditLogDocument> {
                     {
                         key: { 'executionContext.surface': 1, createdAt: -1 },
                         name: 'audits_surface_createdAt_desc'
+                    },
+                    {
+                        key: { expireAt: 1 },
+                        name: 'audits_expireAt_ttl',
+                        expireAfterSeconds: 0
                     }
                 ])
                 .then(() => {})
@@ -111,6 +116,14 @@ export class AuditsCollection extends BaseCollection<AuditLogDocument> {
                 });
         }
         return this.indexesReady;
+    }
+
+    protected override toRaw(data: any): Record<string, any> {
+        const raw = super.toRaw(data);
+        return {
+            ...raw,
+            expireAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+        };
     }
 
     protected fromDB(doc: Document): AuditLogDocument {

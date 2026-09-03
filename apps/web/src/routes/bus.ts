@@ -289,9 +289,25 @@ function dispatchJsonMessage(
 
 // ── WebSocket Hooks ─────────────────────────────────────────────────────────
 
+const pendingHandshakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 const hooks = defineHooks({
     open(peer) {
         peer.websocket.binaryType = 'arraybuffer';
+        touchPing(peer.id);
+        const timer = setTimeout(() => {
+            pendingHandshakeTimers.delete(peer.id);
+            if (!peers.has(peer.id)) {
+                console.warn(
+                    `[WS] Peer ${peer.id} timed out during handshake (silent/unauthenticated)`
+                );
+                try {
+                    peer.close();
+                } catch {}
+            }
+        }, 15_000);
+        pendingHandshakeTimers.set(peer.id, timer);
+
         peer.send(
             JSON.stringify({
                 type: 'server_hello',
@@ -303,6 +319,12 @@ const hooks = defineHooks({
     },
 
     close(peer) {
+        const handshakeTimer = pendingHandshakeTimers.get(peer.id);
+        if (handshakeTimer) {
+            clearTimeout(handshakeTimer);
+            pendingHandshakeTimers.delete(peer.id);
+        }
+
         wsRateLimitStrikes.delete(peer.id);
         editorProjectPermissions.delete(peer.id);
         clearPendingHelloAuth(peer.id);

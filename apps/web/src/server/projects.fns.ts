@@ -377,6 +377,39 @@ export const $updateProject = createServerFn({ method: 'POST' })
             });
             throw new Error('Access denied');
         }
+
+        if (data.collaborators !== undefined) {
+            const isOwner = (await ownsProject(actor, data.id)) || actor.role === 'admin';
+            if (!isOwner) {
+                await denyProjectFn({
+                    context,
+                    operation: '$updateProject',
+                    reasonCode: 'PROJECT_OWNER_REQUIRED',
+                    projectId: data.id,
+                    resourceType: 'project',
+                    resourceId: data.id
+                });
+                throw new Error('Only the project owner can update collaborators');
+            }
+        }
+
+        if (
+            (data.publishedCommitId !== undefined && data.publishedCommitId !== null) ||
+            data.visibility === 'public'
+        ) {
+            if (!canPublishProject(actor)) {
+                await denyProjectFn({
+                    context,
+                    operation: '$updateProject',
+                    reasonCode: 'PROJECT_PUBLISH_FORBIDDEN',
+                    projectId: data.id,
+                    resourceType: 'project',
+                    resourceId: data.id
+                });
+                throw new Error('Publish access denied');
+            }
+        }
+
         return updateProject(
             data,
             context.user.email,

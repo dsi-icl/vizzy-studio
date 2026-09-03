@@ -1,6 +1,7 @@
 import type { JsonValue } from '@repo/db/documents';
 import { createFileRoute } from '@tanstack/react-router';
 
+import { assertSafeTargetUrl, fetchWithSsrfProtection } from '~/lib/networkSecurity';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
@@ -254,6 +255,37 @@ export const Route = createFileRoute('/api/proxy')({
                     return redirectTo('/web-nonet?l=wall');
                 }
 
+                try {
+                    await assertSafeTargetUrl(rawUrl);
+                } catch (err) {
+                    await logAssetDenied({
+                        request,
+                        authContext,
+                        reasonCode: 'BLOCKED_TARGET_URL',
+                        statusMessage: 'Blocked target URL',
+                        details: {
+                            url: rawUrl,
+                            error: err instanceof Error ? err.message : String(err)
+                        }
+                    });
+                    if (checkOnly) {
+                        return Response.json(
+                            {
+                                ok: false,
+                                reason: 'blocked_target_url',
+                                fallback: '/web-nonet?l=wall'
+                            },
+                            {
+                                status: 200,
+                                headers: isDev
+                                    ? { 'X-Dev-Status-Message': 'Blocked target URL' }
+                                    : undefined
+                            }
+                        );
+                    }
+                    return redirectTo('/web-nonet?l=wall');
+                }
+
                 const allowlist = getAllowedReferrers(request);
                 const referer = request.headers.get('referer');
                 const origin = request.headers.get('origin');
@@ -296,8 +328,7 @@ export const Route = createFileRoute('/api/proxy')({
                 try {
                     // Intentionally do NOT forward caller cookies/auth headers to upstream.
                     // This keeps wall/session credentials scoped to this app only.
-                    const upstreamResponse = await fetch(rawUrl, {
-                        redirect: 'follow',
+                    const upstreamResponse = await fetchWithSsrfProtection(rawUrl, {
                         signal: controller.signal,
                         headers: {
                             'user-agent': 'vizzy-wall-proxy/1.0',
@@ -422,7 +453,9 @@ export const Route = createFileRoute('/api/proxy')({
                         headers: {
                             'content-type': 'text/html; charset=utf-8',
                             'cache-control': 'no-store',
-                            'x-content-type-options': 'nosniff'
+                            'x-content-type-options': 'nosniff',
+                            'content-security-policy':
+                                "sandbox allow-scripts allow-forms; default-src 'self' 'unsafe-inline' https: data: blob:;"
                         }
                     });
                 } catch {

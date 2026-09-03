@@ -79,7 +79,7 @@ test('controller renders the canonical bound composition @visual', async ({ brow
 
         await waitForWallHydrated(wallPage, { source: 'gallery', foregroundLayerCount: 6 });
         const canonicalSlide = controllerPage.getByRole('button', {
-            name: 'Slide Rendering baseline'
+            name: 'Rendering baseline'
         });
         await expect(canonicalSlide).toBeVisible({ timeout: 20_000 });
         await waitForFonts(controllerPage);

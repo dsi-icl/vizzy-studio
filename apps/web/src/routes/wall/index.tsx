@@ -820,7 +820,7 @@ function WallApp() {
                 key={`custom-render:${iframeGateCycle}`}
                 title="Custom Render Wall"
                 src={finalSrc}
-                sandbox="allow-scripts allow-same-origin"
+                sandbox={customRenderProxy ? 'allow-scripts' : 'allow-scripts allow-forms'}
                 style={{
                     position: 'absolute',
                     top: customRenderCompat ? `${-myViewport.y}px` : 0,

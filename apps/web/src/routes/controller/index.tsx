@@ -20,6 +20,7 @@ import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
+import { isTouchEvent } from '~/lib/pointerEvents';
 import type { LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
@@ -634,7 +635,7 @@ function Controller() {
     const handleDrawStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
             if (!canDraw || !isDrawing) return;
-            if (e.evt instanceof TouchEvent && e.evt.touches.length >= 2) return;
+            if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) return;
             const point = getStagePoint(e);
             if (!point) return;
             startLine(point.x, point.y);
@@ -645,7 +646,7 @@ function Controller() {
     const handleDrawMove = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
             if (!canDraw || !isDrawing || currentLine.length < 2) return;
-            if (e.evt instanceof TouchEvent && e.evt.touches.length >= 2) {
+            if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) {
                 clearCurrentLine();
                 return;
             }
@@ -668,7 +669,7 @@ function Controller() {
 
     const handleTouchStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (e.evt instanceof TouchEvent && e.evt.touches?.length === 2) {
+            if (isTouchEvent(e.evt) && e.evt.touches?.length === 2) {
                 lastX.current = e.evt.touches[0].clientX;
                 if (stageSlot.current) {
                     stageLastX.current = stageSlot.current.scrollLeft;
@@ -683,7 +684,7 @@ function Controller() {
     const handleTouchMove = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
             e.evt.preventDefault();
-            if (e.evt instanceof TouchEvent && e.evt.touches.length === 2) {
+            if (isTouchEvent(e.evt) && e.evt.touches.length === 2) {
                 if (e.evt.targetTouches && e.evt.targetTouches.length > 1) {
                     const currentX = e.evt.touches[0].screenX;
                     const deltaX = currentX - lastX.current;
@@ -700,7 +701,7 @@ function Controller() {
 
     const handleTouchEnd = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (e.evt instanceof TouchEvent && e.evt.touches.length >= 1) return;
+            if (isTouchEvent(e.evt) && e.evt.touches.length >= 1) return;
             handleDrawEnd();
         },
         [handleDrawEnd]
@@ -1132,7 +1133,7 @@ function Controller() {
                                     }`}
                                 >
                                     <span className="flex items-center justify-between gap-2">
-                                        <span className="font-medium">Slide {slide.name}</span>
+                                        <span className="font-medium">{slide.name}</span>
                                         {pendingSlideId === slide.id ? (
                                             <CircleNotchIcon
                                                 size={14}

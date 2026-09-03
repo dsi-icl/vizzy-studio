@@ -51,10 +51,12 @@ function buildTrustedOrigins(values: string[], fallbackBaseUrl: string): string[
         if (origin) out.add(origin);
     }
     // Dev ergonomics: sign-out/sign-in from local ports should not 403 due to origin strictness.
-    out.add('http://localhost:3000');
-    out.add('http://127.0.0.1:3000');
-    out.add('http://localhost:5173');
-    out.add('http://127.0.0.1:5173');
+    if (env.NODE_ENV !== 'production') {
+        out.add('http://localhost:3000');
+        out.add('http://127.0.0.1:3000');
+        out.add('http://localhost:5173');
+        out.add('http://127.0.0.1:5173');
+    }
     return Array.from(out);
 }
 
@@ -127,6 +129,30 @@ async function sendAuthEmail(input: {
         console.error('[AuthMail] send failed', err, input.fallbackLog);
     }
 }
+const otpRateLimitMap = new Map<string, number[]>();
+const OTP_WINDOW_MS = 5 * 60 * 1000;
+const OTP_MAX_PER_WINDOW = 3;
+
+function checkOtpRateLimit(email: string): boolean {
+    const normalized = email.trim().toLowerCase();
+    const now = Date.now();
+    const timestamps = (otpRateLimitMap.get(normalized) ?? []).filter(
+        (ts) => now - ts < OTP_WINDOW_MS
+    );
+    if (timestamps.length >= OTP_MAX_PER_WINDOW) {
+        return false;
+    }
+    timestamps.push(now);
+    otpRateLimitMap.set(normalized, timestamps);
+    if (otpRateLimitMap.size > 10_000) {
+        for (const [k, list] of otpRateLimitMap) {
+            if (list.every((ts) => now - ts >= OTP_WINDOW_MS)) {
+                otpRateLimitMap.delete(k);
+            }
+        }
+    }
+    return true;
+}
 
 export const auth = betterAuth({
     baseURL: {
@@ -134,19 +160,32 @@ export const auth = betterAuth({
         fallback: safeAllowedHosts[0]
     },
     trustedOrigins: async (request) => {
-        const dynamic = new Set(trustedOriginSeeds);
+        const origins = new Set(trustedOriginSeeds);
         if (request) {
             const requestOrigin = toOrigin(request.url);
-            if (requestOrigin) dynamic.add(requestOrigin);
-            const originHeader = request.headers.get('origin');
-            if (originHeader) {
-                const normalized = toOrigin(originHeader) ?? originHeader;
-                if (normalized) dynamic.add(normalized);
+            if (requestOrigin) {
+                try {
+                    const parsed = new URL(requestOrigin);
+                    if (
+                        safeAllowedHosts.includes(parsed.host) ||
+                        safeAllowedHosts.includes(parsed.hostname)
+                    ) {
+                        origins.add(requestOrigin);
+                    }
+                } catch {
+                    // Non-URL or unparseable origin ignored
+                }
             }
         }
-        return Array.from(dynamic);
+        return Array.from(origins);
     },
-    secret: env.SERVER_AUTH_SECRET || 'degraded-mode-secret',
+    secret:
+        env.SERVER_AUTH_SECRET ||
+        (env.NODE_ENV === 'production'
+            ? (() => {
+                  throw new Error('SERVER_AUTH_SECRET must be set in production');
+              })()
+            : 'degraded-mode-secret'),
     telemetry: {
         enabled: false
     },
@@ -187,12 +226,21 @@ export const auth = betterAuth({
         ...(env.NODE_ENV === 'test' ? [testUtils()] : []),
         emailOTP({
             sendVerificationOTP: async ({ email, otp, type }) => {
+                if (env.NODE_ENV !== 'test' && !checkOtpRateLimit(email)) {
+                    console.warn(`[Auth] OTP dispatch rate limited for ${email}`);
+                    throw new Error(
+                        'Too many OTP requests for this email. Please wait a few minutes before trying again.'
+                    );
+                }
                 const html = await render(OtpEmail({ otp }));
                 await sendAuthEmail({
                     to: email,
                     subject: 'Your Vizzy Studio OTP',
                     html,
-                    fallbackLog: `OTP to ${email} : ${otp} (${type})`
+                    fallbackLog:
+                        env.NODE_ENV === 'production'
+                            ? `OTP to ${email} (${type})`
+                            : `OTP to ${email} : ${otp} (${type})`
                 });
             }
         }),

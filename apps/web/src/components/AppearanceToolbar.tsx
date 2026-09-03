@@ -7,8 +7,10 @@ import { RectangleCornerRadiusTool } from './RectangleCornerRadiusTool';
 import { StrokeTool } from './StrokeTool';
 
 export function AppearanceToolbar({
+    showShapeFill,
     showRectangleCornerRadius
 }: {
+    showShapeFill: boolean;
     showRectangleCornerRadius: boolean;
 }) {
     const {
@@ -39,7 +41,9 @@ export function AppearanceToolbar({
 
     return (
         <div className="flex items-center gap-2">
-            <ColorPickerPopover value={shapeFill} onChange={setShapeFill} />
+            {showShapeFill ? (
+                <ColorPickerPopover value={shapeFill} onChange={setShapeFill} tip="Fill" />
+            ) : null}
             <StrokeTool
                 strokeColor={strokeColor}
                 setStrokeColor={setStrokeColor}

@@ -46,9 +46,7 @@ describe('test harness smoke', () => {
         expect(await response.text()).toBe('');
     });
 
-    // Known main-branch gap: the upload-auth implementation is intentionally not part of this
-    // harness-only PR. Keep the contract executable without making the unsafe response canonical.
-    test.skip('TUS creation rejects unauthenticated work before accepting upload bytes', async () => {
+    test('TUS creation rejects unauthenticated work before accepting upload bytes', async () => {
         const manifest = readManifest();
         const response = await fetch(`${manifest.baseUrl}/api/uploads`, {
             method: 'POST',
