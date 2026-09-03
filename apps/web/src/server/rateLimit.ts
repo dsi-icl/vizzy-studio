@@ -60,13 +60,36 @@ export function getClientIpFromHeaders(headers: MaybeHeaders): string {
     return 'unknown';
 }
 
+const MAX_STORE_ENTRIES = 50_000;
+const PRUNE_INTERVAL_MS = 60_000;
+let lastPruneTime = Date.now();
+
+function pruneStaleEntries(now: number) {
+    const cutoff = now - WINDOW_MS;
+    for (const [key, entry] of store.entries()) {
+        entry.timestamps = entry.timestamps.filter((ts: number) => ts >= cutoff);
+        if (entry.timestamps.length === 0) {
+            store.delete(key);
+        }
+    }
+    if (store.size > MAX_STORE_ENTRIES) {
+        const excess = store.size - MAX_STORE_ENTRIES;
+        let count = 0;
+        for (const key of store.keys()) {
+            store.delete(key);
+            count++;
+            if (count >= excess) break;
+        }
+    }
+}
+
 export function buildRateLimitSubjectKey(input: {
     actorId?: string | null;
     ip?: string | null;
     peerId?: string | null;
 }): string {
     if (input.actorId) return `actor:${input.actorId}`;
-    if (input.ip) return `ip:${input.ip}`;
+    if (input.ip && input.ip !== 'unknown') return `ip:${input.ip}`;
     if (input.peerId) return `peer:${input.peerId}`;
     return 'anonymous';
 }
@@ -78,12 +101,19 @@ export function checkRateLimit(input: { subjectKey: string }): {
     limitPerMinute: number;
 } {
     const now = Date.now();
+    if (now - lastPruneTime > PRUNE_INTERVAL_MS) {
+        lastPruneTime = now;
+        pruneStaleEntries(now);
+    }
+
     const cutoff = now - WINDOW_MS;
     const key = input.subjectKey;
+    const limit =
+        key === 'anonymous' ? RATE_LIMIT_PER_MINUTE * 10 : RATE_LIMIT_PER_MINUTE;
     const entry = store.get(key) ?? { timestamps: [] };
 
     entry.timestamps = entry.timestamps.filter((ts: number) => ts >= cutoff);
-    if (entry.timestamps.length >= RATE_LIMIT_PER_MINUTE) {
+    if (entry.timestamps.length >= limit) {
         const oldest = entry.timestamps[0] ?? now;
         const retryAfterMs = Math.max(1_000, WINDOW_MS - (now - oldest));
         store.set(key, entry);
@@ -91,7 +121,7 @@ export function checkRateLimit(input: { subjectKey: string }): {
             allowed: false,
             retryAfterMs,
             remaining: 0,
-            limitPerMinute: RATE_LIMIT_PER_MINUTE
+            limitPerMinute: limit
         };
     }
 
@@ -101,7 +131,7 @@ export function checkRateLimit(input: { subjectKey: string }): {
     return {
         allowed: true,
         retryAfterMs: 0,
-        remaining: Math.max(0, RATE_LIMIT_PER_MINUTE - entry.timestamps.length),
-        limitPerMinute: RATE_LIMIT_PER_MINUTE
+        remaining: Math.max(0, limit - entry.timestamps.length),
+        limitPerMinute: limit
     };
 }

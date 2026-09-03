@@ -13,9 +13,17 @@ const TOKEN_TTL = 15 * 60 * 1000; // 15 minutes
 const _hmr = (process as any).__UPLOAD_TOKENS_HMR__ ?? { tokens: new Map<string, UploadToken>() };
 (process as any).__UPLOAD_TOKENS_HMR__ = _hmr;
 
-const tokens: Map<string, UploadToken> = _hmr.tokens;
+/** Prune expired tokens that were never validated or redeemed. */
+export function pruneExpiredUploadTokens() {
+    const now = Date.now();
+    for (const [key, entry] of tokens.entries()) {
+        if (now > entry.expiresAt) {
+            tokens.delete(key);
+        }
+    }
+}
 
-/** Create a short-lived upload token for a project. Returns the 8-char token string. */
+/** Create a short-lived upload token for a project. Returns the secure token string. */
 export function createUploadToken(
     projectId: string,
     userEmail: string
@@ -23,7 +31,8 @@ export function createUploadToken(
     token: string;
     expiresAt: number;
 } {
-    const token = crypto.randomUUID().slice(0, 8);
+    pruneExpiredUploadTokens();
+    const token = crypto.randomUUID().replace(/-/g, '');
     const expiresAt = Date.now() + TOKEN_TTL;
     tokens.set(token, { projectId, userEmail, createdAt: Date.now(), expiresAt });
     return { token, expiresAt };
