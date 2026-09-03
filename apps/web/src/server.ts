@@ -180,6 +180,13 @@ export default createServerEntry({
     async fetch(request) {
         await runStartupChecksOnce();
         if (bootIssues.length > 0) {
+            console.error('[Boot] Startup checks encountered issues:', bootIssues);
+            const publicIssues =
+                env.NODE_ENV === 'production'
+                    ? [
+                          'Startup configuration or upstream connectivity issue detected. Please check server logs.'
+                      ]
+                    : bootIssues;
             const url = new URL(request.url);
             if (url.pathname.startsWith('/api/')) {
                 return new Response(
@@ -187,12 +194,12 @@ export default createServerEntry({
                         error: 'service_unavailable',
                         message:
                             'Service started in degraded mode due to startup configuration issues.',
-                        issues: bootIssues
+                        issues: publicIssues
                     }),
                     { status: 503, headers: { 'Content-Type': 'application/json' } }
                 );
             }
-            return new Response(renderBootErrorPage(bootIssues), {
+            return new Response(renderBootErrorPage(publicIssues), {
                 status: 503,
                 headers: { 'Content-Type': 'text/html; charset=utf-8' }
             });
