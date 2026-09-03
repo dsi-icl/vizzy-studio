@@ -41,6 +41,7 @@ import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
+import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
 import {
     getAngle,
@@ -150,9 +151,8 @@ export function EditorSlate() {
         let clientX: number | null = null;
         let clientY: number | null = null;
 
-        if ('touches' in evt) {
-            const touchEvt = evt as TouchEvent;
-            const touch = touchEvt.touches[0] ?? touchEvt.changedTouches?.[0];
+        if (isTouchEvent(evt)) {
+            const touch = evt.touches[0] ?? evt.changedTouches?.[0];
             if (!touch) return;
             clientX = touch.clientX;
             clientY = touch.clientY;
@@ -1139,19 +1139,19 @@ export function EditorSlate() {
     };
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
-        if ('touches' in e.evt || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
+        if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
             setHoveredLayerId(null);
         }
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const currentSelectedLayer = currentSelectedIds[0]
             ? useEditorStore.getState().layers.get(Number.parseInt(currentSelectedIds[0], 10))
             : undefined;
-        const isTwoFingerTouch = 'touches' in e.evt && e.evt.touches?.length === 2;
+        const isTwoFingerTouch = isTouchEvent(e.evt) && e.evt.touches?.length === 2;
         if (isDrawing && isTwoFingerTouch) {
             setCurrentLine([]);
         }
         if (
-            ('touches' in e.evt && e.evt.touches?.length === 1) ||
+            (isTouchEvent(e.evt) && e.evt.touches?.length === 1) ||
             (e.evt instanceof MouseEvent && e.type === 'mousedown' && e.evt.button === 0)
         ) {
             const clickedOnEmpty = e.target === e.target.getStage();
@@ -1177,7 +1177,7 @@ export function EditorSlate() {
             if (!isDrawing) return;
         }
         if (
-            'touches' in e.evt &&
+            isTouchEvent(e.evt) &&
             e.evt.touches?.length === 2 &&
             currentSelectedIds.length > 0 &&
             !currentSelectedLayer?.config.locked
@@ -1195,7 +1195,7 @@ export function EditorSlate() {
             lastCenter.current = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
             return;
         }
-        if ('touches' in e.evt && e.evt.touches?.length === 2) {
+        if (isTouchEvent(e.evt) && e.evt.touches?.length === 2) {
             lastX.current = e.evt.touches[0].clientX;
             if (stageSlot.current) {
                 stageLastX.current = stageSlot.current.scrollLeft;
@@ -1232,7 +1232,7 @@ export function EditorSlate() {
                 targetId && !currentSelectedIds.includes(targetId) ? targetId : null;
             setHoveredLayerId(nextHoveredLayerId);
         }
-        const isTwoFingerTouch = 'touches' in e.evt && e.evt.touches.length >= 2;
+        const isTwoFingerTouch = isTouchEvent(e.evt) && e.evt.touches.length >= 2;
         if (isDrawing) {
             if (!isTwoFingerTouch) {
                 if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
@@ -1248,7 +1248,7 @@ export function EditorSlate() {
             }
         }
         if (
-            'touches' in e.evt &&
+            isTouchEvent(e.evt) &&
             e.evt.touches.length === 2 &&
             currentSelectedIds.length > 0 &&
             !currentSelectedLayer?.config.locked &&
@@ -1309,7 +1309,7 @@ export function EditorSlate() {
             lastCenter.current = center;
             return;
         }
-        if ('touches' in e.evt && e.evt.touches.length === 2) {
+        if (isTouchEvent(e.evt) && e.evt.touches.length === 2) {
             if (e.evt.targetTouches && e.evt.targetTouches.length > 1) {
                 const currentX = e.evt.touches[0].screenX;
                 const deltaX = currentX - lastX.current;
@@ -1322,9 +1322,9 @@ export function EditorSlate() {
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
-        if ('touches' in e.evt && e.evt.touches.length < 2) setIsPinching(false);
+        if (isTouchEvent(e.evt) && e.evt.touches.length < 2) setIsPinching(false);
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
-        const shouldFinalizeFromStage = 'touches' in e.evt && isPinching;
+        const shouldFinalizeFromStage = isTouchEvent(e.evt) && isPinching;
         if (shouldFinalizeFromStage && currentSelectedIds.length && trRef.current) {
             const stage = trRef.current.getStage();
             const node = stage?.findOne<Konva.Shape>(`#${currentSelectedIds[0]}`);
