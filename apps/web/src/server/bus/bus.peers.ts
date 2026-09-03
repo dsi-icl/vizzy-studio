@@ -221,7 +221,7 @@ export async function completeHelloRegistration(
     peer: Peer,
     parsed: DeviceHelloMessage,
     passedAuthContext: AuthContext
-): Promise<{ pendingEnrollment: boolean }> {
+): Promise<{ pendingEnrollment: boolean; rejected?: boolean }> {
     if (parsed.specimen === 'wall') {
         const wallDevice = parsed.devicePublicKey
             ? await ensureDeviceByPublicKey({
@@ -239,7 +239,7 @@ export async function completeHelloRegistration(
             } catch {
                 // no-op
             }
-            return { pendingEnrollment: false };
+            return { pendingEnrollment: false, rejected: true };
         }
         if (wallDevice?.status === 'pending') {
             sendJSON(peer, {
@@ -258,7 +258,7 @@ export async function completeHelloRegistration(
             } catch {
                 // no-op
             }
-            return { pendingEnrollment: false };
+            return { pendingEnrollment: false, rejected: true };
         }
         const effectiveWallId = wallDevice?.assignedWallId ?? parsed.wallId;
         const intendedWallSlug = parsed.wallId;
@@ -326,7 +326,7 @@ export async function completeHelloRegistration(
                 } catch {
                     // no-op
                 }
-                return { pendingEnrollment: false };
+                return { pendingEnrollment: false, rejected: true };
             }
             if (controllerDevice.status === 'pending') {
                 const hasPortalAccess = Boolean(passedAuthContext.portal?.wallId);
