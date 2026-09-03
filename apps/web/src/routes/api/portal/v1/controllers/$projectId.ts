@@ -71,7 +71,7 @@ export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
                 }
 
                 if (!authorized) {
-                    const authContext = await resolveRequestAuthContext(request);
+                    const { authContext } = await resolveRequestAuthContext(request);
                     if (authContext.user) {
                         const actor = {
                             email: authContext.user.email,
