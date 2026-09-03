@@ -31,7 +31,7 @@ import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { PeerCursors } from '~/components/PeerCursors';
 import { EditorEngine } from '~/lib/editorEngine';
-import { getDOGridLines } from '~/lib/editorHelpers';
+import { getStageGridLines } from '~/lib/editorHelpers';
 import {
     applyKeyboardArrowTransform,
     broadcastKeyboardLayerTransform,
@@ -42,7 +42,7 @@ import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
-import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
+import { getSnapGridSize } from '~/lib/stageConstants';
 import {
     getAngle,
     getAngleDelta,
@@ -68,6 +68,9 @@ export function EditorSlate() {
         []
     );
     const layers = useEditorStore((s) => s.layers);
+    const stageLayout = useEditorStore((s) => s.stageLayout);
+    const { columns, rows, screenWidth, screenHeight } = stageLayout;
+    const snapGrid = getSnapGridSize(stageLayout);
     // TODO This probably requires some attention: The Konva Stage only selects one item at a time, but we use the multi-select layer sorter here.
     const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
     const toggleLayerSelection = useEditorStore((s) => s.toggleLayerSelection);
@@ -371,7 +374,7 @@ export function EditorSlate() {
         const slot = stageSlot.current;
         if (!slot) return;
 
-        const logicalHeight = SCREEN_H * ROWS;
+        const logicalHeight = screenHeight * rows;
         const minScale = 0.01;
 
         const recomputeScale = () => {
@@ -389,7 +392,7 @@ export function EditorSlate() {
         observer.observe(slot);
 
         return () => observer.disconnect();
-    }, []);
+    }, [rows, screenHeight]);
 
     useEffect(() => {
         const slot = stageSlot.current;
@@ -556,14 +559,14 @@ export function EditorSlate() {
                 currentSelected,
                 e.key,
                 e.shiftKey,
-                isSnapping ? SNAP_GRID : 10
+                isSnapping ? snapGrid : 10
             );
             store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
             if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [editingTextLayerId, engine, isSnapping]);
+    }, [editingTextLayerId, engine, isSnapping, snapGrid]);
 
     // ── Upload handler (stays here — complex async + file APIs) ───────────
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -972,8 +975,8 @@ export function EditorSlate() {
                 if (e.type === 'dragend') {
                     const left = node.x() - node.width() / 2;
                     const top = node.y() - node.height() / 2;
-                    const snappedLeft = snapToGrid(left, SNAP_GRID);
-                    const snappedTop = snapToGrid(top, SNAP_GRID);
+                    const snappedLeft = snapToGrid(left, snapGrid);
+                    const snappedTop = snapToGrid(top, snapGrid);
                     node.position({
                         x: snappedLeft + node.width() / 2,
                         y: snappedTop + node.height() / 2
@@ -995,13 +998,13 @@ export function EditorSlate() {
 
                     if (anchor?.includes('left')) {
                         // Moving the left edge -> keep right edge pinned
-                        nextLeft = snapToGrid(left, SNAP_GRID);
+                        nextLeft = snapToGrid(left, snapGrid);
                     } else if (anchor?.includes('right')) {
                         // Moving the right edge -> keep left edge pinned
-                        nextRight = snapToGrid(right, SNAP_GRID);
+                        nextRight = snapToGrid(right, snapGrid);
                     } else {
                         // No horizontal handle (e.g. top-center/bottom-center): snap by position
-                        const snappedLeft = snapToGrid(left, SNAP_GRID);
+                        const snappedLeft = snapToGrid(left, snapGrid);
                         const deltaX = snappedLeft - left;
                         nextLeft += deltaX;
                         nextRight += deltaX;
@@ -1009,13 +1012,13 @@ export function EditorSlate() {
 
                     if (anchor?.includes('top')) {
                         // Moving the top edge -> keep bottom edge pinned
-                        nextTop = snapToGrid(top, SNAP_GRID);
+                        nextTop = snapToGrid(top, snapGrid);
                     } else if (anchor?.includes('bottom')) {
                         // Moving the bottom edge -> keep top edge pinned
-                        nextBottom = snapToGrid(bottom, SNAP_GRID);
+                        nextBottom = snapToGrid(bottom, snapGrid);
                     } else {
                         // No vertical handle (e.g. middle-left/middle-right): snap by position
-                        const snappedTop = snapToGrid(top, SNAP_GRID);
+                        const snappedTop = snapToGrid(top, snapGrid);
                         const deltaY = snappedTop - top;
                         nextTop += deltaY;
                         nextBottom += deltaY;
@@ -1104,7 +1107,7 @@ export function EditorSlate() {
                 layer: { ...layerToUpdate, config: updatedConfig }
             });
         },
-        [engine, isSnapping]
+        [engine, isSnapping, snapGrid]
     );
 
     const flushNodeState = (idToFlush: string) => {
@@ -1406,11 +1409,7 @@ export function EditorSlate() {
                 onUpload={handleUpload}
                 // onEditText={setEditingTextLayerId}
             />
-            <SlatePreview
-                stageSlot={stageSlot}
-                stageInstance={stageInstance}
-                stageScaleFactor={stageScaleFactor}
-            />
+            <SlatePreview stageSlot={stageSlot} stageScaleFactor={stageScaleFactor} />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
                     ref={stageSlot}
@@ -1421,8 +1420,8 @@ export function EditorSlate() {
                 >
                     <Stage
                         ref={stageInstance}
-                        width={COLS * SCREEN_W * stageScaleFactor}
-                        height={ROWS * SCREEN_H * stageScaleFactor}
+                        width={columns * screenWidth * stageScaleFactor}
+                        height={rows * screenHeight * stageScaleFactor}
                         onMouseDown={handleStageInteractionStart}
                         onMouseMove={handleTouchMove}
                         onMouseUp={handleTouchEnd}
@@ -1440,36 +1439,11 @@ export function EditorSlate() {
                                     key={`bg_${backgroundLayer.numericId}`}
                                     layer={backgroundLayer}
                                     previewScale={stageScaleFactor}
+                                    layout={stageLayout}
                                 />
                             ) : null}
                         </FastLayer>
                         <KonvaLayer>
-                            {/* {Array.from({ length: COLS * ROWS }).map((_, i) => {
-                            const col = i % COLS;
-                            const row = Math.floor(i / COLS);
-                            return (
-                                <Group key={`screen-${i}`}>
-                                    <Rect
-                                        x={col * SCREEN_W}
-                                        y={row * SCREEN_H}
-                                        width={SCREEN_W}
-                                        height={SCREEN_H}
-                                        stroke="rgba(255, 255, 255, 0.2)"
-                                        strokeWidth={10}
-                                        listening={false}
-                                    />
-                                    <Text
-                                        x={col * SCREEN_W + 50}
-                                        y={row * SCREEN_H + 50}
-                                        text={`Screen C:${col} R:${row}`}
-                                        fontSize={100}
-                                        fill="rgba(255, 255, 255, 0.3)"
-                                        listening={false}
-                                    />
-                                </Group>
-                            );
-                        })} */}
-
                             {/* oxlint-disable-next-line react-hooks-js/refs */}
                             {foregroundLayers.map((layer) => {
                                 const isHidden = !layer.config.visible;
@@ -1718,7 +1692,7 @@ export function EditorSlate() {
                                       />
                                   ))
                                 : null}
-                            {showGrid && getDOGridLines(COLS * SCREEN_W, ROWS * SCREEN_H, 20)}
+                            {showGrid && getStageGridLines(stageLayout, 2)}
                             <Transformer
                                 ref={trRef}
                                 flipEnabled={false}

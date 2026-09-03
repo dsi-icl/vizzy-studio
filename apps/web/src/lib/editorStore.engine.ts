@@ -15,6 +15,7 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
     const unsubJson = engine.subscribeToJson((data) => {
         const s = store.getState();
         if (data.type === 'hydrate') {
+            if (data.layout) store.setState({ stageLayout: data.layout });
             s.hydrate(data.layers);
         } else if (data.type === 'project_context') {
             // Server-owned: the palette is never edited locally, only replaced.

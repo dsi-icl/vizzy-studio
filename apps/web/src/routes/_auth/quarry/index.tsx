@@ -95,7 +95,8 @@ function QuarryIndex() {
     });
 
     const unpublishMutation = useMutation({
-        mutationFn: (projectId: string) => $publishCommit({ data: { projectId, commitId: null } }),
+        mutationFn: ({ projectId, stageId }: { projectId: string; stageId: string }) =>
+            $publishCommit({ data: { projectId, stageId, commitId: null } }),
         onSuccess: () => {
             toast.success('Project unpublished');
             invalidate();
@@ -202,6 +203,7 @@ function QuarryIndex() {
             id: 'actions',
             cell: (info) => {
                 const project = info.row.original;
+                const defaultStage = project.stages.find(({ id }) => id === project.defaultStageId);
                 return (
                     <DropdownMenu>
                         <DropdownMenuTrigger
@@ -211,14 +213,17 @@ function QuarryIndex() {
                             <DotsThreeVerticalIcon className="size-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                            {project.publishedCommitId ? (
+                            {defaultStage?.publishedCommitId ? (
                                 <DropdownMenuItem
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        unpublishMutation.mutate(project.id);
+                                        unpublishMutation.mutate({
+                                            projectId: project.id,
+                                            stageId: defaultStage.id
+                                        });
                                     }}
                                 >
-                                    <GlobeXIcon /> Unpublish
+                                    <GlobeXIcon /> Unpublish default stage
                                 </DropdownMenuItem>
                             ) : (
                                 <DropdownMenuItem disabled>

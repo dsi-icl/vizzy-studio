@@ -5,10 +5,17 @@ import { Button } from '@repo/ui/components/button';
 import { Input } from '@repo/ui/components/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@repo/ui/components/popover';
 import { TipButton } from '@repo/ui/components/tip-button';
-import { PropsWithChildren, useCallback, useEffect, useRef, useState } from 'react';
+import {
+    createContext,
+    PropsWithChildren,
+    useCallback,
+    useContext,
+    useEffect,
+    useRef,
+    useState
+} from 'react';
 import { HexAlphaColorPicker } from 'react-colorful';
 
-import { EditorEngine } from '~/lib/editorEngine';
 import { isExplicitCommitKey, normalizeHexColor } from '~/lib/explicitInputCommit';
 
 import { RecentColourSwatches } from './RecentColourSwatches';
@@ -25,6 +32,13 @@ interface ColorPickerProps extends PropsWithChildren {
     liveTextChange?: boolean;
 }
 
+export interface ColourPalette {
+    recentColours: readonly string[];
+    onRecordColour: (colour: string) => void;
+}
+
+export const ColourPaletteContext = createContext<ColourPalette | undefined>(undefined);
+
 function normalizeIncomingColor(raw: string): string {
     return normalizeHexColor(raw) ?? '#000000ff';
 }
@@ -38,6 +52,7 @@ export function ColorPicker({
     onTextInputBlur,
     liveTextChange = true
 }: ColorPickerProps) {
+    const palette = useContext(ColourPaletteContext);
     const [hasEyeDropper, setHasEyeDropper] = useState(false);
     const [localValue, setLocalValue] = useState(() => normalizeIncomingColor(value));
     const [inputValue, setInputValue] = useState(() => normalizeIncomingColor(value));
@@ -75,15 +90,16 @@ export function ColorPicker({
      */
     const pendingRecordRef = useRef<string | null>(null);
 
+    const onRecordColourRef = useRef(palette?.onRecordColour);
+    useEffect(() => {
+        onRecordColourRef.current = palette?.onRecordColour;
+    }, [palette]);
+
     useEffect(() => {
         return () => {
             const colour = pendingRecordRef.current;
             if (!colour) return;
-            try {
-                EditorEngine.getInstance().sendJSON({ type: 'record_colour', colour });
-            } catch {
-                // No engine outside an editor session; the palette is optional.
-            }
+            onRecordColourRef.current?.(colour);
         };
     }, []);
 
@@ -267,7 +283,10 @@ export function ColorPicker({
                     </Button>
                 )}
             </div>
-            <RecentColourSwatches onPick={(colour) => commitColor(colour)} />
+            <RecentColourSwatches
+                recentColours={palette?.recentColours ?? []}
+                onPick={(colour) => commitColor(colour)}
+            />
         </div>
     );
 }

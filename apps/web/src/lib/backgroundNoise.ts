@@ -1,9 +1,5 @@
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 import { createNoise3D } from 'simplex-noise';
-
-import { SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
-
-export const BACKGROUND_RENDER_W = 384;
-export const BACKGROUND_RENDER_H = 216;
 
 /** Advance per second in noise time — controls how slowly the pattern drifts. */
 export const BACKGROUND_T_SPEED = 0.0015;
@@ -136,7 +132,8 @@ export function renderBackgroundNoise(
     row: number,
     t: number,
     colSpan = 1,
-    rowSpan = 1
+    rowSpan = 1,
+    layout: StageLayout = DEFAULT_STAGE_LAYOUT
 ): void {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -196,8 +193,8 @@ export function renderBackgroundNoise(
     // - Glyph colour comes from a second simplex-noise sample interpolating motifColor1↔motifColor2.
     // Keep motif density tied to logical wall coordinates (screen pixels),
     // not the current raster resolution, so preview/wall match consistently.
-    const logicalW = colSpan * SCREEN_W;
-    const logicalH = rowSpan * SCREEN_H;
+    const logicalW = colSpan * layout.screenWidth;
+    const logicalH = rowSpan * layout.screenHeight;
     const targetCellLogical = 72;
     const colsCount = Math.max(1, Math.round(logicalW / targetCellLogical));
     const rowsCount = Math.max(1, Math.round(logicalH / targetCellLogical));

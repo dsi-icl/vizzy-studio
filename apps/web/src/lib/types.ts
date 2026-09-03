@@ -1,3 +1,5 @@
+import { StageLayout as StageLayoutSchema, type StageLayout } from '@repo/db/schema';
+
 import { z } from '~/lib/zod';
 
 /**
@@ -256,6 +258,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
+        layout: StageLayoutSchema.optional(),
         customRender: z
             .object({
                 url: z.string(),
@@ -263,7 +266,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
                 proxy: z.boolean().default(false)
             })
             .optional(),
-        boundSource: z.enum(['live', 'gallery']).optional()
+        boundSource: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({ type: z.literal('rehydrate_please') }),
     z.object({
@@ -370,7 +373,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         commitId: z.string().optional(),
         slideId: z.string().optional(),
         customRenderUrl: z.string().nullish(),
-        boundSource: z.enum(['live', 'gallery']).optional()
+        boundSource: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({
         type: z.literal('wall_node_count'),
@@ -407,6 +410,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     z.object({
         type: z.literal('gallery_state'),
         wallId: z.string().optional(),
+        layout: StageLayoutSchema.optional(),
         walls: z.array(
             z.object({
                 wallId: z.string(),
@@ -415,7 +419,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
                 projectId: z.string().optional(),
                 commitId: z.string().optional(),
                 slideId: z.string().optional(),
-                source: z.enum(['live', 'gallery']).optional()
+                source: z.enum(['live', 'gallery', 'signage']).optional()
             })
         ),
         publishedProjects: z.array(
@@ -465,7 +469,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
-        source: z.enum(['live', 'gallery']).optional()
+        source: z.enum(['live', 'gallery', 'signage']).optional()
     }),
     z.object({
         type: z.literal('wall_unbound'),
@@ -508,6 +512,8 @@ export interface ScopeState {
     projectId: string;
     commitId: string;
     slideId: string;
+    stageId?: string;
+    layout: StageLayout;
     dirty: boolean;
     /**
      * Incremented on every mutation. A persist records the revision it covers so

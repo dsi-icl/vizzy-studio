@@ -42,6 +42,7 @@ import {
     unregisterActiveVideo,
     unregisterPeer,
     galleriesByWallId,
+    signageBlankWalls,
     wallBindings,
     wallBindingSources,
     type PeerEntry
@@ -54,6 +55,7 @@ import {
 } from '~/lib/busState.projectContext';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopePersistence';
+import { canBindWall } from '~/lib/signageAccess';
 import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -70,6 +72,8 @@ import {
     pendingBindOverrides,
     pendingBindOverrideByWall,
     performLiveBind,
+    findWallForBind,
+    isWallTargetedBySignage,
     resolveBoundSlideId,
     sendBindOverrideResult,
     sendSlidesSnapshotToControllerPeer
@@ -147,18 +151,18 @@ handlers.set('rehydrate_please', ({ entry }) => {
     } else if (meta.specimen === 'wall') {
         const boundScope = wallBindings.get(meta.wallId);
         entry.peer.send(
-            boundScope !== undefined
+            boundScope !== undefined && !signageBlankWalls.has(meta.wallId)
                 ? getWallHydratePayload(boundScope, meta.wallId)
                 : EMPTY_HYDRATE
         );
     } else if (meta.specimen === 'controller') {
         const boundScope = wallBindings.get(meta.wallId);
         entry.peer.send(
-            boundScope !== undefined
+            boundScope !== undefined && !signageBlankWalls.has(meta.wallId)
                 ? getWallHydratePayload(boundScope, meta.wallId)
                 : EMPTY_HYDRATE
         );
-        if (boundScope !== undefined) {
+        if (boundScope !== undefined && !signageBlankWalls.has(meta.wallId)) {
             const scope = scopedState.get(boundScope);
             if (scope?.commitId) {
                 void sendSlidesSnapshotToControllerPeer(entry.peer, scope.commitId);
@@ -487,10 +491,35 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
         });
         return;
     }
-    const userEmail =
-        entry.meta.specimen === 'editor' ? entry.meta.authContext?.user?.email : undefined;
+    const user = entry.meta.authContext?.user;
+    const userEmail = entry.meta.specimen === 'editor' ? user?.email : undefined;
 
     void (async () => {
+        if (!canBindWall(user, await findWallForBind(data.wallId))) {
+            await logAuditDenied({
+                action: 'WS_BIND_WALL_DENIED',
+                actorId: userEmail ?? entry.peer.id,
+                projectId: data.projectId,
+                reasonCode: 'SIGNAGE_ONLY_WALL',
+                resourceType: 'wall',
+                resourceId: data.wallId,
+                executionContext: {
+                    surface: 'ws',
+                    operation: 'request_bind_wall',
+                    peerId: entry.peer.id,
+                    details: { commitId: data.commitId }
+                }
+            });
+            sendBindOverrideResult(entry.peer.id, {
+                type: 'bind_override_result',
+                requestId: data.requestId,
+                wallId: data.wallId,
+                allow: false,
+                reason: 'denied'
+            });
+            return;
+        }
+
         const resolvedSlideId = await resolveBoundSlideId(
             data.projectId,
             data.commitId,
@@ -510,6 +539,31 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
         const targetScopeId = internScope(data.projectId, data.commitId, resolvedSlideId);
         const currentScopeId = wallBindings.get(data.wallId);
         const hasConflict = currentScopeId !== undefined && currentScopeId !== targetScopeId;
+
+        if (await isWallTargetedBySignage(data.wallId)) {
+            process.__SIGNAGE_SUPPRESS_WALL__?.(data.wallId);
+            const result = await performLiveBind(
+                data.wallId,
+                data.projectId,
+                data.commitId,
+                resolvedSlideId,
+                'live',
+                true
+            );
+            if (!result.ok) process.__SIGNAGE_RESUME_WALL__?.(data.wallId);
+            sendBindOverrideResult(entry.peer.id, {
+                type: 'bind_override_result',
+                requestId: data.requestId,
+                wallId: data.wallId,
+                allow: result.ok,
+                reason: result.ok
+                    ? 'not_required'
+                    : result.error === 'unknown_wall'
+                      ? 'unknown_wall'
+                      : 'invalid'
+            });
+            return;
+        }
 
         // If the wall is live-bound and the requester is already in the currently-bound
         // scope (i.e. same user navigating slides — switch_scope is async so their scope
@@ -664,24 +718,30 @@ handlers.set('bind_override_decision', ({ entry, data }) => {
 });
 
 handlers.set('unbind_wall', ({ data }) => {
-    cancelWallUnbindGrace(data.wallId);
-    unbindWall(data.wallId);
-    hydrateWallNodes(data.wallId);
-    broadcastToControllersByWallRaw(
-        data.wallId,
-        JSON.stringify({ type: 'hydrate', layers: [] } satisfies GSMessage)
-    );
-    notifyControllers(data.wallId, false);
-    void dbCol.walls.updateByWallId(data.wallId, {
-        boundProjectId: null,
-        boundCommitId: null,
-        boundSlideId: null,
-        boundSource: null
-    });
-    broadcastWallBindingToEditors(data.wallId);
-    broadcastWallBindingToGalleries(data.wallId);
-    broadcastWallNodeCountToEditors(data.wallId);
-    console.log(`[WS] Wall ${data.wallId} unbound`);
+    void (async () => {
+        if (await isWallTargetedBySignage(data.wallId)) {
+            process.__SIGNAGE_RESUME_WALL__?.(data.wallId);
+            return;
+        }
+        cancelWallUnbindGrace(data.wallId);
+        unbindWall(data.wallId);
+        hydrateWallNodes(data.wallId);
+        broadcastToControllersByWallRaw(
+            data.wallId,
+            JSON.stringify({ type: 'hydrate', layers: [] } satisfies GSMessage)
+        );
+        notifyControllers(data.wallId, false);
+        await dbCol.walls.updateByWallId(data.wallId, {
+            boundProjectId: null,
+            boundCommitId: null,
+            boundSlideId: null,
+            boundSource: null
+        });
+        broadcastWallBindingToEditors(data.wallId);
+        broadcastWallBindingToGalleries(data.wallId);
+        broadcastWallNodeCountToEditors(data.wallId);
+        console.log(`[WS] Wall ${data.wallId} unbound`);
+    })();
 });
 
 handlers.set('video_play', ({ data, scopeId }) => {

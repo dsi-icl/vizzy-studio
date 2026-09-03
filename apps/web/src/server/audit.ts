@@ -61,6 +61,7 @@ function normalizeAuthContext(input?: AuthContext | null): AuthContext | null {
             ? input.user.role
             : null;
     const userTrustedPublisher = Boolean(input.user?.trustedPublisher);
+    const userCanManageSignage = Boolean(input.user?.canManageSignage);
     const impersonatedBy = cleanString(input.user?.impersonatedBy);
 
     const deviceId = cleanString(input.device?.id);
@@ -83,6 +84,7 @@ function normalizeAuthContext(input?: AuthContext | null): AuthContext | null {
                       email: userEmail,
                       role: userRole,
                       ...(userTrustedPublisher ? { trustedPublisher: true } : {}),
+                      ...(userCanManageSignage ? { canManageSignage: true } : {}),
                       ...(impersonatedBy ? { impersonatedBy } : {})
                   }
               }

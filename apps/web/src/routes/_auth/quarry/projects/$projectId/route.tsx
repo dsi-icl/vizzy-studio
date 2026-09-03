@@ -1,12 +1,10 @@
 import {
     ArrowLeftIcon,
-    CircleNotchIcon,
     ClockIcon,
     FolderIcon,
     GlobeIcon,
     GitBranchIcon,
     ImageIcon,
-    PencilSimpleIcon,
     UsersIcon,
     CodeIcon
 } from '@phosphor-icons/react';
@@ -28,12 +26,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
-import {
-    $ensureMutableHead,
-    $getCommit,
-    $publishCommit,
-    $publishCustomRenderProject
-} from '~/server/projects.fns';
+import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
 
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId')({
@@ -64,7 +57,7 @@ type TabKey = keyof typeof TAB_ORDER;
 const ALL_TABS: { key: TabKey; label: string; to: string; icon: any }[] = [
     { key: 'info', label: 'Project Info', to: '.', icon: FolderIcon },
     { key: 'permissions', label: 'Permissions', to: './permissions', icon: UsersIcon },
-    { key: 'commits', label: 'Commits', to: './commits', icon: GitBranchIcon },
+    { key: 'commits', label: 'Stages', to: './commits', icon: GitBranchIcon },
     { key: 'history', label: 'History', to: './history', icon: ClockIcon },
     { key: 'assets', label: 'Assets', to: './assets', icon: ImageIcon },
     { key: 'controller', label: 'Controller', to: './controller_editor', icon: CodeIcon }
@@ -82,8 +75,8 @@ const TAB_SUBHEADERS: Record<TabKey, { title: string; description?: string }> = 
         description: 'Manage who can view or edit this project.'
     },
     commits: {
-        title: 'Commit History',
-        description: 'Select a commit to publish it to the public gallery.'
+        title: 'Stages',
+        description: 'Manage stage layouts, histories, and published presentation revisions.'
     },
     history: {
         title: 'Audit Log',
@@ -132,13 +125,14 @@ function ProjectLayout() {
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
     const hasCustomRender = !!project.customRenderUrl;
+    const defaultStage =
+        project.stages.find(({ id }) => id === project.defaultStageId) ?? project.stages[0];
     const canPublish =
         user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
     const tabs = (
         hasCustomRender ? ALL_TABS.filter((t) => !CUSTOM_RENDER_HIDDEN_TABS.has(t.key)) : ALL_TABS
     ).filter((t) => t.key !== 'controller' || user?.role === 'admin');
     const queryClient = useQueryClient();
-    const [openingEditor, setOpeningEditor] = useState(false);
     const impersonatedBy =
         sessionData?.session && typeof sessionData.session === 'object'
             ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
@@ -154,7 +148,12 @@ function ProjectLayout() {
     });
 
     const unpublishCustomRender = useMutation({
-        mutationFn: () => $publishCommit({ data: { projectId, commitId: null } }),
+        mutationFn: () => {
+            if (!defaultStage) throw new Error('Default stage not found');
+            return $publishCommit({
+                data: { projectId, stageId: defaultStage.id, commitId: null }
+            });
+        },
         onSuccess: () => {
             toast.success('Project unpublished');
             queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -182,61 +181,14 @@ function ProjectLayout() {
                             <ArrowLeftIcon />
                         </Button>
                         <h2 className="text-xl font-semibold">{project.name}</h2>
-                        {project.publishedCommitId && (
+                        {defaultStage?.publishedCommitId && (
                             <Badge variant="default" className="text-xs">
-                                Published
+                                Default stage published
                             </Badge>
-                        )}
-                        {!hasCustomRender && (
-                            <Button
-                                variant="default"
-                                size="sm"
-                                className="ml-auto"
-                                disabled={openingEditor}
-                                onClick={async () => {
-                                    setOpeningEditor(true);
-                                    try {
-                                        const headCommitId = await $ensureMutableHead({
-                                            data: { projectId }
-                                        });
-                                        const commit = await $getCommit({
-                                            data: { id: headCommitId }
-                                        });
-                                        const firstSlideId =
-                                            commit?.content?.slides?.[0]?.id ?? 'default';
-                                        await navigate({
-                                            to: '/quarry/editor/$projectId/$commitId/$slideId',
-                                            params: {
-                                                projectId,
-                                                commitId: headCommitId,
-                                                slideId: firstSlideId
-                                            }
-                                        });
-                                    } catch (error) {
-                                        toast.error(
-                                            error instanceof Error
-                                                ? error.message
-                                                : 'Failed to open editor'
-                                        );
-                                        setOpeningEditor(false);
-                                    }
-                                }}
-                            >
-                                {openingEditor ? (
-                                    <>
-                                        <CircleNotchIcon className="animate-spin" />
-                                        Opening editor...
-                                    </>
-                                ) : (
-                                    <>
-                                        <PencilSimpleIcon weight="bold" /> Edit
-                                    </>
-                                )}
-                            </Button>
                         )}
                         {hasCustomRender &&
                             canPublish &&
-                            (project.publishedCommitId ? (
+                            (defaultStage?.publishedCommitId ? (
                                 <Button
                                     variant="outline"
                                     size="sm"

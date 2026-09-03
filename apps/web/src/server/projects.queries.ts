@@ -6,11 +6,13 @@ import {
     $getCommit,
     $getProject,
     $getProjectCommits,
+    $getStageLayoutLimits,
     $listAssets,
     $listAssetsByUrlsForPicker,
     $listKnownTags,
     $listProjects,
-    $listPublishedProjects
+    $listPublishedProjects,
+    $listWallLayoutTemplates
 } from './projects.fns';
 
 export interface AuditHistoryFilters {
@@ -66,6 +68,18 @@ export const publishedProjectsQueryOptions = () =>
         queryFn: () => $listPublishedProjects()
     });
 
+export const wallLayoutTemplatesQueryOptions = () =>
+    queryOptions({
+        queryKey: ['walls', 'layout-templates'],
+        queryFn: () => $listWallLayoutTemplates()
+    });
+
+export const stageLayoutLimitsQueryOptions = () =>
+    queryOptions({
+        queryKey: ['stage-layout-limits'],
+        queryFn: () => $getStageLayoutLimits()
+    });
+
 export const projectTagSuggestionsQueryOptions = () =>
     queryOptions({
         queryKey: ['projects', 'tags', 'suggestions'],
@@ -98,10 +112,10 @@ export const auditsInfiniteQueryOptions = (projectId: string, filters: AuditHist
         getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined
     });
 
-export const commitsQueryOptions = (projectId: string) =>
+export const commitsQueryOptions = (projectId: string, stageId: string) =>
     queryOptions({
-        queryKey: ['projects', projectId, 'commits'],
-        queryFn: () => $getProjectCommits({ data: { projectId } })
+        queryKey: ['projects', projectId, 'stages', stageId, 'commits'],
+        queryFn: () => $getProjectCommits({ data: { projectId, stageId } })
     });
 
 export const commitQueryOptions = (commitId: string) =>

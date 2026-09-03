@@ -9,6 +9,7 @@ import { MongoClient } from 'mongodb';
 import { startMediaWorker } from '~/lib/jobs/mediaWorker';
 import { UPLOAD_DIR, TMP_DIR, ASSET_DIR } from '~/lib/serverVariables';
 import { getBootstrapStatus } from '~/server/bootstrap';
+import { startSignageRunner } from '~/server/signageRunner';
 
 const bootIssues: string[] = [...bootHealth.issues];
 let startupChecksPromise: Promise<void> | null = null;
@@ -173,6 +174,7 @@ async function runStartupChecksOnce(): Promise<void> {
             if (bootIssues.length > 0) return;
             await getBootstrapStatus();
             await startMediaWorker();
+            startSignageRunner();
         })();
     }
     await startupChecksPromise;

@@ -76,6 +76,28 @@ async function resetDatabase(db) {
     await db.dropDatabase();
 }
 
+async function markBootstrapComplete(db, now) {
+    const updatedAt = new Date(now).toISOString();
+    await db.collection('config').insertMany([
+        {
+            key: 'bootstrap.phase',
+            value: 'completed',
+            encrypted: false,
+            updatedAt,
+            updatedBy: 'test-harness',
+            version: 1
+        },
+        {
+            key: 'bootstrap.completedAt',
+            value: updatedAt,
+            encrypted: false,
+            updatedAt,
+            updatedBy: 'test-harness',
+            version: 1
+        }
+    ]);
+}
+
 async function createActor(testHelpers, input) {
     const user = await testHelpers.saveUser(
         testHelpers.createUser({
@@ -132,6 +154,35 @@ function layerConfig(cx, cy, width, height, zIndex, extra = {}) {
         zIndex,
         visible: true,
         ...extra
+    };
+}
+
+const DEFAULT_HARNESS_STAGE_LAYOUT = {
+    columns: 16,
+    rows: 4,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+const MULTI_WALL_STAGE_LAYOUT = {
+    columns: 2,
+    rows: 2,
+    screenWidth: 1920,
+    screenHeight: 1080
+};
+
+function createMainStage(
+    headCommitId,
+    publishedCommitId = null,
+    layout = DEFAULT_HARNESS_STAGE_LAYOUT
+) {
+    return {
+        id: 'main',
+        name: 'Main',
+        order: 0,
+        layout: { ...layout },
+        headCommitId,
+        publishedCommitId
     };
 }
 
@@ -481,6 +532,7 @@ async function seed() {
     };
 
     const now = Date.now();
+    await markBootstrapComplete(db, now);
     const privateProjectId = new ObjectId('000000000000000000000101');
     const publicProjectId = new ObjectId('000000000000000000000102');
     const renderingProjectId = new ObjectId('000000000000000000000103');
@@ -519,12 +571,26 @@ async function seed() {
                 { email: actors.user_editor.email, role: 'owner' },
                 { email: actors.user_viewer.email, role: 'viewer' }
             ],
-            headCommitId: privateCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 3,
+                        rows: 2,
+                        screenWidth: 1280,
+                        screenHeight: 1024
+                    },
+                    headCommitId: privateCommitId,
+                    publishedCommitId: null
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: publicProjectId,
@@ -535,12 +601,26 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: publicCommitId,
-            publishedCommitId: publicCommitId,
+            defaultStageId: 'main',
+            stages: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    order: 0,
+                    layout: {
+                        columns: 16,
+                        rows: 4,
+                        screenWidth: 1920,
+                        screenHeight: 1080
+                    },
+                    headCommitId: publicCommitId,
+                    publishedCommitId: publicCommitId
+                }
+            ],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: renderingProjectId,
@@ -551,12 +631,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: renderingCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(renderingCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: editorProjectId,
@@ -567,12 +647,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: editorCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(editorCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: multiWallProjectId,
@@ -583,12 +663,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: multiWallCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(multiWallCommitId, null, MULTI_WALL_STAGE_LAYOUT)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: convergenceProjectId,
@@ -599,12 +679,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: convergenceCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(convergenceCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: webCaptureProjectId,
@@ -615,12 +695,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: webCaptureCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(webCaptureCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: mediaProjectId,
@@ -631,12 +711,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: mediaCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(mediaCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: interactionProjectId,
@@ -647,12 +727,12 @@ async function seed() {
             visibility: 'private',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: interactionCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(interactionCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: customRenderProjectId,
@@ -666,12 +746,12 @@ async function seed() {
             customRenderCompat: false,
             customRenderProxy: false,
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: customRenderCommitId,
-            publishedCommitId: null,
+            defaultStageId: 'main',
+            stages: [createMainStage(customRenderCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: galleryAlpha2ProjectId,
@@ -682,12 +762,12 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: galleryAlpha2CommitId,
-            publishedCommitId: galleryAlpha2CommitId,
+            defaultStageId: 'main',
+            stages: [createMainStage(galleryAlpha2CommitId, galleryAlpha2CommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         },
         {
             _id: galleryAlpha10ProjectId,
@@ -698,12 +778,12 @@ async function seed() {
             visibility: 'public',
             heroImages: [],
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
-            headCommitId: galleryAlpha10CommitId,
-            publishedCommitId: galleryAlpha10CommitId,
+            defaultStageId: 'main',
+            stages: [createMainStage(galleryAlpha10CommitId, galleryAlpha10CommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
-            _version: 1
+            _version: 2
         }
     ]);
 
@@ -711,6 +791,7 @@ async function seed() {
         {
             _id: privateCommitId,
             projectId: privateProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness private head',
@@ -739,11 +820,12 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         },
         {
             _id: publicCommitId,
             projectId: publicProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness public head',
@@ -771,6 +853,7 @@ async function seed() {
         {
             _id: renderingCommitId,
             projectId: renderingProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness rendering head',
@@ -792,6 +875,7 @@ async function seed() {
         {
             _id: editorCommitId,
             projectId: editorProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness editor head',
@@ -808,11 +892,12 @@ async function seed() {
             isAutoSave: false,
             isMutableHead: true,
             createdAt: now,
-            _version: 1
+            _version: 3
         },
         {
             _id: multiWallCommitId,
             projectId: multiWallProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness multi-wall head',
@@ -834,6 +919,7 @@ async function seed() {
         {
             _id: convergenceCommitId,
             projectId: convergenceProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness convergence head',
@@ -855,6 +941,7 @@ async function seed() {
         {
             _id: webCaptureCommitId,
             projectId: webCaptureProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness web capture head',
@@ -876,6 +963,7 @@ async function seed() {
         {
             _id: mediaCommitId,
             projectId: mediaProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness media head',
@@ -897,6 +985,7 @@ async function seed() {
         {
             _id: interactionCommitId,
             projectId: interactionProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness interaction head',
@@ -949,6 +1038,7 @@ async function seed() {
         {
             _id: customRenderCommitId,
             projectId: customRenderProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Harness custom render head',
@@ -965,6 +1055,7 @@ async function seed() {
         {
             _id: galleryAlpha2CommitId,
             projectId: galleryAlpha2ProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Gallery alpha 2 published head',
@@ -979,6 +1070,7 @@ async function seed() {
         {
             _id: galleryAlpha10CommitId,
             projectId: galleryAlpha10ProjectId,
+            stageId: 'main',
             parentId: null,
             authorId: new ObjectId(),
             message: 'Gallery alpha 10 published head',
@@ -992,19 +1084,13 @@ async function seed() {
         }
     ]);
 
-    const singlePanelLayout = {
-        columns: 1,
-        rows: 1,
-        screenWidth: 1280,
-        screenHeight: 720,
+    const defaultStageLayout = {
+        ...DEFAULT_HARNESS_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
     const multiPanelLayout = {
-        columns: 2,
-        rows: 2,
-        screenWidth: 640,
-        screenHeight: 360,
+        ...MULTI_WALL_STAGE_LAYOUT,
         configuredAt: now,
         configuredBy: actors.user_admin.email
     };
@@ -1013,6 +1099,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000301'),
             wallId: 'test-wall-1',
+            openToEditors: true,
             name: 'Test Wall 1',
             connectedNodes: 0,
             lastSeen: now,
@@ -1029,6 +1116,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000302'),
             wallId: 'test-wall-grid',
+            openToEditors: true,
             name: 'Test Grid Wall',
             connectedNodes: 0,
             lastSeen: now,
@@ -1053,7 +1141,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Gallery',
             notes: 'Wall reserved for gallery and controller convergence tests',
             createdAt: now,
@@ -1070,7 +1158,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Controller',
             notes: 'Wall reserved for deterministic controller rendering tests',
             createdAt: now,
@@ -1080,6 +1168,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000306'),
             wallId: 'test-wall-ownership',
+            openToEditors: true,
             name: 'Test Ownership Wall',
             connectedNodes: 0,
             lastSeen: now,
@@ -1087,7 +1176,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Ownership',
             notes: 'Wall reserved for editor ownership and handoff tests',
             createdAt: now,
@@ -1097,6 +1186,7 @@ async function seed() {
         {
             _id: new ObjectId('000000000000000000000307'),
             wallId: 'test-wall-media',
+            openToEditors: true,
             name: 'Test Media Wall',
             connectedNodes: 0,
             lastSeen: now,
@@ -1104,7 +1194,7 @@ async function seed() {
             boundCommitId: null,
             boundSlideId: null,
             boundSource: null,
-            layoutTemplate: singlePanelLayout,
+            layoutTemplate: defaultStageLayout,
             site: 'Harness Media',
             notes: 'Wall reserved for deterministic media readiness tests',
             createdAt: now,

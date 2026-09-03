@@ -1,15 +1,29 @@
 import { CircleNotchIcon, MonitorIcon, XIcon } from '@phosphor-icons/react';
+import { useAuth } from '@repo/auth/tanstack/hooks';
+import { stageLayoutsEqual } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@repo/ui/components/popover';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
+import { canBindWall } from '~/lib/signageAccess';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
+export function useBindableWalls() {
+    const { user } = useAuth();
+    const { data, isLoading } = useQuery(wallsQueryOptions());
+    const walls = useMemo(
+        () => (data ?? []).filter((wall) => canBindWall(user, wall)),
+        [data, user]
+    );
+    return { walls, isLoading };
+}
+
 function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
-    const { data: walls = [], isLoading } = useQuery(wallsQueryOptions());
+    const { walls, isLoading } = useBindableWalls();
     const liveNodeCounts = useEditorStore((s) => s.wallNodeCounts);
+    const stageLayout = useEditorStore((s) => s.stageLayout);
 
     if (isLoading) {
         return (
@@ -21,7 +35,7 @@ function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
 
     if (walls.length === 0) {
         return (
-            <div className="py-4 text-center text-xs text-muted-foreground">No walls connected</div>
+            <div className="py-4 text-center text-xs text-muted-foreground">No walls available</div>
         );
     }
 
@@ -29,17 +43,30 @@ function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
         <div className="flex flex-col gap-1">
             {walls.map((wall) => {
                 const connectedNodes = liveNodeCounts[wall.wallId] ?? wall.connectedNodes;
+                const mismatched = Boolean(
+                    wall.layoutTemplate && !stageLayoutsEqual(stageLayout, wall.layoutTemplate)
+                );
                 return (
                     <button
                         key={wall.id}
+                        disabled={mismatched}
                         onClick={() => onSelect(wall.wallId)}
-                        className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                        className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors not-disabled:cursor-pointer not-disabled:hover:bg-accent disabled:opacity-50"
                     >
                         <div>
                             <div className="font-medium">{wall.name}</div>
                             <div className="text-xs text-muted-foreground">
-                                {connectedNodes} node{connectedNodes !== 1 ? 's' : ''}
-                                {wall.boundProjectId && ' · bound'}
+                                {mismatched ? (
+                                    <>
+                                        Needs {wall.layoutTemplate!.columns}×
+                                        {wall.layoutTemplate!.rows} layout
+                                    </>
+                                ) : (
+                                    <>
+                                        {connectedNodes} node{connectedNodes !== 1 ? 's' : ''}
+                                        {wall.boundProjectId && ' · bound'}
+                                    </>
+                                )}
                             </div>
                         </div>
                         <MonitorIcon

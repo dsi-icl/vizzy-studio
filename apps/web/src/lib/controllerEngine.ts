@@ -1,5 +1,7 @@
 'use client';
 
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
+
 import { BusClient } from './busClient';
 import { GSMessageSchema, type GSMessage } from './types';
 
@@ -9,7 +11,7 @@ type BindingStatus = {
     commitId?: string;
     slideId?: string;
     customRenderUrl?: string;
-    boundSource?: 'live' | 'gallery';
+    boundSource?: 'live' | 'gallery' | 'signage';
 };
 
 type BindingCallback = (status: BindingStatus) => void;
@@ -39,6 +41,7 @@ export interface ControllerSnapshot {
     hasHydration: boolean;
     slides: ControllerSnapshotSlide[];
     commitId: string | null;
+    layout: StageLayout;
 }
 
 type SnapshotCallback = (snapshot: ControllerSnapshot) => void;
@@ -63,6 +66,7 @@ export class ControllerEngine {
     private slideMetaById = new Map<string, { id: string; order: number; name: string }>();
     private orderedSlideIds: string[] = [];
     private latestCommitId: string | null = null;
+    private latestLayout: StageLayout = { ...DEFAULT_STAGE_LAYOUT };
     private emitScheduled = false;
     private lastSnapshotSignature: string | null = null;
 
@@ -224,6 +228,7 @@ export class ControllerEngine {
         }
 
         if (data.type === 'hydrate') {
+            if (data.layout) this.latestLayout = data.layout;
             const targetSlideId =
                 this.reconciledBinding.slideId ?? this.hydratedSlideId ?? TEMP_BOUND_SLIDE_ID;
             this.hydratedSlideId = targetSlideId;
@@ -316,6 +321,7 @@ export class ControllerEngine {
                 binding: snapshot.binding,
                 hasHydration: snapshot.hasHydration,
                 commitId: snapshot.commitId,
+                layout: snapshot.layout,
                 slides: snapshot.slides.map((slide) => [
                     slide.id,
                     slide.order,
@@ -353,7 +359,8 @@ export class ControllerEngine {
             binding: this.reconciledBinding,
             hasHydration: this.hasHydration,
             slides,
-            commitId: this.latestCommitId
+            commitId: this.latestCommitId,
+            layout: this.latestLayout
         };
     }
 }

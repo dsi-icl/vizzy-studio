@@ -280,8 +280,9 @@ async function writeScope(
             headId = scope.commitId;
         } else {
             const project = await dbCol.projects.findById(scope.projectId);
-            if (!project?.headCommitId) return { success: false, error: 'No HEAD commit' };
-            headId = project.headCommitId;
+            const stage = project?.stages.find(({ id }) => id === project.defaultStageId);
+            if (!stage?.headCommitId) return { success: false, error: 'No HEAD commit' };
+            headId = stage.headCommitId;
         }
 
         const updatedSlides = await buildSlidesSnapshot(scope, headId);
@@ -300,9 +301,11 @@ async function writeScope(
         // Manual save: create immutable snapshot, then pointer-swap HEAD's parentId
         // Preserve HEAD's current parentId chain on the snapshot
         const currentHead = await dbCol.commits.findById(headId);
+        if (!currentHead) return { success: false, error: 'HEAD commit not found' };
         const snapshot = await dbCol.commits.insert({
             projectId: scope.projectId,
-            parentId: currentHead?.parentId ?? null,
+            stageId: currentHead.stageId,
+            parentId: currentHead.parentId ?? null,
             authorEmail:
                 typeof authorEmail === 'string' && authorEmail.trim().length > 0
                     ? authorEmail.trim()

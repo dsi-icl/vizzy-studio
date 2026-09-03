@@ -1,7 +1,9 @@
 import '@tanstack/react-start/server-only';
 import type { Binary, ObjectId } from 'mongodb';
 
-import type { CollaboratorRole, ProjectVisibility } from './schema';
+import type { CollaboratorRole, ProjectStage, ProjectVisibility, StageLayout } from './schema';
+
+export type { ProjectStage, StageLayout };
 
 // JSON-compatible value type — safe for TanStack Start server function return values.
 export type JsonPrimitive = string | number | boolean | null;
@@ -21,6 +23,7 @@ export interface UserDocument {
     image?: string | null;
     role?: string | null;
     trustedPublisher?: boolean | null;
+    canManageSignage?: boolean | null;
     lastSeen?: Date | null;
     banned?: boolean | null;
     emailVerified?: boolean | null;
@@ -59,8 +62,8 @@ export interface ProjectDocument {
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
     /** Shared palette of recently picked colours, most recent first. */
     recentColours?: string[];
-    headCommitId: string | null;
-    publishedCommitId: string | null;
+    defaultStageId: string;
+    stages: ProjectStage[];
     deletedAt?: number | null;
     deletedBy?: string | null;
     createdBy: string;
@@ -72,6 +75,7 @@ export interface CommitDocument {
     _id: ObjectId;
     id: string;
     projectId: string;
+    stageId: string;
     parentId: string | null;
     authorEmail: string | null;
     message: string;
@@ -120,11 +124,40 @@ export interface WallDocument {
     boundProjectId?: string | null;
     boundCommitId?: string | null;
     boundSlideId?: string | null;
-    boundSource?: 'live' | 'gallery' | null;
+    boundSource?: 'live' | 'gallery' | 'signage' | null;
+    layoutTemplate?: (StageLayout & { configuredAt: number; configuredBy: string }) | null;
+    openToEditors?: boolean;
     site?: string | null;
     notes?: string | null;
     createdAt: number;
     updatedAt?: number;
+}
+
+export interface SignageSlideEntry {
+    id: string;
+    projectId: string;
+    slideId: string;
+    displayDurationMs?: number;
+    gapDurationMs?: number;
+}
+
+export interface SignageSlideshowDocument {
+    _id: ObjectId;
+    id: string;
+    name: string;
+    layout: StageLayout;
+    defaultDisplayDurationMs: number;
+    defaultGapDurationMs: number;
+    gapMode: 'hold' | 'blank';
+    entries: SignageSlideEntry[];
+    targetWallIds: string[];
+    enabled: boolean;
+    createdBy: string;
+    collaborators: Array<{ email: string; role: 'viewer' | 'editor' }>;
+    deletedAt?: number | null;
+    deletedBy?: string | null;
+    createdAt: number;
+    updatedAt: number;
 }
 
 export type DeviceKind = 'wall' | 'gallery' | 'controller';
@@ -161,6 +194,7 @@ export interface AuthContext {
         email: string;
         role: 'admin' | 'operator' | 'user';
         trustedPublisher?: boolean;
+        canManageSignage?: boolean;
         impersonatedBy?: string;
     };
     device?: {
@@ -200,6 +234,7 @@ export type AuditResourceType =
     | 'config'
     | 'smtp'
     | 'scope'
+    | 'signage_slideshow'
     | 'unknown';
 
 export interface AuditLogDocument {

@@ -13,17 +13,26 @@ import { LayerList } from '~/components/LayerList';
 import { MainBoard } from '~/components/MainBoard';
 import { ParametersPanel } from '~/components/ParametersPanel';
 import { SlideList } from '~/components/SlideList';
+import { EditorColourPaletteProvider } from '~/lib/editorColourPalette';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
-import { projectQueryOptions } from '~/server/projects.queries';
+import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
 export const Route = createFileRoute('/_auth/quarry/editor/$projectId/$commitId/$slideId')({
     loader: async ({ context, params }) => {
-        const project = await context.queryClient.ensureQueryData(
-            projectQueryOptions(params.projectId)
-        );
+        const [project, commit] = await Promise.all([
+            context.queryClient.ensureQueryData(projectQueryOptions(params.projectId)),
+            context.queryClient.ensureQueryData(commitQueryOptions(params.commitId))
+        ]);
+        if (!project || commit.projectId !== params.projectId) {
+            throw new Error('Commit does not belong to this project');
+        }
+        const stage = project.stages.find(({ id }) => id === commit.stageId);
+        if (!stage) throw new Error('Commit stage not found');
+        if (stage.archivedAt) throw new Error('Archived stages cannot be edited');
         return {
-            projectName: project?.name ?? 'Project'
+            projectName: project.name,
+            stageName: stage.name
         };
     },
     head: ({ loaderData }) => ({
@@ -129,81 +138,89 @@ function SlideEditorInner({
     }, [hasInitialisedParams, paramsCollapsed, paramsPanelRef]);
 
     return (
-        <ResizablePanelGroup
-            orientation="horizontal"
-            className="h-full min-h-0 w-full overflow-hidden font-sans text-foreground"
-        >
-            <ResizablePanel className="min-h-0 overflow-hidden">
-                <MainBoard />
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel defaultSize={300} minSize={200} className="min-h-0 overflow-hidden">
-                <ResizablePanelGroup
-                    orientation="vertical"
-                    className="h-full min-h-0 overflow-hidden border-t border-border bg-card/50"
-                >
-                    <ResizablePanel
-                        collapsible
-                        collapsedSize={titleBarSize}
-                        minSize={titleBarSize}
-                        panelRef={slidePanelRef}
-                        onResize={({ inPixels }) => setSlidesCollapsed(inPixels <= titleBarSize)}
+        <EditorColourPaletteProvider>
+            <ResizablePanelGroup
+                orientation="horizontal"
+                className="h-full min-h-0 w-full overflow-hidden font-sans text-foreground"
+            >
+                <ResizablePanel className="min-h-0 overflow-hidden">
+                    <MainBoard />
+                </ResizablePanel>
+                <ResizableHandle />
+                <ResizablePanel defaultSize={300} minSize={200} className="min-h-0 overflow-hidden">
+                    <ResizablePanelGroup
+                        orientation="vertical"
+                        className="h-full min-h-0 overflow-hidden border-t border-border bg-card/50"
                     >
-                        <SlideList
-                            titleBarSize={titleBarSize}
-                            collapsed={slidesCollapsed}
-                            onCollapse={() => slidePanelRef.current?.collapse()}
-                            onExpand={() => slidePanelRef.current?.expand()}
-                        />
-                    </ResizablePanel>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel
-                        collapsible
-                        collapsedSize={titleBarSize}
-                        minSize={titleBarSize}
-                        panelRef={layerPanelRef}
-                        onResize={({ inPixels }) => setLayersCollapsed(inPixels <= titleBarSize)}
-                    >
-                        <LayerList
-                            titleBarSize={titleBarSize}
-                            collapsed={layersCollapsed}
-                            onCollapse={() => layerPanelRef.current?.collapse()}
-                            onExpand={() => layerPanelRef.current?.expand()}
-                        />
-                    </ResizablePanel>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel
-                        collapsible
-                        collapsedSize={titleBarSize}
-                        minSize={titleBarSize}
-                        panelRef={paramsPanelRef}
-                        onResize={({ inPixels }) => setParamsCollapsed(inPixels <= titleBarSize)}
-                    >
-                        <ParametersPanel
-                            titleBarSize={titleBarSize}
-                            collapsed={paramsCollapsed}
-                            onCollapse={() => paramsPanelRef.current?.collapse()}
-                            onExpand={() => paramsPanelRef.current?.expand()}
-                        />
-                    </ResizablePanel>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel
-                        collapsible
-                        collapsedSize={titleBarSize}
-                        minSize={titleBarSize}
-                        panelRef={mediaPanelRef}
-                        onResize={({ inPixels }) => setMediaCollapsed(inPixels <= titleBarSize)}
-                    >
-                        <AssetLibraryPanel
-                            projectId={projectId}
-                            titleBarSize={titleBarSize}
-                            collapsed={mediaCollapsed}
-                            onCollapse={() => mediaPanelRef.current?.collapse()}
-                            onExpand={() => mediaPanelRef.current?.expand()}
-                        />
-                    </ResizablePanel>
-                </ResizablePanelGroup>
-            </ResizablePanel>
-        </ResizablePanelGroup>
+                        <ResizablePanel
+                            collapsible
+                            collapsedSize={titleBarSize}
+                            minSize={titleBarSize}
+                            panelRef={slidePanelRef}
+                            onResize={({ inPixels }) =>
+                                setSlidesCollapsed(inPixels <= titleBarSize)
+                            }
+                        >
+                            <SlideList
+                                titleBarSize={titleBarSize}
+                                collapsed={slidesCollapsed}
+                                onCollapse={() => slidePanelRef.current?.collapse()}
+                                onExpand={() => slidePanelRef.current?.expand()}
+                            />
+                        </ResizablePanel>
+                        <ResizableHandle withHandle />
+                        <ResizablePanel
+                            collapsible
+                            collapsedSize={titleBarSize}
+                            minSize={titleBarSize}
+                            panelRef={layerPanelRef}
+                            onResize={({ inPixels }) =>
+                                setLayersCollapsed(inPixels <= titleBarSize)
+                            }
+                        >
+                            <LayerList
+                                titleBarSize={titleBarSize}
+                                collapsed={layersCollapsed}
+                                onCollapse={() => layerPanelRef.current?.collapse()}
+                                onExpand={() => layerPanelRef.current?.expand()}
+                            />
+                        </ResizablePanel>
+                        <ResizableHandle withHandle />
+                        <ResizablePanel
+                            collapsible
+                            collapsedSize={titleBarSize}
+                            minSize={titleBarSize}
+                            panelRef={paramsPanelRef}
+                            onResize={({ inPixels }) =>
+                                setParamsCollapsed(inPixels <= titleBarSize)
+                            }
+                        >
+                            <ParametersPanel
+                                titleBarSize={titleBarSize}
+                                collapsed={paramsCollapsed}
+                                onCollapse={() => paramsPanelRef.current?.collapse()}
+                                onExpand={() => paramsPanelRef.current?.expand()}
+                            />
+                        </ResizablePanel>
+                        <ResizableHandle withHandle />
+                        <ResizablePanel
+                            collapsible
+                            collapsedSize={titleBarSize}
+                            minSize={titleBarSize}
+                            panelRef={mediaPanelRef}
+                            onResize={({ inPixels }) => setMediaCollapsed(inPixels <= titleBarSize)}
+                        >
+                            <AssetLibraryPanel
+                                projectId={projectId}
+                                titleBarSize={titleBarSize}
+                                collapsed={mediaCollapsed}
+                                onCollapse={() => mediaPanelRef.current?.collapse()}
+                                onExpand={() => mediaPanelRef.current?.expand()}
+                            />
+                        </ResizablePanel>
+                    </ResizablePanelGroup>
+                </ResizablePanel>
+            </ResizablePanelGroup>
+        </EditorColourPaletteProvider>
     );
 }

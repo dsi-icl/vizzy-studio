@@ -198,6 +198,12 @@ export const auth = betterAuth({
                 defaultValue: false,
                 input: false
             },
+            canManageSignage: {
+                type: 'boolean',
+                required: false,
+                defaultValue: false,
+                input: false
+            },
             lastSeen: {
                 type: 'date',
                 required: false,

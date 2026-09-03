@@ -185,8 +185,16 @@ function HeaderAuthSection() {
                     <span className={actionLabelClass}>Projects</span>
                 </Button>
             </Link>
-            {(user.role === 'admin' || user.role === 'operator') && (
-                <Link to="/admin" aria-label="Administration">
+            {(user.role === 'admin' ||
+                user.role === 'operator' ||
+                user.canManageSignage === true) && (
+                <Link
+                    to={
+                        user.role === 'admin' || user.role === 'operator'
+                            ? '/admin'
+                            : '/admin/signage'
+                    }
+                >
                     <Button variant="outline" title="Administration" className={actionButtonClass}>
                         <CastleTurretIcon className="h-[1.2rem] w-[1.2rem]" />
                         <span className={actionLabelClass}>Admin</span>

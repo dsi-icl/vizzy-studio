@@ -1,3 +1,5 @@
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
+
 import { dbCol } from '~/server/collections';
 
 import { cancelScopeCleanup, scheduleScopeCleanup } from './busState.persistence';
@@ -23,7 +25,9 @@ export function getOrCreateScope(
     slideId: string,
     customRenderUrl?: string,
     customRenderCompat?: boolean,
-    customRenderProxy?: boolean
+    customRenderProxy?: boolean,
+    layout?: StageLayout,
+    stageId?: string
 ) {
     let scope = scopedState.get(scopeId);
     if (!scope) {
@@ -32,6 +36,8 @@ export function getOrCreateScope(
             projectId,
             commitId,
             slideId,
+            stageId,
+            layout: layout ?? { ...DEFAULT_STAGE_LAYOUT },
             dirty: false,
             hydrateCache: null,
             customRenderUrl,
@@ -48,6 +54,14 @@ export function getOrCreateScope(
         scopeIds.add(scopeId);
     } else {
         let changed = false;
+        if (stageId !== undefined && scope.stageId !== stageId) {
+            scope.stageId = stageId;
+            changed = true;
+        }
+        if (layout && JSON.stringify(scope.layout) !== JSON.stringify(layout)) {
+            scope.layout = layout;
+            changed = true;
+        }
         if (customRenderUrl !== undefined && scope.customRenderUrl !== customRenderUrl) {
             scope.customRenderUrl = customRenderUrl;
             changed = true;
@@ -82,6 +96,7 @@ export function getEditorHydratePayload(scopeId: ScopeId): string {
         scope.hydrateCache = JSON.stringify({
             type: 'hydrate',
             layers: Array.from(scope.layers.values()),
+            layout: scope.layout,
             ...(scope.customRenderUrl
                 ? {
                       customRender: {
@@ -109,6 +124,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
             projectId: scope.projectId,
             commitId: scope.commitId,
             slideId: scope.slideId,
+            layout: scope.layout,
             ...(scope.customRenderUrl
                 ? {
                       customRender: {
@@ -136,6 +152,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
         projectId: scope.projectId,
         commitId: scope.commitId,
         slideId: scope.slideId,
+        layout: scope.layout,
         ...(scope.customRenderUrl
             ? {
                   customRender: {

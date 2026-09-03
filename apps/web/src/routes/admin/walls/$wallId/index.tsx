@@ -8,13 +8,19 @@ import {
 } from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@repo/ui/components/select';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { $adminDeleteWall, $adminUpdateWallMetadata } from '~/server/admin.fns';
+import {
+    $adminDeleteWall,
+    $adminUpdateWallLayoutTemplate,
+    $adminUpdateWallMetadata,
+    $adminUpdateWallOpenToEditors
+} from '~/server/admin.fns';
 import { adminWallQueryOptions } from '~/server/admin.queries';
 
 export const Route = createFileRoute('/admin/walls/$wallId/')({
@@ -39,6 +45,21 @@ function WallInfoTab() {
     const { data: wall } = useSuspenseQuery(adminWallQueryOptions(wallId));
     const wallSlug = useMemo(() => String(wall.wallId ?? ''), [wall.wallId]);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [layout, setLayout] = useState(
+        wall.layoutTemplate
+            ? {
+                  columns: wall.layoutTemplate.columns,
+                  rows: wall.layoutTemplate.rows,
+                  screenWidth: wall.layoutTemplate.screenWidth,
+                  screenHeight: wall.layoutTemplate.screenHeight
+              }
+            : {
+                  columns: wall.observedLayout?.columns ?? 1,
+                  rows: wall.observedLayout?.rows ?? 1,
+                  screenWidth: 1920,
+                  screenHeight: 1080
+              }
+    );
 
     const metadataMutation = useMutation({
         mutationFn: async (name: string) =>
@@ -76,6 +97,35 @@ function WallInfoTab() {
         onError: (e: any) => toast.error(e.message ?? 'Failed to delete wall')
     });
 
+    const openToEditorsMutation = useMutation({
+        mutationFn: (openToEditors: boolean) =>
+            $adminUpdateWallOpenToEditors({ data: { wallId, openToEditors } }),
+        onSuccess: (openToEditors) => {
+            queryClient.invalidateQueries({ queryKey: adminWallQueryOptions(wallId).queryKey });
+            queryClient.invalidateQueries({ queryKey: ['walls'] });
+            toast.success(
+                openToEditors
+                    ? 'Any editor can now live-preview on this wall'
+                    : 'This wall is now signage-only'
+            );
+        },
+        onError: (e: any) => toast.error(e.message ?? 'Failed to open wall for editors')
+    });
+
+    const templateMutation = useMutation({
+        mutationFn: (nextLayout: typeof layout | null) =>
+            $adminUpdateWallLayoutTemplate({
+                data: { wallId, layout: nextLayout }
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: adminWallQueryOptions(wallId).queryKey
+            });
+            toast.success('Wall layout template updated');
+        },
+        onError: (error: Error) => toast.error(error.message)
+    });
+
     return (
         <div className="flex flex-col gap-4">
             <div className="space-y-1">
@@ -95,6 +145,103 @@ function WallInfoTab() {
             <div className="space-y-1">
                 <Label htmlFor="wall-slug">Slug</Label>
                 <Input id="wall-slug" value={wallSlug} readOnly />
+            </div>
+            <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                    <h3 className="font-medium">Stage layout template</h3>
+                    <p className="text-xs text-muted-foreground">
+                        Prefills stage creation; it does not link this wall to a stage.
+                    </p>
+                    {wall.observedLayout && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                            Currently observed: {wall.observedLayout.columns}×
+                            {wall.observedLayout.rows} from {wall.observedLayout.connectedNodes}{' '}
+                            connected nodes.
+                        </p>
+                    )}
+                </div>
+                <div className="grid gap-3 md:grid-cols-4">
+                    {(
+                        [
+                            ['columns', 'Columns'],
+                            ['rows', 'Rows'],
+                            ['screenWidth', 'Screen width'],
+                            ['screenHeight', 'Screen height']
+                        ] as const
+                    ).map(([key, label]) => (
+                        <div key={key} className="space-y-1">
+                            <Label htmlFor={`wall-template-${key}`}>{label}</Label>
+                            <Input
+                                id={`wall-template-${key}`}
+                                type="number"
+                                min={1}
+                                value={layout[key]}
+                                onChange={(event) =>
+                                    setLayout((current) => ({
+                                        ...current,
+                                        [key]: Math.max(
+                                            1,
+                                            Number.parseInt(event.target.value, 10) || 1
+                                        )
+                                    }))
+                                }
+                            />
+                        </div>
+                    ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {wall.observedLayout && (
+                        <Button
+                            variant="outline"
+                            onClick={() =>
+                                setLayout((current) => ({
+                                    ...current,
+                                    columns: wall.observedLayout!.columns,
+                                    rows: wall.observedLayout!.rows
+                                }))
+                            }
+                        >
+                            Use observed grid
+                        </Button>
+                    )}
+                    <Button
+                        disabled={templateMutation.isPending}
+                        onClick={() => templateMutation.mutate(layout)}
+                    >
+                        Save template
+                    </Button>
+                    {wall.layoutTemplate && (
+                        <Button
+                            variant="ghost"
+                            disabled={templateMutation.isPending}
+                            onClick={() => templateMutation.mutate(null)}
+                        >
+                            Clear template
+                        </Button>
+                    )}
+                </div>
+            </div>
+            <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                    <h3 className="font-medium">Live preview access</h3>
+                    <p className="text-xs text-muted-foreground">
+                        Signage managers, admins and operators can always bind this wall. Open it to
+                        let any project editor push a live preview here too.
+                    </p>
+                </div>
+                <Select
+                    value={wall.openToEditors ? 'open' : 'signage'}
+                    onValueChange={(value) => openToEditorsMutation.mutate(value === 'open')}
+                    disabled={openToEditorsMutation.isPending}
+                >
+                    <SelectTrigger className="w-64">
+                        {wall.openToEditors ? 'Open to all editors' : 'Signage access only'}
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="signage">Signage access only</SelectItem>
+                        <SelectItem value="open">Open to all editors</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
             <div className="mt-4 flex items-center gap-2">
                 <Button disabled={metadataMutation.isPending} onClick={() => form.handleSubmit()}>
