@@ -84,6 +84,7 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
     });
     const headerName = isDev ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
     setResponseHeader(headerName, serializeCsp(cspDirectives));
+    setResponseHeader('X-Frame-Options', 'SAMEORIGIN');
     setResponseHeader('Reporting-Endpoints', `csp-endpoint="${reportUrl}"`);
     setResponseHeader(
         'Report-To',
