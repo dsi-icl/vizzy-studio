@@ -108,7 +108,7 @@ function HomePage() {
                       isBound: Boolean(wall.boundProjectId)
                   }))
                 : [],
-        [user, galleryEnrollmentGateActive, walls]
+        [canUserManageWalls, walls]
     );
 
     const galleryEngine = useMemo(
