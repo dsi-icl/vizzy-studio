@@ -146,7 +146,13 @@ export const auth = betterAuth({
         }
         return Array.from(dynamic);
     },
-    secret: env.SERVER_AUTH_SECRET || 'degraded-mode-secret',
+    secret:
+        env.SERVER_AUTH_SECRET ||
+        (env.NODE_ENV === 'production'
+            ? (() => {
+                  throw new Error('SERVER_AUTH_SECRET must be set in production');
+              })()
+            : 'degraded-mode-secret'),
     telemetry: {
         enabled: false
     },
@@ -186,7 +192,10 @@ export const auth = betterAuth({
                     to: email,
                     subject: 'Your Vizzy Studio OTP',
                     html,
-                    fallbackLog: `OTP to ${email} : ${otp} (${type})`
+                    fallbackLog:
+                        env.NODE_ENV === 'production'
+                            ? `OTP to ${email} (${type})`
+                            : `OTP to ${email} : ${otp} (${type})`
                 });
             }
         }),

@@ -183,11 +183,13 @@ if [ ! -x "$FFMPEG_BIN" ]; then
         log "FFmpeg download failed"
         exit 0
       fi
-      if [ -n "$SHA" ]; then
-        if ! echo "$SHA  $ARCHIVE" | sha256sum -c - >/dev/null 2>&1; then
-          log "FFmpeg checksum verification failed"
-          exit 0
-        fi
+      if [ -z "$SHA" ]; then
+        log "CRITICAL: FFMPEG_STATIC_SHA256 is required; refusing to install unverified binary"
+        exit 1
+      fi
+      if ! echo "$SHA  $ARCHIVE" | sha256sum -c - >/dev/null 2>&1; then
+        log "CRITICAL: FFmpeg checksum verification failed"
+        exit 1
       fi
       cp "$ARCHIVE" "$CACHE_DIR/archive.tar.xz" >/dev/null 2>&1 || true
     fi
