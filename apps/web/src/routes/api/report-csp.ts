@@ -162,7 +162,7 @@ export const Route = createFileRoute('/api/report-csp')({
                     'parseError' in payload &&
                     (payload as any).parseError === 'payload_too_large'
                 ) {
-                    return new Response(null, { status: 413 });
+                    return new Response(null, { status: 204 });
                 }
 
                 // Classic CSP report shape: { "csp-report": { ... } }
