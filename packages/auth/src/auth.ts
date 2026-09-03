@@ -129,6 +129,30 @@ async function sendAuthEmail(input: {
         console.error('[AuthMail] send failed', err, input.fallbackLog);
     }
 }
+const otpRateLimitMap = new Map<string, number[]>();
+const OTP_WINDOW_MS = 5 * 60 * 1000;
+const OTP_MAX_PER_WINDOW = 3;
+
+function checkOtpRateLimit(email: string): boolean {
+    const normalized = email.trim().toLowerCase();
+    const now = Date.now();
+    const timestamps = (otpRateLimitMap.get(normalized) ?? []).filter(
+        (ts) => now - ts < OTP_WINDOW_MS
+    );
+    if (timestamps.length >= OTP_MAX_PER_WINDOW) {
+        return false;
+    }
+    timestamps.push(now);
+    otpRateLimitMap.set(normalized, timestamps);
+    if (otpRateLimitMap.size > 10_000) {
+        for (const [k, list] of otpRateLimitMap) {
+            if (list.every((ts) => now - ts >= OTP_WINDOW_MS)) {
+                otpRateLimitMap.delete(k);
+            }
+        }
+    }
+    return true;
+}
 
 export const auth = betterAuth({
     baseURL: {
@@ -196,6 +220,12 @@ export const auth = betterAuth({
         ...(env.NODE_ENV === 'test' ? [testUtils()] : []),
         emailOTP({
             sendVerificationOTP: async ({ email, otp, type }) => {
+                if (env.NODE_ENV !== 'test' && !checkOtpRateLimit(email)) {
+                    console.warn(`[Auth] OTP dispatch rate limited for ${email}`);
+                    throw new Error(
+                        'Too many OTP requests for this email. Please wait a few minutes before trying again.'
+                    );
+                }
                 const html = await render(OtpEmail({ otp }));
                 await sendAuthEmail({
                     to: email,

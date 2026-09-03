@@ -13,6 +13,20 @@ import {
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
 import { touchUserLastSeenThrottled } from '~/server/user-last-seen';
 
+const lastRateLimitAuditSeen = new Map<string, number>();
+
+function shouldAuditRateLimit(key: string, now: number): boolean {
+    const last = lastRateLimitAuditSeen.get(key) ?? 0;
+    if (now - last < 60_000) return false;
+    lastRateLimitAuditSeen.set(key, now);
+    if (lastRateLimitAuditSeen.size > 5_000) {
+        for (const [k, ts] of lastRateLimitAuditSeen) {
+            if (now - ts >= 60_000) lastRateLimitAuditSeen.delete(k);
+        }
+    }
+    return true;
+}
+
 const startRateLimitMiddleware = createMiddleware().server(async ({ next, request }) => {
     const method = request.method.toUpperCase();
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -20,8 +34,8 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     }
 
     const url = new URL(request.url);
-    // Dedicated API routes keep their own route-specific policies.
-    if (url.pathname.startsWith('/api/')) {
+    // Exempt resumable upload streams which have their own chunk-level throttling and token checks.
+    if (url.pathname.startsWith('/api/uploads/')) {
         return next();
     }
 
@@ -33,13 +47,16 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
 
     if (rate.allowed) return next();
 
-    void logAuditDenied({
-        action: 'START_ROUTE_RATE_LIMITED',
-        resourceType: 'start_route',
-        resourceId: `${method}:${url.pathname}`,
-        reasonCode: 'RATE_LIMITED',
-        changes: { retryAfterMs: rate.retryAfterMs, ip }
-    });
+    const now = Date.now();
+    if (shouldAuditRateLimit(subjectKey, now)) {
+        void logAuditDenied({
+            action: 'START_ROUTE_RATE_LIMITED',
+            resourceType: 'start_route',
+            resourceId: `${method}:${url.pathname}`,
+            reasonCode: 'RATE_LIMITED',
+            changes: { retryAfterMs: rate.retryAfterMs, ip }
+        }).catch(() => {});
+    }
 
     return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
         status: 429,
