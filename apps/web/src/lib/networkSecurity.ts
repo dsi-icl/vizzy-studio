@@ -63,6 +63,12 @@ export function isForbiddenIp(ip: string): boolean {
     return true;
 }
 
+const FORBIDDEN_PORTS = new Set([
+    21, 22, 23, 25, 53, 69, 110, 111, 123, 135, 137, 138, 139, 143, 389, 445, 465, 587, 636, 993,
+    995, 2049, 2375, 2376, 3306, 4369, 5000, 5432, 5900, 6379, 8080, 8443, 9000, 9090, 11211, 27017,
+    27018, 27019, 28017
+]);
+
 export async function assertSafeTargetUrl(rawUrl: string, allowlist: string[] = []): Promise<URL> {
     let parsed: URL;
     try {
@@ -73,6 +79,10 @@ export async function assertSafeTargetUrl(rawUrl: string, allowlist: string[] = 
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
         throw new Error('Only http/https URLs are allowed');
+    }
+
+    if (parsed.port && FORBIDDEN_PORTS.has(Number(parsed.port))) {
+        throw new Error('Blocked port target');
     }
 
     const host = parsed.hostname.toLowerCase();
@@ -115,7 +125,13 @@ export async function fetchWithSsrfProtection(
     let redirectsCount = 0;
 
     while (redirectsCount <= maxRedirects) {
-        await assertSafeTargetUrl(currentUrl);
+        const parsed = await assertSafeTargetUrl(currentUrl);
+
+        // Double-check DNS to detect fast-flux or low-TTL DNS rebinding attempts
+        const recheck = await lookup(parsed.hostname, { all: true }).catch(() => null);
+        if (recheck && recheck.some((entry) => isForbiddenIp(entry.address))) {
+            throw new Error('Blocked resolved IP target (DNS rebinding detected)');
+        }
 
         const response = await fetch(currentUrl, {
             ...init,

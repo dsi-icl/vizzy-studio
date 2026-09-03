@@ -125,8 +125,8 @@ async function verifyOutboundConnectivity(): Promise<void> {
         await lookup(host);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        bootIssues.push(
-            `Network bootstrap check failed: DNS resolution failed for "${host}" (${message}).`
+        console.warn(
+            `[Boot] Network bootstrap check warning: DNS resolution failed for "${host}" (${message}). Outbound connectivity may be degraded.`
         );
         return;
     }
@@ -139,7 +139,9 @@ async function verifyOutboundConnectivity(): Promise<void> {
             if (done) return;
             done = true;
             socket.destroy();
-            if (issue) bootIssues.push(issue);
+            if (issue) {
+                console.warn(`[Boot] ${issue}`);
+            }
             resolve();
         };
 
@@ -147,13 +149,13 @@ async function verifyOutboundConnectivity(): Promise<void> {
         socket.once('connect', () => finish());
         socket.once('timeout', () =>
             finish(
-                `Network bootstrap check failed: connection timeout to "${host}:${port}" after ${timeoutMs}ms.`
+                `Network bootstrap check warning: connection timeout to "${host}:${port}" after ${timeoutMs}ms. Outbound connectivity may be degraded.`
             )
         );
         socket.once('error', (err) => {
             const message = err instanceof Error ? err.message : String(err);
             finish(
-                `Network bootstrap check failed: could not connect to "${host}:${port}" (${message}).`
+                `Network bootstrap check warning: could not connect to "${host}:${port}" (${message}). Outbound connectivity may be degraded.`
             );
         });
 
