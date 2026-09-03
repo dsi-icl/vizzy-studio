@@ -36,61 +36,15 @@ async function cleanupPreviousFiles(baseId: string): Promise<void> {
     }
 }
 
+import { assertSafeTargetUrl } from '~/lib/networkSecurity';
+
 const screenshotAllowlist = String(process.env.WEB_SCREENSHOT_ALLOWLIST ?? '')
     .split(',')
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean);
 
-function isForbiddenIp(ip: string): boolean {
-    const version = isIP(ip);
-    if (version === 4) {
-        return (
-            ip.startsWith('127.') ||
-            ip.startsWith('10.') ||
-            ip.startsWith('192.168.') ||
-            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
-            ip.startsWith('169.254.') ||
-            ip === '0.0.0.0'
-        );
-    }
-    if (version === 6) {
-        const normalized = ip.toLowerCase();
-        return (
-            normalized === '::1' ||
-            normalized.startsWith('fc') ||
-            normalized.startsWith('fd') ||
-            normalized.startsWith('fe80:')
-        );
-    }
-    return false;
-}
-
 async function assertScreenshotTargetSafe(rawUrl: string) {
-    let parsed: URL;
-    try {
-        parsed = new URL(rawUrl);
-    } catch {
-        throw new Error('Invalid URL');
-    }
-
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        throw new Error('Only http/https URLs are allowed');
-    }
-
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host.endsWith('.localhost')) {
-        throw new Error('Blocked host');
-    }
-    if (screenshotAllowlist.length > 0 && !screenshotAllowlist.includes(host)) {
-        throw new Error('Host is not allowlisted');
-    }
-
-    if (isForbiddenIp(host)) throw new Error('Blocked IP target');
-
-    const resolved = await lookup(host, { all: true });
-    if (resolved.some((entry) => isForbiddenIp(entry.address))) {
-        throw new Error('Blocked resolved IP target');
-    }
+    await assertSafeTargetUrl(rawUrl, screenshotAllowlist);
 }
 
 export const Route = createFileRoute('/api/web-screenshot')({
@@ -329,6 +283,20 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         viewport: { width: viewportWidth, height: viewportHeight }
                     });
                     const page = await context.newPage();
+
+                    await page.route('**', async (route) => {
+                        const requestUrl = route.request().url();
+                        if (requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) {
+                            await route.continue();
+                            return;
+                        }
+                        try {
+                            await assertScreenshotTargetSafe(requestUrl);
+                            await route.continue();
+                        } catch {
+                            await route.abort('blockedbyclient');
+                        }
+                    });
 
                     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
 
