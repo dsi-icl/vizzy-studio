@@ -68,10 +68,6 @@ function HomePage() {
     const [syncedCloseRevision, setSyncedCloseRevision] = useState(0);
     const [syncedCloseProjectId, setSyncedCloseProjectId] = useState<string | null>(null);
     const { data: publishedProjects = [] } = useQuery(publishedProjectsQueryOptions());
-    const { data: walls = [] } = useQuery({
-        ...wallsQueryOptions(),
-        enabled: Boolean(user)
-    });
     const queryClient = useQueryClient();
     const searchStr = useLocation({ select: (location) => location.searchStr });
     const [pendingOverride, setPendingOverride] = useState<{
@@ -101,11 +97,16 @@ function HomePage() {
     }, [searchStr]);
 
     const galleryEnrollmentGateActive = enrollmentModeEnabled && Boolean(deviceEnrollmentId);
-    const canUserManageWalls = Boolean(user) && !galleryEnrollmentGateActive;
+    const canChooseWall = user?.role === 'admin' && !galleryEnrollmentGateActive;
+
+    const { data: walls = [] } = useQuery({
+        ...wallsQueryOptions(),
+        enabled: canChooseWall
+    });
 
     const availableWalls = useMemo(
         () =>
-            canUserManageWalls
+            canChooseWall
                 ? walls.map((wall) => ({
                       id: wall.wallId,
                       name: wall.name,
@@ -113,7 +114,7 @@ function HomePage() {
                       isBound: Boolean(wall.boundProjectId)
                   }))
                 : [],
-        [canUserManageWalls, walls]
+        [canChooseWall, walls]
     );
 
     const galleryEngine = useMemo(
