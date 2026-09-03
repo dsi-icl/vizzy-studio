@@ -115,7 +115,7 @@ const tusServer = new Server({
     respectForwardedHeaders: true,
     generateUrl: (_req, { path, id }) => `${path}/${id}`,
     datastore: new FileStore({ directory: UPLOAD_DIR }),
-    async onUploadCreate(_req, res, upload) {
+    async onUploadCreate(_req, upload) {
         const uploadToken = upload.metadata?.uploadToken;
         if (!uploadToken) {
             throw { status_code: 401, body: 'Missing upload token' };
@@ -124,7 +124,7 @@ const tusServer = new Server({
         if (!tokenData) {
             throw { status_code: 401, body: 'Invalid or expired upload token' };
         }
-        return res;
+        return { metadata: upload.metadata };
     },
     async onUploadFinish(req, upload) {
         const tusFilePath = join(UPLOAD_DIR, upload.id);
@@ -240,8 +240,7 @@ const tusServer = new Server({
                         throw new Error(imageJob.error || 'Image processing job failed');
                     }
                     const result = imageJob.result as
-                        | { blurhash?: string; sizes?: number[] }
-                        | undefined;
+                        { blurhash?: string; sizes?: number[] } | undefined;
                     blurhash = result?.blurhash ?? null;
                     sizes = result?.sizes ?? [];
                 }
