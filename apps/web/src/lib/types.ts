@@ -242,9 +242,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
     }),
     z.object({
         type: z.literal('auth_denied'),
-        reason: z
-            .enum(['missing_session', 'device_revoked', 'wall_assignment_mismatch'])
-            .optional()
+        reason: z.enum(['missing_session', 'device_revoked', 'wall_assignment_mismatch']).optional()
     }),
     z.object({
         type: z.literal('switch_scope'),
