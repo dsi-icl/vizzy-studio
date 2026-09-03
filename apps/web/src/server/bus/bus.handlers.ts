@@ -544,25 +544,66 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
             return;
         }
 
-        const galleries = galleriesByWallId.get(data.wallId);
-        const hasGalleryApprover = Boolean(galleries && galleries.size > 0);
-        if (!hasGalleryApprover) {
-            const result = await performLiveBind(
-                data.wallId,
-                data.projectId,
-                data.commitId,
-                resolvedSlideId
-            );
+        const user = entry.meta.authContext?.user;
+        const userRole = user?.role;
+        const isTrustedPublisher = user?.trustedPublisher === true;
+        const canBindWall = userRole === 'admin' || userRole === 'operator' || isTrustedPublisher;
+
+        if (!canBindWall) {
+            await logAuditDenied({
+                action: 'WALL_BIND_REQUEST_DENIED',
+                reasonCode: 'PUBLISHER_ROLE_REQUIRED',
+                resourceType: 'wall',
+                resourceId: data.wallId,
+                projectId: data.projectId,
+                authContext: entry.meta.authContext,
+                executionContext: {
+                    surface: 'ws',
+                    operation: 'request_bind_wall',
+                    peerId: entry.peer.id
+                }
+            });
             sendBindOverrideResult(entry.peer.id, {
                 type: 'bind_override_result',
                 requestId: data.requestId,
                 wallId: data.wallId,
-                allow: result.ok,
-                reason: result.ok
-                    ? 'not_required'
-                    : result.error === 'unknown_wall'
-                      ? 'unknown_wall'
-                      : 'invalid'
+                allow: false,
+                reason: 'denied'
+            });
+            return;
+        }
+
+        const galleries = galleriesByWallId.get(data.wallId);
+        const hasGalleryApprover = Boolean(galleries && galleries.size > 0);
+        if (!hasGalleryApprover) {
+            const isAdmin = userRole === 'admin';
+            if (isAdmin) {
+                const result = await performLiveBind(
+                    data.wallId,
+                    data.projectId,
+                    data.commitId,
+                    resolvedSlideId
+                );
+                sendBindOverrideResult(entry.peer.id, {
+                    type: 'bind_override_result',
+                    requestId: data.requestId,
+                    wallId: data.wallId,
+                    allow: result.ok,
+                    reason: result.ok
+                        ? 'not_required'
+                        : result.error === 'unknown_wall'
+                          ? 'unknown_wall'
+                          : 'invalid'
+                });
+                return;
+            }
+
+            sendBindOverrideResult(entry.peer.id, {
+                type: 'bind_override_result',
+                requestId: data.requestId,
+                wallId: data.wallId,
+                allow: false,
+                reason: 'denied'
             });
             return;
         }
