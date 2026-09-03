@@ -30,14 +30,15 @@ import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
 import { KonvaWebLayer } from '~/components/KonvaWebLayer';
 import { PeerCursors } from '~/components/PeerCursors';
-import { EditorEngine } from '~/lib/editorEngine';
+import { EditorEngine, type LayerBinaryMove } from '~/lib/editorEngine';
+import { computeGroupTranslation } from '~/lib/editorGroupDrag';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import {
     applyKeyboardArrowTransform,
     broadcastKeyboardLayerTransform,
     isEditorArrowKey
 } from '~/lib/editorKeyboardMovement';
-import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
+import { getCanvasSelectionModifiers, resolveSelectedLayers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
@@ -104,6 +105,10 @@ export function EditorSlate() {
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const groupDragRef = useRef<{
+        start: Map<number, { cx: number; cy: number }>;
+        anchorId: number;
+    } | null>(null);
 
     const sortedLayers = useMemo(
         () => Array.from(layers.values()).sort((a, b) => a.config.zIndex - b.config.zIndex),
@@ -547,18 +552,22 @@ export function EditorSlate() {
             }
             if (!isEditorArrowKey(e.key)) return;
 
-            const currentSelected = store.layers.get(parseInt(store.selectedLayerIds[0]));
-            if (!currentSelected || currentSelected.config.locked) return;
+            const selectedLayers = resolveSelectedLayers(store.layers, store.selectedLayerIds, {
+                excludeLines: true
+            });
+            if (!selectedLayers.length) return;
 
             e.preventDefault();
-            const updatedLayer = applyKeyboardArrowTransform(
-                currentSelected,
-                e.key,
-                e.shiftKey,
-                isSnapping ? SNAP_GRID : 10
-            );
-            store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
-            if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
+            for (const layer of selectedLayers) {
+                const updatedLayer = applyKeyboardArrowTransform(
+                    layer,
+                    e.key,
+                    e.shiftKey,
+                    isSnapping ? SNAP_GRID : 10
+                );
+                store.updateLayerConfig(layer.numericId, updatedLayer.config);
+                if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -797,6 +806,64 @@ export function EditorSlate() {
             autoScrollStageDuringDrag(e.evt);
         }
 
+        const selectedIds = resolveSelectedLayers(
+            layersRef.current,
+            useEditorStore.getState().selectedLayerIds,
+            { excludeLines: true }
+        ).map((layer) => layer.numericId);
+        const isGroupDrag =
+            node.isDragging() &&
+            !isTransformerActive &&
+            selectedIds.length > 1 &&
+            selectedIds.includes(numericId);
+
+        if (isGroupDrag) {
+            if (!groupDragRef.current || !groupDragRef.current.start.has(numericId)) {
+                const start = new Map<number, { cx: number; cy: number }>();
+                for (const id of selectedIds) {
+                    const cfg = layersRef.current.get(id)?.config;
+                    if (cfg) start.set(id, { cx: cfg.cx, cy: cfg.cy });
+                }
+                groupDragRef.current = { start, anchorId: numericId };
+            }
+
+            const translated = computeGroupTranslation(groupDragRef.current.start, numericId, {
+                x: Math.round(node.x()),
+                y: Math.round(node.y())
+            });
+
+            const stage = node.getStage();
+            const moves: LayerBinaryMove[] = [];
+            for (const id of selectedIds) {
+                const newPos = translated.get(id);
+                const target = layersRef.current.get(id);
+                if (!newPos || !target) continue;
+                if (id !== numericId) {
+                    stage?.findOne<Konva.Shape>(`#${id}`)?.position({
+                        x: newPos.cx,
+                        y: newPos.cy
+                    });
+                }
+                stage?.findOne<Konva.Rect>(`#selbox_${id}`)?.position({
+                    x: newPos.cx,
+                    y: newPos.cy
+                });
+                moves.push({
+                    numericId: id,
+                    x: newPos.cx,
+                    y: newPos.cy,
+                    width: target.config.width,
+                    height: target.config.height,
+                    scaleX: target.config.scaleX,
+                    scaleY: target.config.scaleY,
+                    rotation: target.config.rotation
+                });
+            }
+            engine?.broadcastBinaryMoves(moves);
+            node.getLayer()?.batchDraw();
+            return;
+        }
+
         const activeAnchor = trRef.current?.getActiveAnchor() ?? null;
         node.setAttr('lastActiveAnchor', activeAnchor);
 
@@ -942,10 +1009,74 @@ export function EditorSlate() {
         );
     };
 
+    const persistDraggedLayer = useCallback(
+        (node: Konva.Shape, numericId: number) => {
+            if (!engine) return;
+            const layer = layersRef.current.get(numericId);
+            if (!layer || layer.config.locked) return;
+
+            const updatedConfig: Layer['config'] = {
+                ...layer.config,
+                cx: Math.round(node.x()),
+                cy: Math.round(node.y())
+            };
+            if (updatedConfig.cx === layer.config.cx && updatedConfig.cy === layer.config.cy)
+                return;
+
+            engine.broadcastBinaryMove(
+                numericId,
+                updatedConfig.cx,
+                updatedConfig.cy,
+                updatedConfig.width,
+                updatedConfig.height,
+                updatedConfig.scaleX,
+                updatedConfig.scaleY,
+                updatedConfig.rotation
+            );
+            layer.config = updatedConfig;
+            useEditorStore.getState().updateLayerConfig(numericId, updatedConfig);
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:group_drag_end',
+                layer: { ...layer, config: updatedConfig }
+            });
+        },
+        [engine]
+    );
+
     const handleTransformEnd = useCallback(
         (e: Pick<KonvaEventObject<Event>, 'target' | 'type'>, numericId: number) => {
             if (!engine) return;
             const node = e.target as Konva.Shape;
+
+            const groupDrag = groupDragRef.current;
+            if (groupDrag && e.type === 'dragend') {
+                groupDragRef.current = null;
+                const stage = node.getStage();
+
+                let snapDx = 0;
+                let snapDy = 0;
+                if (isSnapping) {
+                    const left = node.x() - node.width() / 2;
+                    const top = node.y() - node.height() / 2;
+                    snapDx = snapToGrid(left, SNAP_GRID) + node.width() / 2 - node.x();
+                    snapDy = snapToGrid(top, SNAP_GRID) + node.height() / 2 - node.y();
+                }
+
+                for (const id of groupDrag.start.keys()) {
+                    const target = id === numericId ? node : stage?.findOne<Konva.Shape>(`#${id}`);
+                    if (!target) continue;
+                    if (snapDx !== 0 || snapDy !== 0) {
+                        target.position({ x: target.x() + snapDx, y: target.y() + snapDy });
+                        stage
+                            ?.findOne<Konva.Rect>(`#selbox_${id}`)
+                            ?.position({ x: target.x(), y: target.y() });
+                    }
+                    persistDraggedLayer(target, id);
+                }
+                return;
+            }
+
             const endInteraction = () => {
                 node.setAttr('textTransformMode', undefined);
                 node.setAttr('lastActiveAnchor', undefined);
@@ -1103,7 +1234,7 @@ export function EditorSlate() {
                 layer: { ...layerToUpdate, config: updatedConfig }
             });
         },
-        [engine, isSnapping]
+        [engine, isSnapping, persistDraggedLayer]
     );
 
     const flushNodeState = (idToFlush: string) => {
@@ -1700,6 +1831,7 @@ export function EditorSlate() {
                                 ? selectedOutlineLayers.map((layer) => (
                                       <Rect
                                           key={`selbox_${layer.numericId}`}
+                                          id={`selbox_${layer.numericId}`}
                                           x={layer.config.cx}
                                           y={layer.config.cy}
                                           width={layer.config.width}

@@ -5,6 +5,7 @@ import {
     computeBringToFrontUpdates,
     computeSendToBackUpdates
 } from './editorLayerOrder';
+import { resolveSelectedLayers } from './editorSelection';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
@@ -328,14 +329,24 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         deleteSelectedLayer: () => {
             const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
-            const numericId = parseInt(selectedLayerIds[0]);
-            if (layers.get(numericId)?.config.locked) return;
+            const deletableIds = resolveSelectedLayers(layers, selectedLayerIds).map(
+                (layer) => layer.numericId
+            );
+            if (!deletableIds.length) return;
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({ type: 'delete_layer', numericId });
+            for (const numericId of deletableIds) {
+                engine.sendJSON({ type: 'delete_layer', numericId });
+            }
+            const deletedSet = new Set(deletableIds);
             set((s) => {
                 const newLayers = new Map(s.layers);
-                newLayers.delete(numericId);
-                return { layers: newLayers, selectedLayerIds: [] };
+                for (const numericId of deletedSet) newLayers.delete(numericId);
+                return {
+                    layers: newLayers,
+                    selectedLayerIds: s.selectedLayerIds.filter(
+                        (id) => !deletedSet.has(parseInt(id))
+                    )
+                };
             });
             get().markDirty();
         },
