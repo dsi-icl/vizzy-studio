@@ -240,7 +240,8 @@ const tusServer = new Server({
                         throw new Error(imageJob.error || 'Image processing job failed');
                     }
                     const result = imageJob.result as
-                        { blurhash?: string; sizes?: number[] } | undefined;
+                        | { blurhash?: string; sizes?: number[] }
+                        | undefined;
                     blurhash = result?.blurhash ?? null;
                     sizes = result?.sizes ?? [];
                 }
