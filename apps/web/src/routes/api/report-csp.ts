@@ -2,6 +2,11 @@ import type { JsonValue } from '@repo/db/documents';
 import { createFileRoute } from '@tanstack/react-router';
 
 import { logAuditDenied } from '~/server/audit';
+import {
+    buildRateLimitSubjectKey,
+    checkRateLimit,
+    getClientIpFromHeaders
+} from '~/server/rateLimit';
 
 type CspReportEnvelope = {
     'csp-report'?: Record<string, unknown>;
@@ -107,9 +112,15 @@ async function ingestCspViolations(request: Request, summaries: CspViolationSumm
     }
 }
 
+const MAX_CSP_REPORT_BYTES = 64 * 1024;
+const MAX_CSP_REPORTS_PER_BATCH = 5;
+
 async function parseReportPayload(request: Request): Promise<unknown> {
     const raw = await request.text();
     if (!raw) return null;
+    if (raw.length > MAX_CSP_REPORT_BYTES) {
+        return { parseError: 'payload_too_large' };
+    }
     try {
         return JSON.parse(raw) as unknown;
     } catch {
@@ -131,7 +142,28 @@ export const Route = createFileRoute('/api/report-csp')({
                     }
                 }),
             POST: async ({ request }: { request: Request }) => {
+                const ip = getClientIpFromHeaders(request.headers);
+                const rate = checkRateLimit({
+                    subjectKey: buildRateLimitSubjectKey({ ip })
+                });
+                if (!rate.allowed) {
+                    return new Response(null, {
+                        status: 429,
+                        headers: {
+                            'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000))
+                        }
+                    });
+                }
+
                 const payload = await parseReportPayload(request);
+                if (
+                    typeof payload === 'object' &&
+                    payload !== null &&
+                    'parseError' in payload &&
+                    (payload as any).parseError === 'payload_too_large'
+                ) {
+                    return new Response(null, { status: 204 });
+                }
 
                 // Classic CSP report shape: { "csp-report": { ... } }
                 const envelope = toRecord(payload) as CspReportEnvelope | null;
@@ -145,7 +177,8 @@ export const Route = createFileRoute('/api/report-csp')({
 
                 // Reporting API shape: [ { type, body, ... }, ... ]
                 if (Array.isArray(payload)) {
-                    const summaries = payload
+                    const boundedPayload = payload.slice(0, MAX_CSP_REPORTS_PER_BATCH);
+                    const summaries = boundedPayload
                         .map((item) => toRecord(item) as ReportingApiItem | null)
                         .filter((item): item is ReportingApiItem => item !== null)
                         .map((item) => {
