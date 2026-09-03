@@ -393,10 +393,7 @@ export const $updateProject = createServerFn({ method: 'POST' })
             }
         }
 
-        if (
-            (data.publishedCommitId !== undefined && data.publishedCommitId !== null) ||
-            data.visibility === 'public'
-        ) {
+        if (data.visibility === 'public') {
             if (!canPublishProject(actor)) {
                 await denyProjectFn({
                     context,
