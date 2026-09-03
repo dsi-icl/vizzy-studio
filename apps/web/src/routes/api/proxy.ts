@@ -1,11 +1,11 @@
 import type { JsonValue } from '@repo/db/documents';
 import { createFileRoute } from '@tanstack/react-router';
 
+import { assertSafeTargetUrl, fetchWithSsrfProtection } from '~/lib/networkSecurity';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
-import { assertSafeTargetUrl, fetchWithSsrfProtection } from '~/lib/networkSecurity';
 
 const isDev = process.env.NODE_ENV === 'development';
 const PROXY_ALLOWED_REFERRERS = (process.env.PROXY_ALLOWED_REFERRERS ?? '')

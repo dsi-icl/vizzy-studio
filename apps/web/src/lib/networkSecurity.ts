@@ -19,7 +19,11 @@ export function isForbiddenIp(ip: string): boolean {
         // Carrier-grade NAT: 100.64.0.0/10 (100.64.0.0 - 100.127.255.255)
         if (/^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./.test(ip)) return true;
         // Benchmarking / TEST-NET: 192.0.0.0/24, 192.0.2.0/24, 198.51.100.0/24
-        if (ip.startsWith('192.0.0.') || ip.startsWith('192.0.2.') || ip.startsWith('198.51.100.')) {
+        if (
+            ip.startsWith('192.0.0.') ||
+            ip.startsWith('192.0.2.') ||
+            ip.startsWith('198.51.100.')
+        ) {
             return true;
         }
         // Multicast / Reserved: 224.0.0.0/4, 240.0.0.0/4
