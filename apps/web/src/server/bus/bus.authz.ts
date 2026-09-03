@@ -196,7 +196,10 @@ export function isWsMessageAuthorized(
         return Boolean(perms?.canView);
     }
 
-    return true;
+    console.warn(
+        `[WS] Unrecognized message type '${type}' rejected by default-deny authz policy for peer ${entry.peer.id}`
+    );
+    return false;
 }
 
 export async function enforceWsRateLimit(
