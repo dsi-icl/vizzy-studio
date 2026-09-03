@@ -13,6 +13,8 @@ const TOKEN_TTL = 15 * 60 * 1000; // 15 minutes
 const _hmr = (process as any).__UPLOAD_TOKENS_HMR__ ?? { tokens: new Map<string, UploadToken>() };
 (process as any).__UPLOAD_TOKENS_HMR__ = _hmr;
 
+const tokens: Map<string, UploadToken> = _hmr.tokens;
+
 /** Prune expired tokens that were never validated or redeemed. */
 export function pruneExpiredUploadTokens() {
     const now = Date.now();

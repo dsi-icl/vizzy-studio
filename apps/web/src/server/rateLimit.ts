@@ -108,8 +108,7 @@ export function checkRateLimit(input: { subjectKey: string }): {
 
     const cutoff = now - WINDOW_MS;
     const key = input.subjectKey;
-    const limit =
-        key === 'anonymous' ? RATE_LIMIT_PER_MINUTE * 10 : RATE_LIMIT_PER_MINUTE;
+    const limit = key === 'anonymous' ? RATE_LIMIT_PER_MINUTE * 10 : RATE_LIMIT_PER_MINUTE;
     const entry = store.get(key) ?? { timestamps: [] };
 
     entry.timestamps = entry.timestamps.filter((ts: number) => ts >= cutoff);
