@@ -51,10 +51,12 @@ function buildTrustedOrigins(values: string[], fallbackBaseUrl: string): string[
         if (origin) out.add(origin);
     }
     // Dev ergonomics: sign-out/sign-in from local ports should not 403 due to origin strictness.
-    out.add('http://localhost:3000');
-    out.add('http://127.0.0.1:3000');
-    out.add('http://localhost:5173');
-    out.add('http://127.0.0.1:5173');
+    if (env.NODE_ENV !== 'production') {
+        out.add('http://localhost:3000');
+        out.add('http://127.0.0.1:3000');
+        out.add('http://localhost:5173');
+        out.add('http://127.0.0.1:5173');
+    }
     return Array.from(out);
 }
 
@@ -134,17 +136,24 @@ export const auth = betterAuth({
         fallback: safeAllowedHosts[0]
     },
     trustedOrigins: async (request) => {
-        const dynamic = new Set(trustedOriginSeeds);
+        const origins = new Set(trustedOriginSeeds);
         if (request) {
             const requestOrigin = toOrigin(request.url);
-            if (requestOrigin) dynamic.add(requestOrigin);
-            const originHeader = request.headers.get('origin');
-            if (originHeader) {
-                const normalized = toOrigin(originHeader) ?? originHeader;
-                if (normalized) dynamic.add(normalized);
+            if (requestOrigin) {
+                try {
+                    const parsed = new URL(requestOrigin);
+                    if (
+                        safeAllowedHosts.includes(parsed.host) ||
+                        safeAllowedHosts.includes(parsed.hostname)
+                    ) {
+                        origins.add(requestOrigin);
+                    }
+                } catch {
+                    // Non-URL or unparseable origin ignored
+                }
             }
         }
-        return Array.from(dynamic);
+        return Array.from(origins);
     },
     secret:
         env.SERVER_AUTH_SECRET ||
