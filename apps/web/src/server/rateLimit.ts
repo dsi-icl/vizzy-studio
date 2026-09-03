@@ -38,11 +38,11 @@ function sanitizeIp(value: string | null): string | null {
 export function getClientIpFromHeaders(headers: MaybeHeaders): string {
     if (!TRUST_FORWARDED_HEADERS) return 'unknown';
 
-    const xff = pickHeader(headers, 'x-forwarded-for');
-    if (xff) {
-        const first = sanitizeIp(xff.split(',')[0]?.trim() ?? null);
-        if (first) return first;
-    }
+    const cf = sanitizeIp(pickHeader(headers, 'cf-connecting-ip'));
+    if (cf) return cf;
+
+    const realIp = sanitizeIp(pickHeader(headers, 'x-real-ip'));
+    if (realIp) return realIp;
 
     const forwarded = pickHeader(headers, 'forwarded');
     if (forwarded) {
@@ -51,11 +51,15 @@ export function getClientIpFromHeaders(headers: MaybeHeaders): string {
         if (parsed) return parsed;
     }
 
-    const cf = sanitizeIp(pickHeader(headers, 'cf-connecting-ip'));
-    if (cf) return cf;
-
-    const realIp = sanitizeIp(pickHeader(headers, 'x-real-ip'));
-    if (realIp) return realIp;
+    const xff = pickHeader(headers, 'x-forwarded-for');
+    if (xff) {
+        const parts = xff
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const candidate = sanitizeIp(parts[0] ?? null);
+        if (candidate) return candidate;
+    }
 
     return 'unknown';
 }

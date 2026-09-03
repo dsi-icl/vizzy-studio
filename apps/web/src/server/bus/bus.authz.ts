@@ -61,10 +61,12 @@ export const EDIT_PROJECT_MESSAGE_TYPES = new Set([
 
 export const WS_HANDSHAKE_MESSAGE_TYPES = new Set(['hello', 'hello_auth']);
 
-// TODO Review if authed logic is warranted here
-export function getWsRateLimitIdentity(peer: Peer): string {
+export function getWsRateLimitIdentity(peer: Peer, entry?: PeerEntry): string {
+    const userEmail = entry?.meta.authContext?.user?.email;
+    const deviceId = entry?.meta.authContext?.device?.id;
+    const actorId = userEmail ?? (deviceId ? `device:${deviceId}` : null);
     const ip = getClientIpFromHeaders(peer.request?.headers as Headers | undefined);
-    return buildRateLimitSubjectKey({ ip, peerId: peer.id });
+    return buildRateLimitSubjectKey({ actorId, ip, peerId: peer.id });
 }
 
 export function getWsHandshakeRateLimitIdentity(peer: Peer): string {
@@ -209,7 +211,7 @@ export async function enforceWsRateLimit(
 ): Promise<boolean> {
     if (!WS_MUTATION_MESSAGE_TYPES.has(messageType)) return true;
 
-    const subjectKey = getWsRateLimitIdentity(peer);
+    const subjectKey = getWsRateLimitIdentity(peer, opts?.entry);
     const result = checkRateLimit({ subjectKey });
 
     if (result.allowed) {
@@ -220,8 +222,10 @@ export async function enforceWsRateLimit(
     const nextStrikes = (wsRateLimitStrikes.get(peer.id) ?? 0) + 1;
     wsRateLimitStrikes.set(peer.id, nextStrikes);
 
-    // TODO See if we target more explicit user/identified devices
-    const actorId = peer.id;
+    const actorId =
+        opts?.entry?.meta.authContext?.user?.email ??
+        opts?.entry?.meta.authContext?.device?.id ??
+        peer.id;
     void logAuditDenied({
         action: 'WS_MESSAGE_RATE_LIMITED',
         actorId,
