@@ -104,14 +104,28 @@ async function readHeaderBytes(filePath: string, size = 12): Promise<Uint8Array>
     }
 }
 
+const MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
+
 const tusServer = new Server({
     path: '/api/uploads',
+    maxSize: MAX_UPLOAD_SIZE,
     // Reverse proxies may terminate TLS before reaching the app process.
     // Emit same-origin relative upload URLs to avoid mixed-content redirects
     // (https page following an http Location header).
     respectForwardedHeaders: true,
     generateUrl: (_req, { path, id }) => `${path}/${id}`,
     datastore: new FileStore({ directory: UPLOAD_DIR }),
+    async onUploadCreate(_req, res, upload) {
+        const uploadToken = upload.metadata?.uploadToken;
+        if (!uploadToken) {
+            throw { status_code: 401, body: 'Missing upload token' };
+        }
+        const tokenData = validateUploadToken(uploadToken);
+        if (!tokenData) {
+            throw { status_code: 401, body: 'Invalid or expired upload token' };
+        }
+        return res;
+    },
     async onUploadFinish(req, upload) {
         const tusFilePath = join(UPLOAD_DIR, upload.id);
         const uploaderIp = getClientIpFromHeaders(req.headers);
