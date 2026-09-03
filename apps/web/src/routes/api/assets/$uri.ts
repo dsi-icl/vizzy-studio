@@ -292,13 +292,21 @@ const getResponse = createServerOnlyFn(
         const ext = extname(asset).toLowerCase();
         const contentType = ASSET_MIME_TYPES[ext] || 'application/octet-stream';
 
+        const isSvg = ext === '.svg' || contentType === 'image/svg+xml';
+
         // Set long life for downloaded assets here
-        const baseHeaders = {
+        const baseHeaders: Record<string, string> = {
             'Access-Control-Allow-Origin': '*',
             'Content-Type': contentType,
             ETag: etag,
             'Cache-Control': cacheControl,
-            'Accept-Ranges': 'bytes'
+            'Accept-Ranges': 'bytes',
+            'X-Content-Type-Options': 'nosniff',
+            ...(isSvg
+                ? {
+                      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'"
+                  }
+                : {})
         };
 
         // If the client asks only for a range we optimise here
