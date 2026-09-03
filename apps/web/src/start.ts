@@ -62,7 +62,7 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
         return next();
     }
 
-    const isDev = import.meta.env.DEV;
+    const isDev = process.env.NODE_ENV === 'development';
     const nonce = crypto.randomBytes(16).toString('base64');
     const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
     const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
