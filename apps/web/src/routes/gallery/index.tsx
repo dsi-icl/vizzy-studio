@@ -521,15 +521,6 @@ function HomePage() {
         setActiveBucket(null);
     };
 
-    const filteredProjects = useMemo(() => {
-        const list = activeTag
-            ? projectsData.filter((p) => p.tags.includes(activeTag))
-            : projectsData;
-        return [...list].sort((a, b) =>
-            a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base', numeric: true })
-        );
-    }, [activeTag, projectsData]);
-
     const autoOpenProjectId = useMemo(() => {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
@@ -538,6 +529,17 @@ function HomePage() {
         if (boundSource === 'live') return null;
         return targetWall.boundProjectId;
     }, [wallId, walls]);
+
+    const effectiveActiveTag = autoOpenProjectId ? null : activeTag;
+
+    const filteredProjects = useMemo(() => {
+        const list = effectiveActiveTag
+            ? projectsData.filter((p) => p.tags.includes(effectiveActiveTag))
+            : projectsData;
+        return [...list].sort((a, b) =>
+            a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base', numeric: true })
+        );
+    }, [effectiveActiveTag, projectsData]);
 
     const autoOpenBindingSignature = useMemo(() => {
         if (!wallId) return null;
@@ -571,12 +573,6 @@ function HomePage() {
         if (!wallId || syncedCloseRevision <= 0) return null;
         return `wall:${wallId}:close:${syncedCloseProjectId}:rev:${syncedCloseRevision}`;
     }, [wallId, syncedCloseProjectId, syncedCloseRevision]);
-
-    useEffect(() => {
-        if (!autoOpenProjectId) return;
-        if (activeTag === null) return;
-        setActiveTag(null);
-    }, [autoOpenProjectId, activeTag]);
 
     if (galleryEnrollmentGateActive) {
         return (
@@ -647,7 +643,7 @@ function HomePage() {
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
                     <div className="grid grid-cols-3 gap-1">
                         <Button
-                            variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
+                            variant={!effectiveActiveTag && !activeBucket ? 'secondary' : 'ghost'}
                             size="sm"
                             onClick={handleClearAll}
                             className="w-full"
@@ -685,7 +681,9 @@ function HomePage() {
                                         className="w-auto md:w-full"
                                     >
                                         <Button
-                                            variant={activeTag === tag ? 'secondary' : 'ghost'}
+                                            variant={
+                                                effectiveActiveTag === tag ? 'secondary' : 'ghost'
+                                            }
                                             onClick={() => setActiveTag(tag)}
                                             className="w-full justify-start"
                                         >
