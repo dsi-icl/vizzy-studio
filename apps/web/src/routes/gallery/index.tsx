@@ -53,6 +53,11 @@ type WallListEntry = {
     boundSource?: 'live' | 'gallery' | null;
 };
 
+const formatRequesterLabel = (email?: string) => {
+    // TODO Lookup through university LDAP to get names maybe ?
+    return `${email}`;
+};
+
 function HomePage() {
     const { user } = useAuth();
     const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -429,11 +434,6 @@ function HomePage() {
             document.documentElement.style.removeProperty('--gallery-minimized-left');
         };
     }, []);
-
-    const formatRequesterLabel = (email?: string) => {
-        // TODO Lookup through university LDAP to get names maybe ?
-        return `${email}`;
-    };
 
     const overrideSecondsLeft = pendingOverride
         ? Math.ceil(Math.max(0, pendingOverride.expiresAt - overrideClockNow) / 1000)
