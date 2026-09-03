@@ -143,7 +143,10 @@ export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
                     status: 200,
                     headers: {
                         'Content-Type': 'text/html; charset=utf-8',
-                        'Cache-Control': 'no-store'
+                        'Cache-Control': 'no-store',
+                        'X-Content-Type-Options': 'nosniff',
+                        'Content-Security-Policy':
+                            "sandbox allow-scripts allow-forms; default-src 'self' 'unsafe-inline' https: data: blob:; frame-ancestors 'self';"
                     }
                 });
             }
