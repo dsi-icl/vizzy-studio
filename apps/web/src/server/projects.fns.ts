@@ -44,6 +44,10 @@ import {
     updateProject
 } from './projects';
 
+const HttpUrlString = z
+    .string()
+    .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL');
+
 const CreateProjectInput = z.object({
     name: z.string().min(1, 'Name is required'),
     authorOrganisation: z.string().min(1, 'Author/Organisation is required'),
@@ -51,8 +55,8 @@ const CreateProjectInput = z.object({
     tags: z.array(z.string()).default([]),
     visibility: ProjectVisibility.default('private'),
     heroImages: z.array(z.string()).default([]),
-    customControlUrl: z.string().optional(),
-    customRenderUrl: z.string().optional(),
+    customControlUrl: HttpUrlString.optional(),
+    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().default(false),
     customRenderProxy: z.boolean().default(false),
     collaborators: z.array(Collaborator).default([])
@@ -66,14 +70,8 @@ const UpdateProjectInput = z.object({
     tags: z.array(z.string()).optional(),
     visibility: ProjectVisibility.optional(),
     heroImages: z.array(z.string()).optional(),
-    customControlUrl: z
-        .string()
-        .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL')
-        .optional(),
-    customRenderUrl: z
-        .string()
-        .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL')
-        .optional(),
+    customControlUrl: HttpUrlString.optional(),
+    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().optional(),
     customRenderProxy: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional(),
