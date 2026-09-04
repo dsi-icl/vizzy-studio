@@ -173,7 +173,8 @@ export function isWsMessageAuthorized(
     if (EDIT_PROJECT_MESSAGE_TYPES.has(type)) {
         if (
             (type === 'upsert_layer' || type === 'delete_layer') &&
-            data.origin === 'controller:add_line_layer'
+            (data.origin === 'controller:add_line_layer' ||
+                data.origin === 'controller:erase_line_layer')
         ) {
             return (
                 entry.meta.specimen === 'controller' &&

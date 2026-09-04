@@ -1,5 +1,6 @@
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
+import { clampEraserWidth } from './eraser';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -156,8 +157,17 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
         toggleDrawing: () =>
             set((s) => ({
                 isDrawing: !s.isDrawing,
+                isErasing: false,
                 selectedLayerIds: !s.isDrawing ? [] : s.selectedLayerIds
             })),
+
+        setErasing: (isErasing: boolean) =>
+            set((s) => ({
+                isErasing,
+                isDrawing: isErasing ? false : s.isDrawing
+            })),
+
+        setEraserWidth: (width: number) => set({ eraserWidth: clampEraserWidth(width) }),
 
         toggleSnapping: () => set((s) => ({ isSnapping: !s.isSnapping })),
 

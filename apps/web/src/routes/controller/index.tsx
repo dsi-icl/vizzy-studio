@@ -15,14 +15,19 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { ControllerToolbar } from '~/components/ControllerToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
+import { adjustEraserWidth } from '~/lib/eraser';
+import { MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { eraseLinePaths } from '~/lib/lineEraser';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
-import type { LayerWithEditorState } from '~/lib/types';
+import { getLineBounds } from '~/lib/stageGeometry';
+import { getLinePaths, type LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const BINDING_SIGNAL_TIMEOUT_MS = 1500;
@@ -56,6 +61,20 @@ interface SlideEntry {
 interface RenderState {
     hydrationReady: boolean;
     customRenderUrl?: string;
+}
+
+interface ControllerEraseTarget {
+    layer: LayerWithEditorState;
+    paths: number[][];
+    radius: number;
+    changed: boolean;
+    failed: boolean;
+}
+
+interface ControllerEraseGesture {
+    slideId: string;
+    targets: ControllerEraseTarget[];
+    didProcessBatch: boolean;
 }
 
 function buildLineLayer(
@@ -157,6 +176,7 @@ function Controller() {
     const [slides, setSlides] = useState<SlideEntry[]>([]);
     const [pendingSlideId, setPendingSlideId] = useState<string | null>(null);
     const slidesRef = useRef<SlideEntry[]>([]);
+    const eraserGestureRef = useRef<ControllerEraseGesture | null>(null);
     const lastRequestedBindRef = useRef<string | null>(null);
     const lastBoundScopeRef = useRef<string | null>(null);
     const boundSlideIdRef = useRef<string | null>(null);
@@ -164,6 +184,8 @@ function Controller() {
     const pendingSlideTimeoutRef = useRef<number | null>(null);
     const {
         isDrawing,
+        isErasing,
+        eraserWidth,
         strokeColor,
         setStrokeColor,
         strokeWidth,
@@ -172,14 +194,19 @@ function Controller() {
         setStrokeDash,
         currentLine,
         setDrawing,
+        setErasing,
+        setEraserWidth,
         toggleDrawing,
         startLine,
         appendLinePoint,
+        appendEraserPoint,
         clearCurrentLine,
         consumeCurrentLine
     } = useControllerStore(
         useShallow((s) => ({
             isDrawing: s.isDrawing,
+            isErasing: s.isErasing,
+            eraserWidth: s.eraserWidth,
             strokeColor: s.strokeColor,
             setStrokeColor: s.setStrokeColor,
             strokeWidth: s.strokeWidth,
@@ -188,9 +215,12 @@ function Controller() {
             setStrokeDash: s.setStrokeDash,
             currentLine: s.currentLine,
             setDrawing: s.setDrawing,
+            setErasing: s.setErasing,
+            setEraserWidth: s.setEraserWidth,
             toggleDrawing: s.toggleDrawing,
             startLine: s.startLine,
             appendLinePoint: s.appendLinePoint,
+            appendEraserPoint: s.appendEraserPoint,
             clearCurrentLine: s.clearCurrentLine,
             consumeCurrentLine: s.consumeCurrentLine
         }))
@@ -414,6 +444,16 @@ function Controller() {
         );
     }, []);
 
+    const removeLayerFromSlide = useCallback((slideId: string, numericId: number) => {
+        setSlides((prev) =>
+            prev.map((slide) => {
+                if (slide.id !== slideId) return slide;
+                const nextLayers = slide.layers.filter((layer) => layer.numericId !== numericId);
+                return { ...slide, layers: nextLayers, layerCount: nextLayers.length };
+            })
+        );
+    }, []);
+
     // HMR rehydrate
     useEffect(() => {
         if (window.__CONTROLLER_RELOADING__) {
@@ -477,12 +517,14 @@ function Controller() {
 
     useEffect(() => {
         clearCurrentLine();
+        eraserGestureRef.current = null;
     }, [activeSlideId, requestedSlideId, binding.slideId, binding.bound, clearCurrentLine]);
 
     useEffect(() => {
         if (binding.bound) return;
         setDrawing(false);
-    }, [binding.bound, setDrawing]);
+        setErasing(false);
+    }, [binding.bound, setDrawing, setErasing]);
 
     useEffect(() => {
         if (!pendingSlideId) return;
@@ -618,6 +660,88 @@ function Controller() {
         [engine, activeSlideId, strokeColor, strokeWidth, strokeDash, upsertLayerOnSlide]
     );
 
+    const startEraserGesture = useCallback(() => {
+        if (!activeSlideId) return;
+        const slide = slidesRef.current.find((item) => item.id === activeSlideId);
+        if (!slide) return;
+
+        eraserGestureRef.current = {
+            slideId: activeSlideId,
+            targets: slide.layers.flatMap((layer) => {
+                if (layer.type !== 'line' || layer.config.locked || !layer.config.visible)
+                    return [];
+                return [
+                    {
+                        layer,
+                        paths: getLinePaths(layer),
+                        radius: eraserWidth / 2 + layer.strokeWidth / 2,
+                        changed: false,
+                        failed: false
+                    }
+                ];
+            }),
+            didProcessBatch: false
+        };
+    }, [activeSlideId, eraserWidth]);
+
+    const processEraserBatch = useCallback((eraserPath: number[]) => {
+        const gesture = eraserGestureRef.current;
+        if (!gesture) return;
+
+        const targets = gesture.targets.map((target) => {
+            if (target.failed) return target;
+            const result = eraseLinePaths(target.paths, eraserPath, target.radius);
+            if (result.status === 'failed') return { ...target, failed: true };
+            if (result.status === 'changed') {
+                return { ...target, paths: result.paths, changed: true };
+            }
+            return target;
+        });
+        eraserGestureRef.current = { ...gesture, targets };
+    }, []);
+
+    const commitEraserGesture = useCallback(() => {
+        const gesture = eraserGestureRef.current;
+        eraserGestureRef.current = null;
+        if (!gesture || !engine) return;
+
+        for (const target of gesture.targets) {
+            if (!target.changed || target.failed || target.layer.type !== 'line') continue;
+            if (target.paths.length === 0) {
+                removeLayerFromSlide(gesture.slideId, target.layer.numericId);
+                engine.sendJSON({
+                    type: 'delete_layer',
+                    origin: 'controller:erase_line_layer',
+                    numericId: target.layer.numericId
+                });
+                continue;
+            }
+
+            const bounds = getLineBounds(target.paths.flat());
+            if (!bounds) continue;
+            const nextLayer: LayerWithEditorState = {
+                ...target.layer,
+                config: {
+                    ...target.layer.config,
+                    cx: Math.round(bounds.cx),
+                    cy: Math.round(bounds.cy),
+                    width: Math.max(MIN_LAYER_DIMENSION, bounds.width),
+                    height: Math.max(MIN_LAYER_DIMENSION, bounds.height)
+                },
+                line: target.paths.reduce((longest, path) =>
+                    path.length > longest.length ? path : longest
+                ),
+                linePaths: target.paths
+            };
+            upsertLayerOnSlide(gesture.slideId, nextLayer);
+            engine.sendJSON({
+                type: 'upsert_layer',
+                origin: 'controller:erase_line_layer',
+                layer: nextLayer
+            });
+        }
+    }, [engine, removeLayerFromSlide, upsertLayerOnSlide]);
+
     const getStagePoint = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
             const stage = e.target.getStage();
@@ -633,38 +757,76 @@ function Controller() {
 
     const handleDrawStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (!canDraw || !isDrawing) return;
+            if (!canDraw || (!isDrawing && !isErasing)) return;
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) return;
             const point = getStagePoint(e);
             if (!point) return;
+            if (isErasing) startEraserGesture();
             startLine(point.x, point.y);
         },
-        [canDraw, isDrawing, getStagePoint, startLine]
+        [canDraw, isDrawing, isErasing, getStagePoint, startEraserGesture, startLine]
     );
 
     const handleDrawMove = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-            if (!canDraw || !isDrawing || currentLine.length < 2) return;
+            if (!canDraw || (!isDrawing && !isErasing) || currentLine.length < 2) return;
             if (isTouchEvent(e.evt) && e.evt.touches.length >= 2) {
                 clearCurrentLine();
+                eraserGestureRef.current = null;
                 return;
             }
             if (e.evt instanceof MouseEvent && e.evt.buttons !== 1) return;
             const point = getStagePoint(e);
             if (!point) return;
-            appendLinePoint(point.x, point.y);
+            if (isErasing) {
+                const batch = appendEraserPoint(point.x, point.y);
+                if (batch) {
+                    const gesture = eraserGestureRef.current;
+                    if (gesture) {
+                        eraserGestureRef.current = { ...gesture, didProcessBatch: true };
+                    }
+                    processEraserBatch(batch);
+                }
+            } else {
+                appendLinePoint(point.x, point.y);
+            }
         },
-        [canDraw, isDrawing, currentLine.length, getStagePoint, appendLinePoint, clearCurrentLine]
+        [
+            canDraw,
+            isDrawing,
+            isErasing,
+            currentLine.length,
+            getStagePoint,
+            appendLinePoint,
+            appendEraserPoint,
+            processEraserBatch,
+            clearCurrentLine
+        ]
     );
 
     const handleDrawEnd = useCallback(() => {
-        if (!canDraw || !isDrawing) return;
+        if (!canDraw || (!isDrawing && !isErasing)) return;
         const line = consumeCurrentLine();
-        if (line.length > 4) {
+        if (isDrawing && line.length > 4) {
             addLineLayer(line);
+        } else if (isErasing && line.length >= 2) {
+            const gesture = eraserGestureRef.current;
+            if (gesture && (line.length > 2 || !gesture.didProcessBatch)) {
+                processEraserBatch(line);
+            }
+            commitEraserGesture();
         }
         clearCurrentLine();
-    }, [canDraw, isDrawing, consumeCurrentLine, addLineLayer, clearCurrentLine]);
+    }, [
+        canDraw,
+        isDrawing,
+        isErasing,
+        consumeCurrentLine,
+        addLineLayer,
+        processEraserBatch,
+        commitEraserGesture,
+        clearCurrentLine
+    ]);
 
     const handleTouchStart = useCallback(
         (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
@@ -706,14 +868,23 @@ function Controller() {
         [handleDrawEnd]
     );
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
-        const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const delta = e.evt.deltaX + e.evt.deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            if (isErasing) {
+                if (e.evt.deltaY !== 0) {
+                    setEraserWidth(adjustEraserWidth(eraserWidth, e.evt.deltaY));
+                }
+                return;
+            }
+            slot.scrollLeft += delta;
+        },
+        [eraserWidth, isErasing, setEraserWidth]
+    );
 
     useLayoutEffect(() => {
         const slot = stageSlot.current;
@@ -897,8 +1068,12 @@ function Controller() {
                             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                                 <ControllerToolbar
                                     isDrawing={isDrawing}
+                                    isErasing={isErasing}
                                     canDraw={canDraw}
                                     onToggleDrawing={toggleDrawing}
+                                    onToggleErasing={() => setErasing(!isErasing)}
+                                    eraserWidth={eraserWidth}
+                                    setEraserWidth={setEraserWidth}
                                     strokeColor={strokeColor}
                                     setStrokeColor={setStrokeColor}
                                     strokeWidth={strokeWidth}
@@ -1026,16 +1201,9 @@ function Controller() {
                                                     }
                                                     if (layer.type === 'line') {
                                                         return (
-                                                            <Line
+                                                            <KonvaLineSegments
                                                                 key={`lin_${layer.numericId}`}
-                                                                points={layer.line}
-                                                                stroke={layer.strokeColor}
-                                                                strokeWidth={layer.strokeWidth}
-                                                                dash={layer.strokeDash}
-                                                                dashEnabled={true}
-                                                                tension={0.4}
-                                                                lineCap="round"
-                                                                lineJoin="round"
+                                                                layer={layer}
                                                                 listening={false}
                                                             />
                                                         );
@@ -1076,7 +1244,7 @@ function Controller() {
                                                         />
                                                     );
                                                 })}
-                                            {currentLine.length > 3 && (
+                                            {isDrawing && currentLine.length > 3 && (
                                                 <Line
                                                     key="new-line"
                                                     points={currentLine}
@@ -1090,6 +1258,27 @@ function Controller() {
                                                     listening={false}
                                                 />
                                             )}
+                                            {isErasing && currentLine.length > 2 ? (
+                                                <Line
+                                                    points={currentLine}
+                                                    stroke="rgba(148, 163, 184, 0.4)"
+                                                    strokeWidth={eraserWidth}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                    listening={false}
+                                                />
+                                            ) : null}
+                                            {isErasing && currentLine.length >= 2 ? (
+                                                <Circle
+                                                    x={currentLine[currentLine.length - 2]}
+                                                    y={currentLine[currentLine.length - 1]}
+                                                    radius={eraserWidth / 2}
+                                                    fill="rgba(255, 255, 255, 0.08)"
+                                                    stroke="rgba(255, 255, 255, 0.7)"
+                                                    strokeWidth={2 / stageScaleFactor}
+                                                    listening={false}
+                                                />
+                                            ) : null}
                                         </KonvaLayer>
                                     </Stage>
                                 </div>

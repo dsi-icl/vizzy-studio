@@ -1,9 +1,10 @@
 import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
-import { Circle, KonvaNodeEvents, Layer, Rect, Stage, Line } from 'react-konva';
+import { Circle, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getDOGridLines } from '~/lib/editorHelpers';
 import type { LayerWithEditorState } from '~/lib/types';
@@ -104,16 +105,10 @@ export function ViewerSlatePreview({
                         .map((shape) => {
                             if (shape.type === 'line')
                                 return (
-                                    <Line
+                                    <KonvaLineSegments
                                         key={`lin_${shape.numericId}`}
-                                        points={shape.line}
-                                        stroke={shape.strokeColor}
+                                        layer={shape}
                                         strokeWidth={shape.strokeWidth * 2}
-                                        dash={shape.strokeDash}
-                                        dashEnabled={true}
-                                        tension={0.4}
-                                        lineCap="round"
-                                        lineJoin="round"
                                     />
                                 );
                             if (shape.type === 'shape') {

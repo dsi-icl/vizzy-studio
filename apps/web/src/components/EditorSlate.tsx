@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -39,7 +40,14 @@ import {
 } from '~/lib/editorKeyboardMovement';
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
+import { adjustEraserWidth } from '~/lib/eraser';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import {
+    appendEraserPoint,
+    eraseLinePaths,
+    getLineEraseFailureMessage,
+    type LineEraseGesture
+} from '~/lib/lineEraser';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { COLS, ROWS, SCREEN_H, SCREEN_W, SNAP_GRID } from '~/lib/stageConstants';
@@ -53,7 +61,7 @@ import {
     touchToStagePoint
 } from '~/lib/stageGeometry';
 import { scrubInsecureTusResumeEntries } from '~/lib/tusClient';
-import type { Layer, LayerWithEditorState } from '~/lib/types';
+import { getLinePaths, type Layer, type LayerWithEditorState } from '~/lib/types';
 import { $createUploadToken } from '~/server/projects.fns';
 
 import { SlatePreview } from './SlatePreview';
@@ -82,6 +90,10 @@ export function EditorSlate() {
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
+    const isErasing = useEditorStore((s) => s.isErasing);
+    const eraserWidth = useEditorStore((s) => s.eraserWidth);
+    const setEraserWidth = useEditorStore((s) => s.setEraserWidth);
+    const commitLineErase = useEditorStore((s) => s.commitLineErase);
 
     // Peer cursors are per-slide; remounting on scope change drops the previous
     // slide's cursors instead of leaving them to age out.
@@ -92,6 +104,12 @@ export function EditorSlate() {
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
     const [currentLine, setCurrentLine] = useState<Array<number>>([]);
+    const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
+    const [eraserPreviewPath, setEraserPreviewPath] = useState<number[]>([]);
+    const [erasedLinePreview, setErasedLinePreview] = useState<{
+        numericId: number;
+        linePaths: number[][];
+    } | null>(null);
     const editingTextLayerId = useEditorStore((s) => s.editingTextLayerId);
     const lastX = useRef(0);
     const stageLastX = useRef(0);
@@ -101,6 +119,7 @@ export function EditorSlate() {
     const stageInstance = useRef<Konva.Stage>(null);
     const trRef = useRef<Konva.Transformer>(null);
     const hoverTrRef = useRef<Konva.Transformer>(null);
+    const eraserGestureRef = useRef<LineEraseGesture | null>(null);
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
@@ -133,6 +152,7 @@ export function EditorSlate() {
         hoveredLayer?.config.visible &&
         !selectedLayerIdSet.has(hoveredLayerId) &&
         !isDrawing &&
+        !isErasing &&
         !isPinching
             ? hoveredLayerId
             : null;
@@ -422,6 +442,10 @@ export function EditorSlate() {
     useEffect(() => {
         layersRef.current = layers;
     }, [layers]);
+
+    useEffect(() => {
+        if (!isErasing) eraserGestureRef.current = null;
+    }, [isErasing]);
 
     useEffect(() => {
         if (!engine) return;
@@ -1138,6 +1162,21 @@ export function EditorSlate() {
         return null;
     };
 
+    const processEraserBatch = (gesture: LineEraseGesture, path: number[]) => {
+        if (gesture.result.status === 'failed') return;
+
+        const nextResult = eraseLinePaths(gesture.result.paths, path, gesture.radius);
+        if (nextResult.status === 'changed') {
+            setErasedLinePreview({
+                numericId: gesture.numericId,
+                linePaths: nextResult.paths
+            });
+        }
+        if (nextResult.status !== 'unchanged' || gesture.result.status !== 'changed') {
+            gesture.result = nextResult;
+        }
+    };
+
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
             setHoveredLayerId(null);
@@ -1149,6 +1188,36 @@ export function EditorSlate() {
         const isTwoFingerTouch = isTouchEvent(e.evt) && e.evt.touches?.length === 2;
         if (isDrawing && isTwoFingerTouch) {
             setCurrentLine([]);
+        }
+        if (isErasing) {
+            const isPrimaryPointer =
+                (isTouchEvent(e.evt) && e.evt.touches.length === 1) ||
+                (e.evt instanceof MouseEvent && e.evt.button === 0);
+            if (!isPrimaryPointer || eraserGestureRef.current) return;
+
+            const selectedId = currentSelectedIds[0];
+            const layer = selectedId
+                ? useEditorStore.getState().layers.get(Number.parseInt(selectedId, 10))
+                : undefined;
+            const point = e.target.getStage()?.getPointerPosition();
+            if (!point || layer?.type !== 'line' || layer.config.locked) return;
+
+            const cursor = {
+                x: point.x / stageScaleFactor,
+                y: point.y / stageScaleFactor
+            };
+            const linePaths = getLinePaths(layer);
+            eraserGestureRef.current = {
+                numericId: layer.numericId,
+                radius: eraserWidth / 2 + layer.strokeWidth / 2,
+                path: [cursor.x, cursor.y],
+                didProcessBatch: false,
+                result: { status: 'unchanged', paths: linePaths }
+            };
+            setEraserCursor(cursor);
+            setEraserPreviewPath([cursor.x, cursor.y]);
+            setErasedLinePreview(null);
+            return;
         }
         if (
             (isTouchEvent(e.evt) && e.evt.touches?.length === 1) ||
@@ -1223,6 +1292,34 @@ export function EditorSlate() {
         const currentSelectedLayer = currentSelectedIds[0]
             ? useEditorStore.getState().layers.get(Number.parseInt(currentSelectedIds[0], 10))
             : undefined;
+        if (isErasing) {
+            const point = e.target.getStage()?.getPointerPosition();
+            if (!point) return;
+
+            const cursor = {
+                x: point.x / stageScaleFactor,
+                y: point.y / stageScaleFactor
+            };
+            setEraserCursor(cursor);
+
+            const gesture = eraserGestureRef.current;
+            const isPrimaryPointer =
+                (isTouchEvent(e.evt) && e.evt.touches.length === 1) ||
+                (e.evt instanceof MouseEvent && e.evt.buttons === 1);
+            if (!gesture || !isPrimaryPointer) return;
+
+            const lastX = gesture.path[gesture.path.length - 2];
+            const lastY = gesture.path[gesture.path.length - 1];
+            if (lastX !== cursor.x || lastY !== cursor.y) {
+                const batch = appendEraserPoint(gesture.path, cursor.x, cursor.y);
+                if (batch) {
+                    gesture.didProcessBatch = true;
+                    processEraserBatch(gesture, batch);
+                }
+                setEraserPreviewPath([...gesture.path]);
+            }
+            return;
+        }
         if (e.evt instanceof MouseEvent) {
             const targetId =
                 !isDrawing && e.evt.buttons === 0 && !trRef.current?.isTransforming()
@@ -1321,7 +1418,32 @@ export function EditorSlate() {
         }
     };
 
+    const finishEraserGesture = () => {
+        const gesture = eraserGestureRef.current;
+        if (!gesture) return;
+
+        if (gesture.path.length > 2 || !gesture.didProcessBatch) {
+            processEraserBatch(gesture, gesture.path);
+        }
+        const result = gesture.result;
+
+        if (result.status === 'changed') {
+            commitLineErase(gesture.numericId, result.paths);
+        } else if (result.status === 'failed') {
+            toast.error(getLineEraseFailureMessage(result.reason));
+        }
+
+        eraserGestureRef.current = null;
+        setEraserPreviewPath([]);
+        setErasedLinePreview(null);
+    };
+
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (isErasing) {
+            finishEraserGesture();
+            if (isTouchEvent(e.evt)) setEraserCursor(null);
+            return;
+        }
         if (isTouchEvent(e.evt) && e.evt.touches.length < 2) setIsPinching(false);
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const shouldFinalizeFromStage = isTouchEvent(e.evt) && isPinching;
@@ -1349,20 +1471,30 @@ export function EditorSlate() {
 
     const handleStageMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
         setHoveredLayerId(null);
+        setEraserCursor(null);
         // Stops the presence heartbeat, so peers age this cursor out instead of
         // holding it at the edge of the stage indefinitely.
         engine?.stopPointerBroadcast();
         handleTouchEnd(e);
     };
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
-        const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const delta = e.evt.deltaX + e.evt.deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            if (isErasing) {
+                if (e.evt.deltaY !== 0) {
+                    setEraserWidth(adjustEraserWidth(eraserWidth, e.evt.deltaY));
+                }
+                return;
+            }
+            slot.scrollLeft += delta;
+        },
+        [eraserWidth, isErasing, setEraserWidth]
+    );
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
@@ -1410,6 +1542,7 @@ export function EditorSlate() {
                 stageSlot={stageSlot}
                 stageInstance={stageInstance}
                 stageScaleFactor={stageScaleFactor}
+                onWheel={handleStageWheel}
             />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
@@ -1482,7 +1615,7 @@ export function EditorSlate() {
                                 const hiddenOpacity = isHidden ? 0.3 : 1;
 
                                 const props = {
-                                    listening: !isDrawing,
+                                    listening: !isDrawing && !isErasing,
                                     isDrawing,
                                     isPinching,
                                     isLocked,
@@ -1642,20 +1775,20 @@ export function EditorSlate() {
                                     }
                                 }
                                 if (layer.type === 'line') {
+                                    const previewLayer =
+                                        isErasing &&
+                                        erasedLinePreview?.numericId === layer.numericId
+                                            ? { ...layer, linePaths: erasedLinePreview.linePaths }
+                                            : layer;
                                     return (
-                                        <Line
+                                        <KonvaLineSegments
                                             key={`lin_${layer.numericId}`}
                                             id={layer.numericId.toString()}
+                                            layer={previewLayer}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}
                                             onClick={props.onSelect}
                                             onTap={props.onSelect}
-                                            points={layer.line}
-                                            stroke={layer.strokeColor}
-                                            strokeWidth={layer.strokeWidth}
-                                            dash={layer.strokeDash}
-                                            dashEnabled={true}
-                                            tension={0.4}
                                             shadowForStrokeEnabled={
                                                 selectedLayerIds[0] ===
                                                     layer.numericId.toString() &&
@@ -1666,8 +1799,6 @@ export function EditorSlate() {
                                             shadowOffsetY={20}
                                             shadowOffsetX={20}
                                             shadowOpacity={1}
-                                            lineCap="round"
-                                            lineJoin="round"
                                         />
                                     );
                                 }
@@ -1686,6 +1817,27 @@ export function EditorSlate() {
                                     lineJoin="round"
                                 />
                             )}
+                            {isErasing && eraserPreviewPath.length > 2 ? (
+                                <Line
+                                    points={eraserPreviewPath}
+                                    stroke="rgba(148, 163, 184, 0.4)"
+                                    strokeWidth={eraserWidth}
+                                    lineCap="round"
+                                    lineJoin="round"
+                                    listening={false}
+                                />
+                            ) : null}
+                            {isErasing && eraserCursor ? (
+                                <Circle
+                                    x={eraserCursor.x}
+                                    y={eraserCursor.y}
+                                    radius={eraserWidth / 2}
+                                    fill="rgba(255, 255, 255, 0.08)"
+                                    stroke="rgba(255, 255, 255, 0.7)"
+                                    strokeWidth={2 / stageScaleFactor}
+                                    listening={false}
+                                />
+                            ) : null}
                             <Transformer
                                 ref={hoverTrRef}
                                 listening={false}

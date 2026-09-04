@@ -190,7 +190,9 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
     let layer = data.layer;
     if (typeof layer?.numericId !== 'number') return;
 
-    const isControllerTransientUpsert = data.origin === 'controller:add_line_layer';
+    const isControllerTransientUpsert =
+        data.origin === 'controller:add_line_layer' ||
+        data.origin === 'controller:erase_line_layer';
     let relayPayload = rawText;
 
     if (scopeId !== null) {
@@ -283,7 +285,9 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
 
 handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
     if (scopeId === null) return;
-    const isControllerTransientDelete = data.origin === 'controller:add_line_layer';
+    const isControllerTransientDelete =
+        data.origin === 'controller:add_line_layer' ||
+        data.origin === 'controller:erase_line_layer';
     const scope = scopedState.get(scopeId);
     let deletedPersistentLayer = false;
     let deletedControllerTransient = false;
