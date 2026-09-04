@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import { stat, unlink } from 'node:fs/promises';
-import { isIP } from 'node:net';
 import { join } from 'node:path';
 
 import { createFileRoute } from '@tanstack/react-router';
@@ -372,15 +370,15 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     );
                 }
 
-                let context: any = null;
+                let browserContext: any = null;
                 try {
                     const browser = await getSharedBrowser();
-                    context = await browser.newContext({
+                    browserContext = await browser.newContext({
                         viewport: { width: viewportWidth, height: viewportHeight }
                     });
-                    const page = await context.newPage();
+                    const page = await browserContext.newPage();
 
-                    await page.route('**', async (route) => {
+                    await page.route('**', async (route: any) => {
                         const requestUrl = route.request().url();
                         if (requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) {
                             await route.continue();
@@ -402,8 +400,8 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         type: 'png',
                         clip: { x: 0, y: 0, width: viewportWidth, height: viewportHeight }
                     });
-                    await context.close().catch(() => {});
-                    context = null;
+                    await browserContext.close().catch(() => {});
+                    browserContext = null;
 
                     // Generate blurhash and variants using the shared pipeline
                     const blurhash = await computeBlurhash(screenshotPath);
@@ -448,7 +446,7 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     });
                 } catch (err: any) {
                     console.error('[WebScreenshot] Failed:', err);
-                    if (context) await context.close().catch(() => {});
+                    if (browserContext) await browserContext.close().catch(() => {});
                     const message = String(err?.message ?? 'Screenshot capture failed');
                     await logAuditFailure({
                         action: 'WEB_SCREENSHOT_FAILED',
@@ -480,7 +478,7 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         }
                     );
                 } finally {
-                    if (context) await context.close().catch(() => {});
+                    if (browserContext) await browserContext.close().catch(() => {});
                     releaseSlot?.();
                 }
             }
