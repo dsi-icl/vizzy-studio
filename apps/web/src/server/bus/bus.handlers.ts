@@ -32,7 +32,6 @@ import {
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
-    resolveScopeId,
     saveScope,
     scopedState,
     sendJSON,
@@ -544,12 +543,36 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
             return;
         }
 
-        const user = entry.meta.authContext?.user;
-        const userRole = user?.role;
-        const isTrustedPublisher = user?.trustedPublisher === true;
-        const canBindWall = userRole === 'admin' || userRole === 'operator' || isTrustedPublisher;
+        const galleries = galleriesByWallId.get(data.wallId);
+        const hasGalleryApprover = Boolean(galleries && galleries.size > 0);
+        if (!hasGalleryApprover) {
+            const user = entry.meta.authContext?.user;
+            const userRole = user?.role;
+            const isTrustedPublisher = user?.trustedPublisher === true;
+            const canBindWall =
+                userRole === 'admin' || userRole === 'operator' || isTrustedPublisher;
 
-        if (!canBindWall) {
+            if (canBindWall) {
+                const result = await performLiveBind(
+                    data.wallId,
+                    data.projectId,
+                    data.commitId,
+                    resolvedSlideId
+                );
+                sendBindOverrideResult(entry.peer.id, {
+                    type: 'bind_override_result',
+                    requestId: data.requestId,
+                    wallId: data.wallId,
+                    allow: result.ok,
+                    reason: result.ok
+                        ? 'not_required'
+                        : result.error === 'unknown_wall'
+                          ? 'unknown_wall'
+                          : 'invalid'
+                });
+                return;
+            }
+
             await logAuditDenied({
                 action: 'WALL_BIND_REQUEST_DENIED',
                 reasonCode: 'PUBLISHER_ROLE_REQUIRED',
@@ -573,31 +596,8 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
             return;
         }
 
-        const galleries = galleriesByWallId.get(data.wallId);
-        const hasGalleryApprover = Boolean(galleries && galleries.size > 0);
-        if (!hasGalleryApprover) {
-            const isAdmin = userRole === 'admin';
-            if (isAdmin) {
-                const result = await performLiveBind(
-                    data.wallId,
-                    data.projectId,
-                    data.commitId,
-                    resolvedSlideId
-                );
-                sendBindOverrideResult(entry.peer.id, {
-                    type: 'bind_override_result',
-                    requestId: data.requestId,
-                    wallId: data.wallId,
-                    allow: result.ok,
-                    reason: result.ok
-                        ? 'not_required'
-                        : result.error === 'unknown_wall'
-                          ? 'unknown_wall'
-                          : 'invalid'
-                });
-                return;
-            }
-
+        const existingRequestId = pendingBindOverrideByWall.get(data.wallId);
+        if (existingRequestId) {
             sendBindOverrideResult(entry.peer.id, {
                 type: 'bind_override_result',
                 requestId: data.requestId,
@@ -606,11 +606,6 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
                 reason: 'denied'
             });
             return;
-        }
-
-        const existingRequestId = pendingBindOverrideByWall.get(data.wallId);
-        if (existingRequestId) {
-            clearPendingBindOverride(existingRequestId);
         }
 
         const expiresAt = Date.now() + BIND_OVERRIDE_TIMEOUT_MS;
