@@ -11,6 +11,7 @@ import {
     canEditProject,
     canPublishProject,
     canViewProject,
+    canViewProjectAudits,
     ownsProject,
     resolveProjectIdForAsset,
     resolveProjectIdForCommit,
@@ -621,6 +622,17 @@ export const $getAudits = createServerFn({ method: 'GET' })
             });
             throw new Error('Access denied');
         }
+        if (!canViewProjectAudits(actor)) {
+            await denyProjectFn({
+                context,
+                operation: '$getAudits',
+                reasonCode: 'PROJECT_AUDIT_VIEW_FORBIDDEN',
+                projectId: data.projectId,
+                resourceType: 'project',
+                resourceId: data.projectId
+            });
+            throw new Error('Access denied');
+        }
         return getAudits(data.projectId);
     });
 
@@ -667,6 +679,17 @@ export const $getAuditsPage = createServerFn({ method: 'GET' })
                 context,
                 operation: '$getAuditsPage',
                 reasonCode: 'PROJECT_VIEW_FORBIDDEN',
+                projectId: data.projectId,
+                resourceType: 'project',
+                resourceId: data.projectId
+            });
+            throw new Error('Access denied');
+        }
+        if (!canViewProjectAudits(actor)) {
+            await denyProjectFn({
+                context,
+                operation: '$getAuditsPage',
+                reasonCode: 'PROJECT_AUDIT_VIEW_FORBIDDEN',
                 projectId: data.projectId,
                 resourceType: 'project',
                 resourceId: data.projectId
