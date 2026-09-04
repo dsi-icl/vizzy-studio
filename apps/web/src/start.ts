@@ -27,6 +27,22 @@ function shouldAuditRateLimit(key: string, now: number): boolean {
     return true;
 }
 
+let rateLimitAuditCount = 0;
+let rateLimitAuditResetAt = Date.now() + 60_000;
+const MAX_RATE_LIMIT_AUDITS_PER_MINUTE = 10;
+
+function shouldAuditRateLimitGlobal(now: number): boolean {
+    if (now > rateLimitAuditResetAt) {
+        rateLimitAuditCount = 0;
+        rateLimitAuditResetAt = now + 60_000;
+    }
+    if (rateLimitAuditCount >= MAX_RATE_LIMIT_AUDITS_PER_MINUTE) {
+        return false;
+    }
+    rateLimitAuditCount++;
+    return true;
+}
+
 const startRateLimitMiddleware = createMiddleware().server(async ({ next, request }) => {
     const method = request.method.toUpperCase();
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
@@ -48,7 +64,8 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     if (rate.allowed) return next();
 
     const now = Date.now();
-    if (shouldAuditRateLimit(subjectKey, now)) {
+    console.warn(`[RateLimit] Route rate limited: ${method} ${url.pathname} (ip: ${ip})`);
+    if (shouldAuditRateLimit(subjectKey, now) && shouldAuditRateLimitGlobal(now)) {
         void logAuditDenied({
             action: 'START_ROUTE_RATE_LIMITED',
             resourceType: 'start_route',
