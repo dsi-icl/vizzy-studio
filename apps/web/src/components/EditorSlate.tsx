@@ -1541,7 +1541,11 @@ export function EditorSlate() {
                 onUpload={handleUpload}
                 // onEditText={setEditingTextLayerId}
             />
-            <SlatePreview stageSlot={stageSlot} stageScaleFactor={stageScaleFactor} />
+            <SlatePreview
+                stageSlot={stageSlot}
+                stageScaleFactor={stageScaleFactor}
+                onWheel={handleStageWheel}
+            />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
                     ref={stageSlot}
