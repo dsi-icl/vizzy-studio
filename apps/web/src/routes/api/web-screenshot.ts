@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import { stat, unlink } from 'node:fs/promises';
-import { isIP } from 'node:net';
 import { join } from 'node:path';
 
 import { createFileRoute } from '@tanstack/react-router';
@@ -49,6 +47,67 @@ const screenshotAllowlist = String(process.env.WEB_SCREENSHOT_ALLOWLIST ?? '')
 
 async function assertScreenshotTargetSafe(rawUrl: string) {
     await assertSafeTargetUrl(rawUrl, screenshotAllowlist);
+}
+
+let sharedBrowser: any = null;
+let browserCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let activeCaptures = 0;
+const MAX_CONCURRENT_CAPTURES = 1;
+const captureQueue: Array<() => void> = [];
+
+async function acquireCaptureSlot(): Promise<() => void> {
+    if (activeCaptures < MAX_CONCURRENT_CAPTURES) {
+        activeCaptures++;
+        return () => releaseCaptureSlot();
+    }
+    return new Promise((resolve, reject) => {
+        if (captureQueue.length >= 10) {
+            reject(new Error('Screenshot service is busy. Please try again later.'));
+            return;
+        }
+        captureQueue.push(() => {
+            activeCaptures++;
+            resolve(() => releaseCaptureSlot());
+        });
+    });
+}
+
+function releaseCaptureSlot() {
+    activeCaptures--;
+    const next = captureQueue.shift();
+    if (next) {
+        next();
+    } else {
+        scheduleBrowserClose();
+    }
+}
+
+async function getSharedBrowser(): Promise<any> {
+    if (browserCloseTimer) {
+        clearTimeout(browserCloseTimer);
+        browserCloseTimer = null;
+    }
+    if (sharedBrowser && sharedBrowser.isConnected()) {
+        return sharedBrowser;
+    }
+    const { chromium } = await import('playwright');
+    sharedBrowser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    return sharedBrowser;
+}
+
+function scheduleBrowserClose() {
+    if (browserCloseTimer) clearTimeout(browserCloseTimer);
+    browserCloseTimer = setTimeout(async () => {
+        if (activeCaptures === 0 && sharedBrowser) {
+            try {
+                await sharedBrowser.close();
+            } catch {}
+            sharedBrowser = null;
+        }
+    }, 30_000);
 }
 
 export const Route = createFileRoute('/api/web-screenshot')({
@@ -298,16 +357,28 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 const viewportWidth = Math.max(1, Math.round(width / scale));
                 const viewportHeight = Math.max(1, Math.round(height / scale));
 
-                let browser;
+                let releaseSlot: (() => void) | null = null;
                 try {
-                    const { chromium } = await import('playwright');
-                    browser = await chromium.launch({ headless: true });
-                    const context = await browser.newContext({
+                    releaseSlot = await acquireCaptureSlot();
+                } catch (err: any) {
+                    return new Response(
+                        JSON.stringify({ error: err?.message ?? 'Screenshot service is busy' }),
+                        {
+                            status: 429,
+                            headers: { 'Content-Type': 'application/json', 'Retry-After': '5' }
+                        }
+                    );
+                }
+
+                let browserContext: any = null;
+                try {
+                    const browser = await getSharedBrowser();
+                    browserContext = await browser.newContext({
                         viewport: { width: viewportWidth, height: viewportHeight }
                     });
-                    const page = await context.newPage();
+                    const page = await browserContext.newPage();
 
-                    await page.route('**', async (route) => {
+                    await page.route('**', async (route: any) => {
                         const requestUrl = route.request().url();
                         if (requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) {
                             await route.continue();
@@ -329,8 +400,8 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         type: 'png',
                         clip: { x: 0, y: 0, width: viewportWidth, height: viewportHeight }
                     });
-                    await browser.close();
-                    browser = undefined;
+                    await browserContext.close().catch(() => {});
+                    browserContext = null;
 
                     // Generate blurhash and variants using the shared pipeline
                     const blurhash = await computeBlurhash(screenshotPath);
@@ -375,7 +446,7 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     });
                 } catch (err: any) {
                     console.error('[WebScreenshot] Failed:', err);
-                    if (browser) await browser.close().catch(() => {});
+                    if (browserContext) await browserContext.close().catch(() => {});
                     const message = String(err?.message ?? 'Screenshot capture failed');
                     await logAuditFailure({
                         action: 'WEB_SCREENSHOT_FAILED',
@@ -406,6 +477,9 @@ export const Route = createFileRoute('/api/web-screenshot')({
                             headers: { 'Content-Type': 'application/json' }
                         }
                     );
+                } finally {
+                    if (browserContext) await browserContext.close().catch(() => {});
+                    releaseSlot?.();
                 }
             }
         }
