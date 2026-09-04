@@ -65,6 +65,17 @@ interface ProjectCardProps {
     previewDisabledReason?: string;
 }
 
+function isSameOriginUrl(input: string): boolean {
+    try {
+        const isAbsolute = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(input);
+        if (!isAbsolute) return true;
+        if (typeof window === 'undefined') return false;
+        return new URL(input).origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
 function buildControllerUrl(
     customControlUrl: string | undefined,
     wallId: string,
@@ -73,6 +84,7 @@ function buildControllerUrl(
     const fallback = `/controller/?l=gallery&w=${encodeURIComponent(wallId)}`;
     const withPortalToken = (input: string) => {
         if (!portalToken) return input;
+        if (!isSameOriginUrl(input)) return input;
         try {
             const isAbsolute = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(input);
             const url = new URL(input, 'http://local');
@@ -87,6 +99,11 @@ function buildControllerUrl(
     const raw = customControlUrl?.trim();
     if (!raw) return withPortalToken(fallback);
 
+    // Reject non-http/https schemes (e.g. javascript:, data:)
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw) && !/^https?:\/\//i.test(raw)) {
+        return withPortalToken(fallback);
+    }
+
     const withTokens = raw
         .replaceAll('{wallId}', encodeURIComponent(wallId))
         .replaceAll('{mountLocation}', 'gallery');
@@ -97,9 +114,10 @@ function buildControllerUrl(
 
         if (!url.searchParams.has('l')) url.searchParams.set('l', 'gallery');
         if (!url.searchParams.has('w')) url.searchParams.set('w', wallId);
-        if (portalToken && !url.searchParams.has('_gem_t'))
+        const isSameOrigin = isSameOriginUrl(withTokens);
+        if (portalToken && isSameOrigin && !url.searchParams.has('_gem_t'))
             url.searchParams.set('_gem_t', portalToken);
-        if (portalToken && !url.searchParams.has('_viz_t'))
+        if (portalToken && isSameOrigin && !url.searchParams.has('_viz_t'))
             url.searchParams.set('_viz_t', portalToken);
 
         if (isAbsolute) return url.toString();
@@ -308,6 +326,7 @@ function ProjectCardDialogBody({
                             title={`Controller for ${project.name}`}
                             src={controllerUrl}
                             className="h-full w-full border-0 bg-background"
+                            sandbox="allow-scripts allow-forms allow-same-origin"
                             onLoad={() => {
                                 if (isRefreshingController) {
                                     setRefreshIframeLoaded(true);
