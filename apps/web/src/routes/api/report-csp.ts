@@ -109,12 +109,35 @@ function shouldAuditCspReport(key: string, now: number): boolean {
     return true;
 }
 
+let cspAuditCount = 0;
+let cspAuditResetAt = Date.now() + 60_000;
+const MAX_CSP_AUDITS_PER_MINUTE = 10;
+
+function shouldAuditCspReportGlobal(now: number): boolean {
+    if (now > cspAuditResetAt) {
+        cspAuditCount = 0;
+        cspAuditResetAt = now + 60_000;
+    }
+    if (cspAuditCount >= MAX_CSP_AUDITS_PER_MINUTE) {
+        return false;
+    }
+    cspAuditCount++;
+    return true;
+}
+
 async function ingestCspViolations(request: Request, summaries: CspViolationSummary[]) {
     const ip = getClientIpFromHeaders(request.headers);
     const now = Date.now();
     for (const summary of summaries) {
-        const key = `${ip}:${summary.effectiveDirective ?? summary.violatedDirective ?? 'violation'}:${summary.blockedUri ?? 'unknown'}`;
+        const key = `${ip}:${summary.effectiveDirective ?? summary.violatedDirective ?? 'violation'}`;
         if (!shouldAuditCspReport(key, now)) continue;
+        if (!shouldAuditCspReportGlobal(now)) {
+            console.warn(
+                '[CSP] Throttling DB audit write for violation (global limit exceeded)',
+                summary
+            );
+            continue;
+        }
 
         void logAuditDenied({
             action: 'CSP_VIOLATION_REPORTED',
