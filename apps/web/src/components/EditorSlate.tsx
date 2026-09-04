@@ -1542,6 +1542,7 @@ export function EditorSlate() {
                 stageSlot={stageSlot}
                 stageInstance={stageInstance}
                 stageScaleFactor={stageScaleFactor}
+                onWheel={handleStageWheel}
             />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div

@@ -13,11 +13,17 @@ type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
     stageInstance: RefObject<Konva.Stage | null>;
     stageScaleFactor: number;
+    onWheel: (e: KonvaEventObject<WheelEvent>) => void;
 };
 
 const PREVIEW_SCALE = 0.15;
 
-export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: SlatePreviewProps) {
+export function SlatePreview({
+    stageSlot,
+    stageInstance,
+    stageScaleFactor,
+    onWheel
+}: SlatePreviewProps) {
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
@@ -62,13 +68,6 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
         e.target.y(0);
     };
 
-    const handlePreviewWheel = (e: KonvaEventObject<WheelEvent>) => {
-        e.evt.preventDefault();
-        const slot = stageSlot.current;
-        if (!slot) return;
-        slot.scrollLeft += e.evt.deltaX + e.evt.deltaY;
-    };
-
     return (
         <div className="lineheig m-0 line-clamp-1 block overscroll-none p-0 text-center">
             <Stage
@@ -76,7 +75,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                 height={logicalStageHeight * previewScale}
                 scaleX={previewScale}
                 scaleY={previewScale}
-                onWheel={handlePreviewWheel}
+                onWheel={onWheel}
                 onClick={(e) => {
                     let x =
                         (e.target.getStage()?.getPointerPosition()?.x ?? 0) / previewScale -
