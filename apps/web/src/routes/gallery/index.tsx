@@ -53,6 +53,11 @@ type WallListEntry = {
     boundSource?: 'live' | 'gallery' | null;
 };
 
+const formatRequesterLabel = (email?: string) => {
+    // TODO Lookup through university LDAP to get names maybe ?
+    return `${email}`;
+};
+
 function HomePage() {
     const { user } = useAuth();
     const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -63,10 +68,6 @@ function HomePage() {
     const [syncedCloseRevision, setSyncedCloseRevision] = useState(0);
     const [syncedCloseProjectId, setSyncedCloseProjectId] = useState<string | null>(null);
     const { data: publishedProjects = [] } = useQuery(publishedProjectsQueryOptions());
-    const { data: walls = [] } = useQuery({
-        ...wallsQueryOptions(),
-        enabled: Boolean(user)
-    });
     const queryClient = useQueryClient();
     const searchStr = useLocation({ select: (location) => location.searchStr });
     const [pendingOverride, setPendingOverride] = useState<{
@@ -96,6 +97,25 @@ function HomePage() {
     }, [searchStr]);
 
     const galleryEnrollmentGateActive = enrollmentModeEnabled && Boolean(deviceEnrollmentId);
+    const canChooseWall = user?.role === 'admin' && !galleryEnrollmentGateActive;
+
+    const { data: walls = [] } = useQuery({
+        ...wallsQueryOptions(),
+        enabled: canChooseWall
+    });
+
+    const availableWalls = useMemo(
+        () =>
+            canChooseWall
+                ? walls.map((wall) => ({
+                      id: wall.wallId,
+                      name: wall.name,
+                      connectedNodes: wall.connectedNodes,
+                      isBound: Boolean(wall.boundProjectId)
+                  }))
+                : [],
+        [canChooseWall, walls]
+    );
 
     const galleryEngine = useMemo(
         () => (typeof window !== 'undefined' ? GalleryEngine.getInstance() : null),
@@ -416,11 +436,6 @@ function HomePage() {
         };
     }, []);
 
-    const formatRequesterLabel = (email?: string) => {
-        // TODO Lookup through university LDAP to get names maybe ?
-        return `${email}`;
-    };
-
     const overrideSecondsLeft = pendingOverride
         ? Math.ceil(Math.max(0, pendingOverride.expiresAt - overrideClockNow) / 1000)
         : 0;
@@ -507,15 +522,6 @@ function HomePage() {
         setActiveBucket(null);
     };
 
-    const filteredProjects = useMemo(() => {
-        const list = activeTag
-            ? projectsData.filter((p) => p.tags.includes(activeTag))
-            : projectsData;
-        return [...list].sort((a, b) =>
-            a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base', numeric: true })
-        );
-    }, [activeTag, projectsData]);
-
     const autoOpenProjectId = useMemo(() => {
         if (!wallId) return null;
         const targetWall = walls.find((wall) => wall.wallId === wallId);
@@ -524,6 +530,17 @@ function HomePage() {
         if (boundSource === 'live') return null;
         return targetWall.boundProjectId;
     }, [wallId, walls]);
+
+    const effectiveActiveTag = autoOpenProjectId ? null : activeTag;
+
+    const filteredProjects = useMemo(() => {
+        const list = effectiveActiveTag
+            ? projectsData.filter((p) => p.tags.includes(effectiveActiveTag))
+            : projectsData;
+        return [...list].sort((a, b) =>
+            a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base', numeric: true })
+        );
+    }, [effectiveActiveTag, projectsData]);
 
     const autoOpenBindingSignature = useMemo(() => {
         if (!wallId) return null;
@@ -557,12 +574,6 @@ function HomePage() {
         if (!wallId || syncedCloseRevision <= 0) return null;
         return `wall:${wallId}:close:${syncedCloseProjectId}:rev:${syncedCloseRevision}`;
     }, [wallId, syncedCloseProjectId, syncedCloseRevision]);
-
-    useEffect(() => {
-        if (!autoOpenProjectId) return;
-        if (activeTag === null) return;
-        setActiveTag(null);
-    }, [autoOpenProjectId, activeTag]);
 
     if (galleryEnrollmentGateActive) {
         return (
@@ -633,7 +644,7 @@ function HomePage() {
                     <h2 className="mb-4 text-lg font-semibold">Filters</h2>
                     <div className="grid grid-cols-3 gap-1">
                         <Button
-                            variant={!activeTag && !activeBucket ? 'secondary' : 'ghost'}
+                            variant={!effectiveActiveTag && !activeBucket ? 'secondary' : 'ghost'}
                             size="sm"
                             onClick={handleClearAll}
                             className="w-full"
@@ -671,7 +682,9 @@ function HomePage() {
                                         className="w-auto md:w-full"
                                     >
                                         <Button
-                                            variant={activeTag === tag ? 'secondary' : 'ghost'}
+                                            variant={
+                                                effectiveActiveTag === tag ? 'secondary' : 'ghost'
+                                            }
                                             onClick={() => setActiveTag(tag)}
                                             className="w-full justify-start"
                                         >
@@ -711,6 +724,7 @@ function HomePage() {
                                             <GalleryProjectCard
                                                 project={project}
                                                 allowWallActions={!galleryEnrollmentGateActive}
+                                                availableWalls={availableWalls}
                                                 autoOpenSignal={
                                                     autoOpenProjectId === project.id
                                                         ? autoOpenSignal
