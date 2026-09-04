@@ -34,8 +34,9 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     }
 
     const url = new URL(request.url);
-    // Exempt resumable upload streams which have their own chunk-level throttling and token checks.
-    if (url.pathname.startsWith('/api/uploads/')) {
+    // Exempt resumable upload chunk streams (PATCH) which stream bytes in small parts.
+    // Upload creation (POST) and termination (DELETE) remain subject to rate limits.
+    if (url.pathname.startsWith('/api/uploads/') && method === 'PATCH') {
         return next();
     }
 
