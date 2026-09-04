@@ -1191,7 +1191,7 @@ export function EditorSlate() {
         }
         if (isErasing) {
             const isPrimaryPointer =
-                (e.evt instanceof TouchEvent && e.evt.touches.length === 1) ||
+                (isTouchEvent(e.evt) && e.evt.touches.length === 1) ||
                 (e.evt instanceof MouseEvent && e.evt.button === 0);
             if (!isPrimaryPointer || eraserGestureRef.current) return;
 
@@ -1304,7 +1304,7 @@ export function EditorSlate() {
 
             const gesture = eraserGestureRef.current;
             const isPrimaryPointer =
-                (e.evt instanceof TouchEvent && e.evt.touches.length === 1) ||
+                (isTouchEvent(e.evt) && e.evt.touches.length === 1) ||
                 (e.evt instanceof MouseEvent && e.evt.buttons === 1);
             if (!gesture || !isPrimaryPointer) return;
 
