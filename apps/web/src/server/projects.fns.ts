@@ -66,8 +66,14 @@ const UpdateProjectInput = z.object({
     tags: z.array(z.string()).optional(),
     visibility: ProjectVisibility.optional(),
     heroImages: z.array(z.string()).optional(),
-    customControlUrl: z.string().optional(),
-    customRenderUrl: z.string().optional(),
+    customControlUrl: z
+        .string()
+        .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL')
+        .optional(),
+    customRenderUrl: z
+        .string()
+        .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL')
+        .optional(),
     customRenderCompat: z.boolean().optional(),
     customRenderProxy: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional(),
@@ -477,12 +483,12 @@ export const $restoreProject = createServerFn({ method: 'POST' })
             });
             throw new Error('Access denied');
         }
-        const allowed = await canEditProject(actor, data.id);
+        const allowed = await ownsProject(actor, data.id);
         if (!allowed) {
             await denyProjectFn({
                 context,
                 operation: '$restoreProject',
-                reasonCode: 'PROJECT_EDIT_FORBIDDEN',
+                reasonCode: 'PROJECT_OWNER_REQUIRED',
                 projectId: data.id,
                 resourceType: 'project',
                 resourceId: data.id
