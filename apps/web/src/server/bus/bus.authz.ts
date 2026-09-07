@@ -147,14 +147,26 @@ export function isWsMessageAuthorized(
         return entry.meta.specimen === 'gallery' && (isAdminUser(entry) || isGalleryDevice(entry));
     }
     if (type === 'bind_wall') {
-        if (entry.meta.specimen === 'controller')
-            return isControllerDevice(entry) || isControllerPortal(entry) || isAdminUser(entry);
+        if (entry.meta.specimen === 'controller') {
+            if (isControllerPortal(entry)) {
+                return Boolean(
+                    data.wallId && data.wallId === entry.meta.authContext?.portal?.wallId
+                );
+            }
+            return isControllerDevice(entry) || isAdminUser(entry);
+        }
         if (entry.meta.specimen === 'gallery') return isAdminUser(entry) || isGalleryDevice(entry);
         return isAdminUser(entry);
     }
     if (type === 'unbind_wall' || type === 'reboot') {
-        if (type === 'reboot' && entry.meta.specimen === 'controller')
-            return isControllerDevice(entry) || isControllerPortal(entry) || isAdminUser(entry);
+        if (type === 'reboot' && entry.meta.specimen === 'controller') {
+            if (isControllerPortal(entry)) {
+                return Boolean(
+                    !data.wallId || data.wallId === entry.meta.authContext?.portal?.wallId
+                );
+            }
+            return isControllerDevice(entry) || isAdminUser(entry);
+        }
         if (entry.meta.specimen === 'gallery') return isAdminUser(entry) || isGalleryDevice(entry);
         return isAdminUser(entry);
     }

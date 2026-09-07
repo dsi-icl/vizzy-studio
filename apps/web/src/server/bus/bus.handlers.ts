@@ -465,6 +465,12 @@ handlers.set('bind_wall', ({ entry, data }) => {
     // Editors should route through request_bind_wall (approval gate).
     // Keep bind_wall for controllers and system/internal callers.
     void (async () => {
+        if (
+            entry.meta.authContext?.portal?.wallId &&
+            data.wallId !== entry.meta.authContext.portal.wallId
+        ) {
+            return;
+        }
         const source =
             entry.meta.specimen === 'gallery'
                 ? 'gallery'
