@@ -57,7 +57,7 @@ export function getClientIpFromHeaders(headers: MaybeHeaders): string {
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean);
-        const candidate = sanitizeIp(parts[0] ?? null);
+        const candidate = sanitizeIp(parts[parts.length - 1] ?? null);
         if (candidate) return candidate;
     }
 
