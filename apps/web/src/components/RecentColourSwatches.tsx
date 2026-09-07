@@ -1,12 +1,15 @@
-import { useEditorStore } from '~/lib/editorStore';
-
 /**
  * The project's shared palette, as a plain row of squares. Deliberately
  * unlabelled beyond each swatch's accessible name, which is the convention for
  * recent-colour rows.
  */
-export function RecentColourSwatches({ onPick }: { onPick: (colour: string) => void }) {
-    const recentColours = useEditorStore((s) => s.recentColours);
+export function RecentColourSwatches({
+    recentColours,
+    onPick
+}: {
+    recentColours: readonly string[];
+    onPick: (colour: string) => void;
+}) {
     if (recentColours.length === 0) return null;
 
     return (
