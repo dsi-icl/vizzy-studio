@@ -14,8 +14,39 @@ import { ASSET_DIR } from '~/lib/serverVariables';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { canViewProject } from '~/server/projectAuthz';
+import { getClientIpFromHeaders } from '~/server/rateLimit';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
+
+const lastNotFoundAuditSeen = new Map<string, number>();
+
+function shouldAuditNotFound(key: string, now: number): boolean {
+    const last = lastNotFoundAuditSeen.get(key) ?? 0;
+    if (now - last < 60_000) return false;
+    lastNotFoundAuditSeen.set(key, now);
+    if (lastNotFoundAuditSeen.size > 5_000) {
+        for (const [k, ts] of lastNotFoundAuditSeen) {
+            if (now - ts >= 60_000) lastNotFoundAuditSeen.delete(k);
+        }
+    }
+    return true;
+}
+
+let notFoundAuditCount = 0;
+let notFoundAuditResetAt = Date.now() + 60_000;
+const MAX_NOT_FOUND_AUDITS_PER_MINUTE = 20;
+
+function shouldAuditNotFoundGlobal(now: number): boolean {
+    if (now > notFoundAuditResetAt) {
+        notFoundAuditCount = 0;
+        notFoundAuditResetAt = now + 60_000;
+    }
+    if (notFoundAuditCount >= MAX_NOT_FOUND_AUDITS_PER_MINUTE) {
+        return false;
+    }
+    notFoundAuditCount++;
+    return true;
+}
 
 export function createAssetNotFoundResponse(input: {
     reasonCode: string;
@@ -67,6 +98,13 @@ async function logAssetNotFound(input: {
     details?: Record<string, JsonValue>;
     statusMessage?: string;
 }) {
+    const ip = getClientIpFromHeaders(input.request.headers);
+    const now = Date.now();
+    const key = `${ip}:${input.resourceId ?? 'unknown'}`;
+    if (!shouldAuditNotFound(key, now) || !shouldAuditNotFoundGlobal(now)) {
+        return;
+    }
+
     await logAuditFailure({
         action: 'ASSET_READ_NOT_FOUND',
         projectId: input.projectId ?? null,

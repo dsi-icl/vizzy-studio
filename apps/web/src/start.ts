@@ -45,7 +45,9 @@ function shouldAuditRateLimitGlobal(now: number): boolean {
 
 const startRateLimitMiddleware = createMiddleware().server(async ({ next, request }) => {
     const method = request.method.toUpperCase();
-    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    const isRead = method === 'GET' || method === 'HEAD';
+    if (!isMutation && !isRead) {
         return next();
     }
 
@@ -57,7 +59,9 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     }
 
     const ip = getClientIpFromHeaders(request.headers);
-    const subjectKey = buildRateLimitSubjectKey({ ip });
+    const subjectKey = isMutation
+        ? buildRateLimitSubjectKey({ ip })
+        : buildRateLimitSubjectKey({ ip: ip && ip !== 'unknown' ? `get:${ip}` : null });
     const rate = checkRateLimit({
         subjectKey
     });
