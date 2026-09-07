@@ -179,6 +179,20 @@ function checkOtpIpRateLimit(ip: string): boolean {
     return true;
 }
 
+let otpGlobalTimestamps: number[] = [];
+const OTP_GLOBAL_WINDOW_MS = 60 * 1000;
+const OTP_GLOBAL_MAX_PER_WINDOW = 30;
+
+function checkOtpGlobalRateLimit(): boolean {
+    const now = Date.now();
+    otpGlobalTimestamps = otpGlobalTimestamps.filter((ts) => now - ts < OTP_GLOBAL_WINDOW_MS);
+    if (otpGlobalTimestamps.length >= OTP_GLOBAL_MAX_PER_WINDOW) {
+        return false;
+    }
+    otpGlobalTimestamps.push(now);
+    return true;
+}
+
 function getClientIpFromAuthContext(ctx: unknown): string {
     if (!ctx || typeof ctx !== 'object') return 'unknown';
     const c = ctx as {
@@ -196,8 +210,12 @@ function getClientIpFromAuthContext(ctx: unknown): string {
         if (realIp) return realIp.trim();
         const xff = h.get('x-forwarded-for');
         if (xff) {
-            const first = xff.split(',')[0]?.trim();
-            if (first) return first;
+            const parts = xff
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+            const candidate = parts[parts.length - 1];
+            if (candidate) return candidate;
         }
         return 'unknown';
     }
@@ -216,8 +234,12 @@ function getClientIpFromAuthContext(ctx: unknown): string {
     if (realIp) return realIp;
     const xff = pick('x-forwarded-for');
     if (xff) {
-        const first = xff.split(',')[0]?.trim();
-        if (first) return first;
+        const parts = xff
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const candidate = parts[parts.length - 1];
+        if (candidate) return candidate;
     }
 
     return 'unknown';
@@ -297,10 +319,24 @@ export const auth = betterAuth({
                         );
                     }
                     const ip = getClientIpFromAuthContext(ctx);
+                    if (env.NODE_ENV === 'production' && (!ip || ip === 'unknown')) {
+                        console.warn(
+                            '[Auth] OTP dispatch rejected: unknown client IP in production'
+                        );
+                        throw new Error(
+                            'Unable to verify client IP address for security. Please try again later.'
+                        );
+                    }
                     if (!checkOtpIpRateLimit(ip)) {
                         console.warn(`[Auth] OTP dispatch rate limited for IP: ${ip}`);
                         throw new Error(
                             'Too many OTP requests from this IP address. Please wait a few minutes before trying again.'
+                        );
+                    }
+                    if (!checkOtpGlobalRateLimit()) {
+                        console.warn('[Auth] OTP dispatch global rate limit reached');
+                        throw new Error(
+                            'Too many OTP requests overall. Please wait a minute before trying again.'
                         );
                     }
                 }
