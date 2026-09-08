@@ -14,6 +14,7 @@ import { useQueryClient, useSuspenseInfiniteQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { canViewProjectAudits } from '~/lib/authz';
 import {
     auditsInfiniteQueryOptions,
     type AuditHistoryFilters,
@@ -23,7 +24,7 @@ import {
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId/audits')({
     loader: async ({ context, params }) => {
         const user = await context.queryClient.ensureQueryData(authQueryOptions());
-        if (user?.role !== 'admin' && user?.role !== 'operator') {
+        if (!canViewProjectAudits(user)) {
             throw new Response('Unauthorized', { status: 401 });
         }
         const project = await context.queryClient.ensureQueryData(

@@ -1,6 +1,7 @@
 import '@tanstack/react-start/server-only';
 import type { ProjectDocument } from '@repo/db/documents';
 
+import { isAdmin } from '~/lib/authz';
 import { validateUploadToken } from '~/lib/uploadTokens';
 import { dbCol } from '~/server/collections';
 
@@ -9,14 +10,6 @@ type Actor = {
     role?: string;
     trustedPublisher?: boolean;
 };
-
-function isAdmin(role: string | null | undefined): boolean {
-    return role === 'admin';
-}
-
-function isOperator(role: string | null | undefined): boolean {
-    return role === 'operator';
-}
 
 function hasProjectMembership(
     project: Pick<ProjectDocument, 'createdBy' | 'collaborators'>,
@@ -58,15 +51,7 @@ export async function ownsProject(actor: Actor, projectId: string): Promise<bool
     return hasCollaboratorRole(project, actor.email, ['owner']);
 }
 
-export function canPublishProject(actor: Actor): boolean {
-    if (isAdmin(actor.role)) return true;
-    if (isOperator(actor.role)) return true;
-    return actor.trustedPublisher === true;
-}
-
-export function canViewProjectAudits(actor: Actor): boolean {
-    return isAdmin(actor.role) || isOperator(actor.role);
-}
+export { canPublishProject, canViewProjectAudits } from '~/lib/authz';
 
 export async function resolveProjectIdForCommit(commitId: string): Promise<string | null> {
     if (!commitId) return null;

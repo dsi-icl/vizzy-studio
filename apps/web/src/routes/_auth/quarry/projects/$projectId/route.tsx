@@ -27,6 +27,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
 import {
     $ensureMutableHead,
@@ -132,13 +133,12 @@ function ProjectLayout() {
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
     const hasCustomRender = !!project.customRenderUrl;
-    const canPublish =
-        user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
-    const canViewAudit = user?.role === 'admin' || user?.role === 'operator';
+    const canPublish = canPublishProject(user);
+    const canViewAudit = canViewProjectAudits(user);
     const tabs = (
         hasCustomRender ? ALL_TABS.filter((t) => !CUSTOM_RENDER_HIDDEN_TABS.has(t.key)) : ALL_TABS
     )
-        .filter((t) => t.key !== 'controller' || user?.role === 'admin')
+        .filter((t) => t.key !== 'controller' || isAdmin(user?.role))
         .filter((t) => t.key !== 'audits' || canViewAudit);
     const queryClient = useQueryClient();
     const [openingEditor, setOpeningEditor] = useState(false);
