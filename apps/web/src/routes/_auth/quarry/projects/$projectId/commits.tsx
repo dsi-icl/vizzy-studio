@@ -26,6 +26,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { canPublishProject } from '~/lib/authz';
 import { $promoteBranchHead, $publishCommit } from '~/server/projects.fns';
 import { commitsQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
@@ -174,8 +175,7 @@ function CommitsTab() {
         () => topoSort(commits, project.headCommitId ?? null),
         [commits, project.headCommitId]
     );
-    const canPublish =
-        user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
+    const canPublish = canPublishProject(user);
 
     const handleOpenEditor = async (input: { commitId: string; slideId: string }) => {
         setOpeningEditorForCommitId(input.commitId);
