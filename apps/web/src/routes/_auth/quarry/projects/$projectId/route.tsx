@@ -22,7 +22,6 @@ import {
     useRouterState
 } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState } from 'react';
 import { toast } from 'sonner';
 
 import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
