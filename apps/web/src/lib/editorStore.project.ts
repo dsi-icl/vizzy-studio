@@ -17,6 +17,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
                 projectId,
                 commitId,
                 stageId: null,
+                stageName: null,
                 layers: new Map(),
                 hoveredLayerId: null,
                 slides: [],
@@ -39,6 +40,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
             set({
                 projectName: project.name,
                 stageId: stage.id,
+                stageName: stage.name,
                 stageLayout: stage.layout,
                 headCommitId: stage.headCommitId,
                 insertionCenter: {
