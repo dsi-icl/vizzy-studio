@@ -36,7 +36,13 @@ export const Route = createFileRoute('/_auth/quarry/editor/$projectId/$commitId/
         };
     },
     head: ({ loaderData }) => ({
-        meta: [{ title: `Editor · ${loaderData?.projectName ?? 'Project'} · Vizzy Studio` }]
+        meta: [
+            {
+                title: `Editor · ${loaderData?.stageName ? `${loaderData.stageName} / ` : ''}${
+                    loaderData?.projectName ?? 'Project'
+                } · Vizzy Studio`
+            }
+        ]
     }),
     component: SlideEditor
 });

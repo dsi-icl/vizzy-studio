@@ -66,6 +66,7 @@ export const useEditorStore =
                   projectId: null,
                   projectName: null,
                   stageId: null,
+                  stageName: null,
                   stageLayout: { ...DEFAULT_STAGE_LAYOUT },
                   parentSaveMessage: null,
                   layers: new Map(),

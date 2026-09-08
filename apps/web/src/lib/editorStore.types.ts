@@ -16,6 +16,7 @@ export interface EditorState {
     projectId: string | null;
     projectName: string | null;
     stageId: string | null;
+    stageName: string | null;
     stageLayout: StageLayout;
     parentSaveMessage: string | null;
     layers: Map<number, LayerWithEditorState>;
