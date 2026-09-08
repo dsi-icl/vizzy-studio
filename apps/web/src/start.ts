@@ -13,33 +13,72 @@ import {
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
 import { touchUserLastSeenThrottled } from '~/server/user-last-seen';
 
+const lastRateLimitAuditSeen = new Map<string, number>();
+
+function shouldAuditRateLimit(key: string, now: number): boolean {
+    const last = lastRateLimitAuditSeen.get(key) ?? 0;
+    if (now - last < 60_000) return false;
+    lastRateLimitAuditSeen.set(key, now);
+    if (lastRateLimitAuditSeen.size > 5_000) {
+        for (const [k, ts] of lastRateLimitAuditSeen) {
+            if (now - ts >= 60_000) lastRateLimitAuditSeen.delete(k);
+        }
+    }
+    return true;
+}
+
+let rateLimitAuditCount = 0;
+let rateLimitAuditResetAt = Date.now() + 60_000;
+const MAX_RATE_LIMIT_AUDITS_PER_MINUTE = 10;
+
+function shouldAuditRateLimitGlobal(now: number): boolean {
+    if (now > rateLimitAuditResetAt) {
+        rateLimitAuditCount = 0;
+        rateLimitAuditResetAt = now + 60_000;
+    }
+    if (rateLimitAuditCount >= MAX_RATE_LIMIT_AUDITS_PER_MINUTE) {
+        return false;
+    }
+    rateLimitAuditCount++;
+    return true;
+}
+
 const startRateLimitMiddleware = createMiddleware().server(async ({ next, request }) => {
     const method = request.method.toUpperCase();
-    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+    const isRead = method === 'GET' || method === 'HEAD';
+    if (!isMutation && !isRead) {
         return next();
     }
 
     const url = new URL(request.url);
-    // Dedicated API routes keep their own route-specific policies.
-    if (url.pathname.startsWith('/api/')) {
+    // Exempt resumable upload chunk streams (PATCH) which stream bytes in small parts.
+    // Upload creation (POST) and termination (DELETE) remain subject to rate limits.
+    if (url.pathname.startsWith('/api/uploads/') && method === 'PATCH') {
         return next();
     }
 
     const ip = getClientIpFromHeaders(request.headers);
-    const subjectKey = buildRateLimitSubjectKey({ ip });
+    const subjectKey = isMutation
+        ? buildRateLimitSubjectKey({ ip })
+        : buildRateLimitSubjectKey({ ip: ip && ip !== 'unknown' ? `get:${ip}` : null });
     const rate = checkRateLimit({
         subjectKey
     });
 
     if (rate.allowed) return next();
 
-    void logAuditDenied({
-        action: 'START_ROUTE_RATE_LIMITED',
-        resourceType: 'start_route',
-        resourceId: `${method}:${url.pathname}`,
-        reasonCode: 'RATE_LIMITED',
-        changes: { retryAfterMs: rate.retryAfterMs, ip }
-    });
+    const now = Date.now();
+    console.warn(`[RateLimit] Route rate limited: ${method} ${url.pathname} (ip: ${ip})`);
+    if (shouldAuditRateLimit(subjectKey, now) && shouldAuditRateLimitGlobal(now)) {
+        void logAuditDenied({
+            action: 'START_ROUTE_RATE_LIMITED',
+            resourceType: 'start_route',
+            resourceId: `${method}:${url.pathname}`,
+            reasonCode: 'RATE_LIMITED',
+            changes: { retryAfterMs: rate.retryAfterMs, ip }
+        }).catch(() => {});
+    }
 
     return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
         status: 429,
@@ -62,7 +101,7 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
         return next();
     }
 
-    const isDev = import.meta.env.DEV;
+    const isDev = process.env.NODE_ENV === 'development';
     const nonce = crypto.randomBytes(16).toString('base64');
     const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
     const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
@@ -84,6 +123,7 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
     });
     const headerName = isDev ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
     setResponseHeader(headerName, serializeCsp(cspDirectives));
+    setResponseHeader('X-Frame-Options', 'SAMEORIGIN');
     setResponseHeader('Reporting-Endpoints', `csp-endpoint="${reportUrl}"`);
     setResponseHeader(
         'Report-To',

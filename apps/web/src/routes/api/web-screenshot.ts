@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import { stat, unlink } from 'node:fs/promises';
-import { isIP } from 'node:net';
 import { join } from 'node:path';
 
 import { createFileRoute } from '@tanstack/react-router';
@@ -18,16 +16,20 @@ import {
 } from '~/server/rateLimit';
 import type { AuthContext } from '~/server/requestAuthContext';
 
+const WEBSHOT_BASE_ID_PATTERN = /^webshot_[0-9a-f]{32}$/;
+
 function generateBaseId(): string {
     return `webshot_${randomBytes(64).toString('hex').slice(0, 32)}`;
 }
 
 async function cleanupPreviousFiles(baseId: string): Promise<void> {
+    if (!WEBSHOT_BASE_ID_PATTERN.test(baseId)) return;
     try {
         const { readdir } = await import('node:fs/promises');
         const files = await readdir(ASSET_DIR);
+        const variantPattern = new RegExp(`^${baseId}(?:_\\d+)?\\.(?:png|webp)$`);
         for (const file of files) {
-            if (file.startsWith(baseId)) {
+            if (variantPattern.test(file)) {
                 await unlink(join(ASSET_DIR, file)).catch(() => {});
             }
         }
@@ -36,61 +38,76 @@ async function cleanupPreviousFiles(baseId: string): Promise<void> {
     }
 }
 
+import { assertSafeTargetUrl } from '~/lib/networkSecurity';
+
 const screenshotAllowlist = String(process.env.WEB_SCREENSHOT_ALLOWLIST ?? '')
     .split(',')
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean);
 
-function isForbiddenIp(ip: string): boolean {
-    const version = isIP(ip);
-    if (version === 4) {
-        return (
-            ip.startsWith('127.') ||
-            ip.startsWith('10.') ||
-            ip.startsWith('192.168.') ||
-            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
-            ip.startsWith('169.254.') ||
-            ip === '0.0.0.0'
-        );
-    }
-    if (version === 6) {
-        const normalized = ip.toLowerCase();
-        return (
-            normalized === '::1' ||
-            normalized.startsWith('fc') ||
-            normalized.startsWith('fd') ||
-            normalized.startsWith('fe80:')
-        );
-    }
-    return false;
+async function assertScreenshotTargetSafe(rawUrl: string) {
+    await assertSafeTargetUrl(rawUrl, screenshotAllowlist);
 }
 
-async function assertScreenshotTargetSafe(rawUrl: string) {
-    let parsed: URL;
-    try {
-        parsed = new URL(rawUrl);
-    } catch {
-        throw new Error('Invalid URL');
-    }
+let sharedBrowser: any = null;
+let browserCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let activeCaptures = 0;
+const MAX_CONCURRENT_CAPTURES = 1;
+const captureQueue: Array<() => void> = [];
 
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        throw new Error('Only http/https URLs are allowed');
+async function acquireCaptureSlot(): Promise<() => void> {
+    if (activeCaptures < MAX_CONCURRENT_CAPTURES) {
+        activeCaptures++;
+        return () => releaseCaptureSlot();
     }
+    return new Promise((resolve, reject) => {
+        if (captureQueue.length >= 10) {
+            reject(new Error('Screenshot service is busy. Please try again later.'));
+            return;
+        }
+        captureQueue.push(() => {
+            activeCaptures++;
+            resolve(() => releaseCaptureSlot());
+        });
+    });
+}
 
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host.endsWith('.localhost')) {
-        throw new Error('Blocked host');
+function releaseCaptureSlot() {
+    activeCaptures--;
+    const next = captureQueue.shift();
+    if (next) {
+        next();
+    } else {
+        scheduleBrowserClose();
     }
-    if (screenshotAllowlist.length > 0 && !screenshotAllowlist.includes(host)) {
-        throw new Error('Host is not allowlisted');
-    }
+}
 
-    if (isForbiddenIp(host)) throw new Error('Blocked IP target');
-
-    const resolved = await lookup(host, { all: true });
-    if (resolved.some((entry) => isForbiddenIp(entry.address))) {
-        throw new Error('Blocked resolved IP target');
+async function getSharedBrowser(): Promise<any> {
+    if (browserCloseTimer) {
+        clearTimeout(browserCloseTimer);
+        browserCloseTimer = null;
     }
+    if (sharedBrowser && sharedBrowser.isConnected()) {
+        return sharedBrowser;
+    }
+    const { chromium } = await import('playwright');
+    sharedBrowser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    return sharedBrowser;
+}
+
+function scheduleBrowserClose() {
+    if (browserCloseTimer) clearTimeout(browserCloseTimer);
+    browserCloseTimer = setTimeout(async () => {
+        if (activeCaptures === 0 && sharedBrowser) {
+            try {
+                await sharedBrowser.close();
+            } catch {}
+            sharedBrowser = null;
+        }
+    }, 30_000);
 }
 
 export const Route = createFileRoute('/api/web-screenshot')({
@@ -305,11 +322,30 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 }
 
                 // Clean up previous screenshot files and DB record if provided
-                if (body.previousBaseId) {
-                    await Promise.all([
-                        cleanupPreviousFiles(body.previousBaseId),
-                        dbCol.assets.hardDeleteByUrl(`${body.previousBaseId}.png`)
-                    ]);
+                if (
+                    typeof body.previousBaseId === 'string' &&
+                    body.previousBaseId.trim().length > 0
+                ) {
+                    const candidateBaseId = body.previousBaseId.trim();
+                    if (!WEBSHOT_BASE_ID_PATTERN.test(candidateBaseId)) {
+                        return new Response(
+                            JSON.stringify({ error: 'Invalid previousBaseId format' }),
+                            {
+                                status: 400,
+                                headers: { 'Content-Type': 'application/json' }
+                            }
+                        );
+                    }
+                    const previousAsset = await dbCol.assets.findOne({
+                        url: `${candidateBaseId}.png`,
+                        projectId
+                    });
+                    if (previousAsset) {
+                        await Promise.all([
+                            cleanupPreviousFiles(candidateBaseId),
+                            dbCol.assets.hardDeleteByUrl(`${candidateBaseId}.png`)
+                        ]);
+                    }
                 }
 
                 const baseId = generateBaseId();
@@ -321,14 +357,40 @@ export const Route = createFileRoute('/api/web-screenshot')({
                 const viewportWidth = Math.max(1, Math.round(width / scale));
                 const viewportHeight = Math.max(1, Math.round(height / scale));
 
-                let browser;
+                let releaseSlot: (() => void) | null = null;
                 try {
-                    const { chromium } = await import('playwright');
-                    browser = await chromium.launch({ headless: true });
-                    const context = await browser.newContext({
+                    releaseSlot = await acquireCaptureSlot();
+                } catch (err: any) {
+                    return new Response(
+                        JSON.stringify({ error: err?.message ?? 'Screenshot service is busy' }),
+                        {
+                            status: 429,
+                            headers: { 'Content-Type': 'application/json', 'Retry-After': '5' }
+                        }
+                    );
+                }
+
+                let browserContext: any = null;
+                try {
+                    const browser = await getSharedBrowser();
+                    browserContext = await browser.newContext({
                         viewport: { width: viewportWidth, height: viewportHeight }
                     });
-                    const page = await context.newPage();
+                    const page = await browserContext.newPage();
+
+                    await page.route('**', async (route: any) => {
+                        const requestUrl = route.request().url();
+                        if (requestUrl.startsWith('data:') || requestUrl.startsWith('blob:')) {
+                            await route.continue();
+                            return;
+                        }
+                        try {
+                            await assertScreenshotTargetSafe(requestUrl);
+                            await route.continue();
+                        } catch {
+                            await route.abort('blockedbyclient');
+                        }
+                    });
 
                     await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
 
@@ -338,8 +400,8 @@ export const Route = createFileRoute('/api/web-screenshot')({
                         type: 'png',
                         clip: { x: 0, y: 0, width: viewportWidth, height: viewportHeight }
                     });
-                    await browser.close();
-                    browser = undefined;
+                    await browserContext.close().catch(() => {});
+                    browserContext = null;
 
                     // Generate blurhash and variants using the shared pipeline
                     const blurhash = await computeBlurhash(screenshotPath);
@@ -384,7 +446,7 @@ export const Route = createFileRoute('/api/web-screenshot')({
                     });
                 } catch (err: any) {
                     console.error('[WebScreenshot] Failed:', err);
-                    if (browser) await browser.close().catch(() => {});
+                    if (browserContext) await browserContext.close().catch(() => {});
                     const message = String(err?.message ?? 'Screenshot capture failed');
                     await logAuditFailure({
                         action: 'WEB_SCREENSHOT_FAILED',
@@ -415,6 +477,9 @@ export const Route = createFileRoute('/api/web-screenshot')({
                             headers: { 'Content-Type': 'application/json' }
                         }
                     );
+                } finally {
+                    if (browserContext) await browserContext.close().catch(() => {});
+                    releaseSlot?.();
                 }
             }
         }

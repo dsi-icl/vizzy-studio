@@ -103,7 +103,7 @@ test('gallery binding converges across the wall and enrolled controller while po
         await expect(wallPage.getByText('Visual harness', { exact: false })).toBeVisible();
 
         const firstSlide = controllerPage.getByRole('button', {
-            name: 'Slide Rendering baseline'
+            name: 'Rendering baseline'
         });
         await expect(firstSlide).toBeVisible({ timeout: 20_000 });
         await waitForCanvasReady(controllerPage, '.konvajs-content canvas');
@@ -122,7 +122,7 @@ test('gallery binding converges across the wall and enrolled controller while po
 
         await forceRuntimeReconnect(galleryPage, '__GALLERY_ENGINE__');
 
-        const alternateSlide = controllerPage.getByRole('button', { name: 'Slide Alternate' });
+        const alternateSlide = controllerPage.getByRole('button', { name: 'Alternate' });
         await expect(alternateSlide).toBeVisible();
         await alternateSlide.click();
 
@@ -150,7 +150,7 @@ test('gallery binding converges across the wall and enrolled controller while po
             source: 'gallery',
             foregroundLayerCount: 2
         });
-        const recoveredSlide = controllerPage.getByRole('button', { name: 'Slide Alternate' });
+        const recoveredSlide = controllerPage.getByRole('button', { name: 'Alternate' });
         await expect(recoveredSlide).toBeVisible({ timeout: 20_000 });
         await waitForCanvasReady(controllerPage, '.konvajs-content canvas');
         await expect(recoveredSlide).toHaveClass(/bg-primary\/10/);

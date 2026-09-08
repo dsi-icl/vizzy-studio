@@ -68,6 +68,9 @@ async function processImageJob(job: JobDocument) {
     });
 }
 
+const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const FFMPEG_PREVIEW_TIMEOUT_MS = 30 * 1000; // 30 seconds
+
 function runFFmpegWithProgress(
     args: string[],
     onProgress: (progress: number) => void,
@@ -76,6 +79,20 @@ function runFFmpegWithProgress(
     return new Promise((resolve) => {
         const proc = spawn(FFMPEG_COMMAND, args);
         let stderr = '';
+        let settled = false;
+
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try {
+                proc.kill('SIGKILL');
+            } catch {}
+            resolve({
+                code: 124,
+                stderr: `${stderr}\n[MediaWorker] FFmpeg process timed out after ${FFMPEG_TIMEOUT_MS}ms`
+            });
+        }, FFMPEG_TIMEOUT_MS);
+
         proc.stderr.on('data', (d) => {
             const text = d.toString();
             stderr += text;
@@ -91,13 +108,21 @@ function runFFmpegWithProgress(
                     : Math.min(99, Math.round(timeInSeconds));
             onProgress(progress);
         });
-        proc.on('error', (err) =>
+        proc.on('error', (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             resolve({
                 code: 127,
                 stderr: `[MediaWorker] FFmpeg unavailable at ${FFMPEG_COMMAND}: ${String(err?.message || err)}`
-            })
-        );
-        proc.on('close', (code) => resolve({ code: code ?? 0, stderr }));
+            });
+        });
+        proc.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ code: code ?? 0, stderr });
+        });
     });
 }
 
@@ -108,6 +133,7 @@ async function extractVideoPreview(
 ): Promise<boolean> {
     const seekTo = Math.min(0.5, duration / 2);
     return new Promise((resolve) => {
+        let settled = false;
         const proc = spawn(FFMPEG_COMMAND, [
             '-y',
             '-ss',
@@ -120,8 +146,27 @@ async function extractVideoPreview(
             '2',
             outputPath
         ]);
-        proc.on('error', () => resolve(false));
-        proc.on('close', (code) => resolve(code === 0));
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try {
+                proc.kill('SIGKILL');
+            } catch {}
+            resolve(false);
+        }, FFMPEG_PREVIEW_TIMEOUT_MS);
+
+        proc.on('error', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(false);
+        });
+        proc.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(code === 0);
+        });
     });
 }
 

@@ -19,6 +19,9 @@ type WallMediaCookiePayload = {
 };
 
 function getSigningSecret(): string {
+    if (env.NODE_ENV === 'production' && !env.SERVER_AUTH_SECRET) {
+        throw new Error('SERVER_AUTH_SECRET must be set in production');
+    }
     return env.SERVER_AUTH_SECRET || 'degraded-mode-secret';
 }
 

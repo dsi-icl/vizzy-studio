@@ -85,10 +85,6 @@ test('a revoked wall device is rejected before runtime registration', async ({ c
     await page.goto(`/wall?w=${manifest.fixtures.wallId}&c=0&r=0`);
 
     const actual = await outcome;
-    test.fail(
-        actual !== 'rejected',
-        'Known defect: completeHelloRegistration accepts existing devices whose status is revoked.'
-    );
     expect(actual).toBe('rejected');
 });
 
@@ -108,9 +104,5 @@ test('an enrolled controller cannot select a wall outside its server assignment'
 
     const actual = await outcome;
     const safelyScoped = actual === 'rejected' || actual === 'server-assigned';
-    test.fail(
-        !safelyScoped,
-        'Known defect: controller registration trusts the requested wall instead of assignedWallId.'
-    );
     expect(safelyScoped).toBe(true);
 });

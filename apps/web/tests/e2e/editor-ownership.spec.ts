@@ -90,7 +90,7 @@ test('editor takeover approval and last-editor disconnect hand ownership back to
         await loadPublicProject(galleryPage);
         await waitForWallHydrated(wallPage, { source: 'gallery', foregroundLayerCount: 6 });
         await expect(
-            controllerPage.getByRole('button', { name: 'Slide Rendering baseline' })
+            controllerPage.getByRole('button', { name: 'Rendering baseline' })
         ).toBeVisible({ timeout: 20_000 });
 
         editorContext = await createContext(actorStorageState('user_editor'));
@@ -160,7 +160,7 @@ test('editor takeover approval and last-editor disconnect hand ownership back to
         await loadPublicProject(galleryPage);
         await waitForWallHydrated(wallPage, { source: 'gallery', foregroundLayerCount: 6 });
         await expect(
-            controllerPage.getByRole('button', { name: 'Slide Rendering baseline' })
+            controllerPage.getByRole('button', { name: 'Rendering baseline' })
         ).toBeVisible({ timeout: 20_000 });
 
         await galleryPage.getByRole('button', { name: 'Close dialog' }).click();
