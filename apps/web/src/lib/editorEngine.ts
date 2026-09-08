@@ -28,6 +28,17 @@ type BinaryMessageCallback = (
     scaleY: number,
     rotation: number
 ) => void;
+
+export interface LayerBinaryMove {
+    numericId: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+}
 type PlaybackCallback = (
     id: number,
     playback: Extract<Layer, { type: 'video' }>['playback']
@@ -595,6 +606,30 @@ export class EditorEngine {
             view.setFloat32(21, scaleX, true);
             view.setFloat32(25, scaleY, true);
             view.setFloat32(29, rotation, true);
+            this.bus.sendRaw(buffer);
+        },
+        { wait: 16 }
+    );
+
+    public broadcastBinaryMoves = throttle(
+        (moves: LayerBinaryMove[]) => {
+            if (moves.length === 0) return;
+            const buffer = new ArrayBuffer(3 + 30 * moves.length);
+            const view = new DataView(buffer);
+            view.setUint8(0, 0x05);
+            view.setUint16(1, moves.length, true);
+            let offset = 3;
+            for (const m of moves) {
+                view.setUint16(offset, m.numericId, true);
+                view.setFloat32(offset + 2, m.x, true);
+                view.setFloat32(offset + 6, m.y, true);
+                view.setFloat32(offset + 10, m.width, true);
+                view.setFloat32(offset + 14, m.height, true);
+                view.setFloat32(offset + 18, m.scaleX, true);
+                view.setFloat32(offset + 22, m.scaleY, true);
+                view.setFloat32(offset + 26, m.rotation, true);
+                offset += 30;
+            }
             this.bus.sendRaw(buffer);
         },
         { wait: 16 }
