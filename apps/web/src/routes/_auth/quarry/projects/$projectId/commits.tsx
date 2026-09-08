@@ -33,7 +33,7 @@ import { Suspense, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { WallPresetPicker } from '~/components/WallPresetPicker';
-import { isGlobalManager } from '~/lib/signageAccess';
+import { canPublishProject } from '~/lib/authz';
 import {
     $archiveStage,
     $createStage,
@@ -149,7 +149,6 @@ function StagesTab() {
     const { projectId } = Route.useParams();
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
-    const globalManager = isGlobalManager(user);
     const [selectedStageId, setSelectedStageId] = useState(project.defaultStageId);
     const selectedStage =
         project.stages.find(({ id }) => id === selectedStageId) ??
@@ -181,7 +180,7 @@ function StagesTab() {
                         stage={selectedStage}
                         stages={project.stages}
                         isDefault={selectedStage.id === project.defaultStageId}
-                        canPublish={globalManager || user?.trustedPublisher === true}
+                        canPublish={canPublishProject(user)}
                     />
                 </Suspense>
             </div>

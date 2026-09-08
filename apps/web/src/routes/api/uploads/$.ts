@@ -115,7 +115,16 @@ const tusServer = new Server({
     respectForwardedHeaders: true,
     generateUrl: (_req, { path, id }) => `${path}/${id}`,
     datastore: new FileStore({ directory: UPLOAD_DIR }),
-    async onUploadCreate(_req, upload) {
+    async onUploadCreate(req, upload) {
+        const uploaderIp = getClientIpFromHeaders(req.headers);
+        const rate = checkRateLimit({
+            subjectKey: buildRateLimitSubjectKey({ ip: uploaderIp })
+        });
+        if (!rate.allowed) {
+            console.warn(`[Tus] Upload creation rate limited for IP: ${uploaderIp}`);
+            throw { status_code: 429, body: 'Upload creation rate limit exceeded' };
+        }
+
         const uploadToken = upload.metadata?.uploadToken;
         if (!uploadToken) {
             throw { status_code: 401, body: 'Missing upload token' };

@@ -154,6 +154,97 @@ function checkOtpRateLimit(email: string): boolean {
     return true;
 }
 
+const otpIpRateLimitMap = new Map<string, number[]>();
+const OTP_IP_WINDOW_MS = 10 * 60 * 1000;
+const OTP_IP_MAX_PER_WINDOW = 5;
+
+function checkOtpIpRateLimit(ip: string): boolean {
+    if (!ip || ip === 'unknown') return true;
+    const now = Date.now();
+    const timestamps = (otpIpRateLimitMap.get(ip) ?? []).filter(
+        (ts) => now - ts < OTP_IP_WINDOW_MS
+    );
+    if (timestamps.length >= OTP_IP_MAX_PER_WINDOW) {
+        return false;
+    }
+    timestamps.push(now);
+    otpIpRateLimitMap.set(ip, timestamps);
+    if (otpIpRateLimitMap.size > 10_000) {
+        for (const [k, list] of otpIpRateLimitMap) {
+            if (list.every((ts) => now - ts >= OTP_IP_WINDOW_MS)) {
+                otpIpRateLimitMap.delete(k);
+            }
+        }
+    }
+    return true;
+}
+
+let otpGlobalTimestamps: number[] = [];
+const OTP_GLOBAL_WINDOW_MS = 60 * 1000;
+const OTP_GLOBAL_MAX_PER_WINDOW = 30;
+
+function checkOtpGlobalRateLimit(): boolean {
+    const now = Date.now();
+    otpGlobalTimestamps = otpGlobalTimestamps.filter((ts) => now - ts < OTP_GLOBAL_WINDOW_MS);
+    if (otpGlobalTimestamps.length >= OTP_GLOBAL_MAX_PER_WINDOW) {
+        return false;
+    }
+    otpGlobalTimestamps.push(now);
+    return true;
+}
+
+function getClientIpFromAuthContext(ctx: unknown): string {
+    if (!ctx || typeof ctx !== 'object') return 'unknown';
+    const c = ctx as {
+        headers?: Headers | Record<string, unknown>;
+        request?: { headers?: Headers | Record<string, unknown> };
+    };
+    const rawHeaders = c.headers ?? c.request?.headers;
+    if (!rawHeaders) return 'unknown';
+
+    if (typeof (rawHeaders as Headers).get === 'function') {
+        const h = rawHeaders as Headers;
+        const cf = h.get('cf-connecting-ip');
+        if (cf) return cf.trim();
+        const realIp = h.get('x-real-ip');
+        if (realIp) return realIp.trim();
+        const xff = h.get('x-forwarded-for');
+        if (xff) {
+            const parts = xff
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+            const candidate = parts[parts.length - 1];
+            if (candidate) return candidate;
+        }
+        return 'unknown';
+    }
+
+    const rec = rawHeaders as Record<string, unknown>;
+    const pick = (name: string): string | null => {
+        const val = rec[name] ?? rec[name.toLowerCase()];
+        if (typeof val === 'string') return val.trim();
+        if (Array.isArray(val) && typeof val[0] === 'string') return val[0].trim();
+        return null;
+    };
+
+    const cf = pick('cf-connecting-ip');
+    if (cf) return cf;
+    const realIp = pick('x-real-ip');
+    if (realIp) return realIp;
+    const xff = pick('x-forwarded-for');
+    if (xff) {
+        const parts = xff
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean);
+        const candidate = parts[parts.length - 1];
+        if (candidate) return candidate;
+    }
+
+    return 'unknown';
+}
+
 export const auth = betterAuth({
     baseURL: {
         allowedHosts: safeAllowedHosts,
@@ -225,12 +316,35 @@ export const auth = betterAuth({
         }),
         ...(env.NODE_ENV === 'test' ? [testUtils()] : []),
         emailOTP({
-            sendVerificationOTP: async ({ email, otp, type }) => {
-                if (env.NODE_ENV !== 'test' && !checkOtpRateLimit(email)) {
-                    console.warn(`[Auth] OTP dispatch rate limited for ${email}`);
-                    throw new Error(
-                        'Too many OTP requests for this email. Please wait a few minutes before trying again.'
-                    );
+            sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+                if (env.NODE_ENV !== 'test') {
+                    if (!checkOtpRateLimit(email)) {
+                        console.warn(`[Auth] OTP dispatch rate limited for email: ${email}`);
+                        throw new Error(
+                            'Too many OTP requests for this email. Please wait a few minutes before trying again.'
+                        );
+                    }
+                    const ip = getClientIpFromAuthContext(ctx);
+                    if (env.NODE_ENV === 'production' && (!ip || ip === 'unknown')) {
+                        console.warn(
+                            '[Auth] OTP dispatch rejected: unknown client IP in production'
+                        );
+                        throw new Error(
+                            'Unable to verify client IP address for security. Please try again later.'
+                        );
+                    }
+                    if (!checkOtpIpRateLimit(ip)) {
+                        console.warn(`[Auth] OTP dispatch rate limited for IP: ${ip}`);
+                        throw new Error(
+                            'Too many OTP requests from this IP address. Please wait a few minutes before trying again.'
+                        );
+                    }
+                    if (!checkOtpGlobalRateLimit()) {
+                        console.warn('[Auth] OTP dispatch global rate limit reached');
+                        throw new Error(
+                            'Too many OTP requests overall. Please wait a minute before trying again.'
+                        );
+                    }
                 }
                 const html = await render(OtpEmail({ otp }));
                 await sendAuthEmail({

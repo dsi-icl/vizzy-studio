@@ -1,6 +1,6 @@
 import {
     ArrowLeftIcon,
-    ClockIcon,
+    ActivityIcon,
     FolderIcon,
     GlobeIcon,
     GitBranchIcon,
@@ -25,6 +25,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
 import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
@@ -48,7 +49,7 @@ const TAB_ORDER = {
     info: 0,
     permissions: 1,
     commits: 2,
-    history: 3,
+    audits: 3,
     assets: 4,
     controller: 5
 } as const;
@@ -58,7 +59,7 @@ const ALL_TABS: { key: TabKey; label: string; to: string; icon: any }[] = [
     { key: 'info', label: 'Project Info', to: '.', icon: FolderIcon },
     { key: 'permissions', label: 'Permissions', to: './permissions', icon: UsersIcon },
     { key: 'commits', label: 'Stages', to: './commits', icon: GitBranchIcon },
-    { key: 'history', label: 'History', to: './history', icon: ClockIcon },
+    { key: 'audits', label: 'Audits', to: './audits', icon: ActivityIcon },
     { key: 'assets', label: 'Assets', to: './assets', icon: ImageIcon },
     { key: 'controller', label: 'Controller', to: './controller_editor', icon: CodeIcon }
 ];
@@ -78,7 +79,7 @@ const TAB_SUBHEADERS: Record<TabKey, { title: string; description?: string }> = 
         title: 'Stages',
         description: 'Manage stage layouts, histories, and published presentation revisions.'
     },
-    history: {
+    audits: {
         title: 'Audit Log',
         description: 'A record of all changes made to this project.'
     },
@@ -110,7 +111,7 @@ const slidePanelVariants = {
 function getTabFromPath(pathname: string): TabKey {
     if (pathname.endsWith('/permissions')) return 'permissions';
     if (pathname.endsWith('/commits')) return 'commits';
-    if (pathname.endsWith('/history')) return 'history';
+    if (pathname.endsWith('/audits')) return 'audits';
     if (pathname.endsWith('/assets')) return 'assets';
     if (pathname.endsWith('/controller_editor')) return 'controller';
     return 'info';
@@ -127,11 +128,13 @@ function ProjectLayout() {
     const hasCustomRender = !!project.customRenderUrl;
     const defaultStage =
         project.stages.find(({ id }) => id === project.defaultStageId) ?? project.stages[0];
-    const canPublish =
-        user?.role === 'admin' || user?.role === 'operator' || user?.trustedPublisher === true;
+    const canPublish = canPublishProject(user);
+    const canViewAudit = canViewProjectAudits(user);
     const tabs = (
         hasCustomRender ? ALL_TABS.filter((t) => !CUSTOM_RENDER_HIDDEN_TABS.has(t.key)) : ALL_TABS
-    ).filter((t) => t.key !== 'controller' || user?.role === 'admin');
+    )
+        .filter((t) => t.key !== 'controller' || isAdmin(user?.role))
+        .filter((t) => t.key !== 'audits' || canViewAudit);
     const queryClient = useQueryClient();
     const impersonatedBy =
         sessionData?.session && typeof sessionData.session === 'object'

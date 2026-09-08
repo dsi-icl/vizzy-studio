@@ -95,9 +95,51 @@ function toAuditChanges(summary: CspViolationSummary): { [key: string]: JsonValu
     return out;
 }
 
+const lastCspAuditSeen = new Map<string, number>();
+
+function shouldAuditCspReport(key: string, now: number): boolean {
+    const last = lastCspAuditSeen.get(key) ?? 0;
+    if (now - last < 60_000) return false;
+    lastCspAuditSeen.set(key, now);
+    if (lastCspAuditSeen.size > 5_000) {
+        for (const [k, ts] of lastCspAuditSeen) {
+            if (now - ts >= 60_000) lastCspAuditSeen.delete(k);
+        }
+    }
+    return true;
+}
+
+let cspAuditCount = 0;
+let cspAuditResetAt = Date.now() + 60_000;
+const MAX_CSP_AUDITS_PER_MINUTE = 10;
+
+function shouldAuditCspReportGlobal(now: number): boolean {
+    if (now > cspAuditResetAt) {
+        cspAuditCount = 0;
+        cspAuditResetAt = now + 60_000;
+    }
+    if (cspAuditCount >= MAX_CSP_AUDITS_PER_MINUTE) {
+        return false;
+    }
+    cspAuditCount++;
+    return true;
+}
+
 async function ingestCspViolations(request: Request, summaries: CspViolationSummary[]) {
+    const ip = getClientIpFromHeaders(request.headers);
+    const now = Date.now();
     for (const summary of summaries) {
-        await logAuditDenied({
+        const key = `${ip}:${summary.effectiveDirective ?? summary.violatedDirective ?? 'violation'}`;
+        if (!shouldAuditCspReport(key, now)) continue;
+        if (!shouldAuditCspReportGlobal(now)) {
+            console.warn(
+                '[CSP] Throttling DB audit write for violation (global limit exceeded)',
+                summary
+            );
+            continue;
+        }
+
+        void logAuditDenied({
             action: 'CSP_VIOLATION_REPORTED',
             resourceType: 'unknown',
             resourceId: summary.documentUri ?? summary.reportUrl ?? '/api/report-csp',
@@ -108,7 +150,7 @@ async function ingestCspViolations(request: Request, summaries: CspViolationSumm
                 operation: 'report-csp',
                 request
             }
-        });
+        }).catch(() => {});
     }
 }
 

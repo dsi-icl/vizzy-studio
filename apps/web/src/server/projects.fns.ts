@@ -11,6 +11,7 @@ import {
     canEditProject,
     canPublishProject,
     canViewProject,
+    canViewProjectAudits,
     ownsProject,
     resolveProjectIdForAsset,
     resolveProjectIdForCommit,
@@ -50,6 +51,10 @@ import {
     updateProject
 } from './projects';
 
+const HttpUrlString = z
+    .string()
+    .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL');
+
 const CreateProjectInput = z.object({
     name: z.string().min(1, 'Name is required'),
     authorOrganisation: z.string().min(1, 'Author/Organisation is required'),
@@ -57,8 +62,8 @@ const CreateProjectInput = z.object({
     tags: z.array(z.string()).default([]),
     visibility: ProjectVisibility.default('private'),
     heroImages: z.array(z.string()).default([]),
-    customControlUrl: z.string().optional(),
-    customRenderUrl: z.string().optional(),
+    customControlUrl: HttpUrlString.optional(),
+    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().default(false),
     customRenderProxy: z.boolean().default(false),
     collaborators: z.array(Collaborator).default([])
@@ -72,8 +77,8 @@ const UpdateProjectInput = z.object({
     tags: z.array(z.string()).optional(),
     visibility: ProjectVisibility.optional(),
     heroImages: z.array(z.string()).optional(),
-    customControlUrl: z.string().optional(),
-    customRenderUrl: z.string().optional(),
+    customControlUrl: HttpUrlString.optional(),
+    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().optional(),
     customRenderProxy: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional()
@@ -583,12 +588,12 @@ export const $restoreProject = createServerFn({ method: 'POST' })
             });
             throw new Error('Access denied');
         }
-        const allowed = await canEditProject(actor, data.id);
+        const allowed = await ownsProject(actor, data.id);
         if (!allowed) {
             await denyProjectFn({
                 context,
                 operation: '$restoreProject',
-                reasonCode: 'PROJECT_EDIT_FORBIDDEN',
+                reasonCode: 'PROJECT_OWNER_REQUIRED',
                 projectId: data.id,
                 resourceType: 'project',
                 resourceId: data.id
@@ -730,6 +735,17 @@ export const $getAudits = createServerFn({ method: 'GET' })
             });
             throw new Error('Access denied');
         }
+        if (!canViewProjectAudits(actor)) {
+            await denyProjectFn({
+                context,
+                operation: '$getAudits',
+                reasonCode: 'PROJECT_AUDIT_VIEW_FORBIDDEN',
+                projectId: data.projectId,
+                resourceType: 'project',
+                resourceId: data.projectId
+            });
+            throw new Error('Access denied');
+        }
         return getAudits(data.projectId);
     });
 
@@ -776,6 +792,17 @@ export const $getAuditsPage = createServerFn({ method: 'GET' })
                 context,
                 operation: '$getAuditsPage',
                 reasonCode: 'PROJECT_VIEW_FORBIDDEN',
+                projectId: data.projectId,
+                resourceType: 'project',
+                resourceId: data.projectId
+            });
+            throw new Error('Access denied');
+        }
+        if (!canViewProjectAudits(actor)) {
+            await denyProjectFn({
+                context,
+                operation: '$getAuditsPage',
+                reasonCode: 'PROJECT_AUDIT_VIEW_FORBIDDEN',
                 projectId: data.projectId,
                 resourceType: 'project',
                 resourceId: data.projectId
