@@ -202,6 +202,17 @@ async function clearSignageBinding(wallId: string) {
     broadcastWallBindingToGalleries(wallId);
 }
 
+function playbackSignature(slideshow: Slideshow): string {
+    return JSON.stringify([
+        slideshow.layout,
+        slideshow.defaultDisplayDurationMs,
+        slideshow.defaultGapDurationMs,
+        slideshow.gapMode,
+        slideshow.targetWallIds,
+        slideshow.entries
+    ]);
+}
+
 export async function reconcileSignageRuntimes() {
     const generation = ++reconcileGeneration;
     await dbCol.signageSlideshows.ensureIndexes();
@@ -216,11 +227,14 @@ export async function reconcileSignageRuntimes() {
         (wallId) => !nextTargets.has(wallId)
     );
 
-    for (const runtime of runtimes.values()) {
+    const nextById = new Map(active.map((slideshow) => [slideshow.id, slideshow]));
+    for (const [id, runtime] of runtimes) {
+        const next = nextById.get(id);
+        if (next && playbackSignature(next) === playbackSignature(runtime.slideshow)) continue;
         runtime.generation++;
         if (runtime.timer) clearTimeout(runtime.timer);
+        runtimes.delete(id);
     }
-    runtimes.clear();
     targetOwnerByWall.clear();
     for (const [wallId, slideshowId] of nextTargets) {
         targetOwnerByWall.set(wallId, slideshowId);
@@ -239,6 +253,11 @@ export async function reconcileSignageRuntimes() {
     await Promise.all(removedTargets.map((wallId) => clearSignageBinding(wallId)));
 
     for (const slideshow of active) {
+        const existing = runtimes.get(slideshow.id);
+        if (existing) {
+            existing.slideshow = slideshow;
+            continue;
+        }
         const runtime: Runtime = {
             slideshow,
             generation: 1,
