@@ -620,9 +620,9 @@ process.__VSYNC_INTERVAL__ = setInterval(() => {
         };
     }> = [];
 
-    for (const [numericId, { scopeId, layer }] of activeVideos) {
+    for (const [key, { scopeId, layer }] of activeVideos) {
         if (layer.type !== 'video' || !layer.playback || layer.playback.status !== 'playing') {
-            activeVideos.delete(numericId);
+            activeVideos.delete(key);
             continue;
         }
 
@@ -640,10 +640,10 @@ process.__VSYNC_INTERVAL__ = setInterval(() => {
                 layer.playback.status = 'paused';
                 layer.playback.anchorMediaTime = duration;
                 layer.playback.anchorServerTime = 0;
-                activeVideos.delete(numericId);
+                activeVideos.delete(key);
             }
 
-            batch.push({ numericId, scopeId, playback: { ...layer.playback } });
+            batch.push({ numericId: layer.numericId, scopeId, playback: { ...layer.playback } });
         }
     }
 

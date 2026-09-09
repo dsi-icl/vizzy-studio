@@ -70,7 +70,7 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     signageBlankWalls: new Set<string>(),
     scopeWatchers: new Map<ScopeId, Set<string>>(),
     wallPeersByScope: new Map<ScopeId, Set<PeerEntry>>(),
-    activeVideos: new Map<number, { scopeId: ScopeId; layer: Layer }>(),
+    activeVideos: new Map<string, { scopeId: ScopeId; layer: Layer }>(),
     peerCounts: { editor: 0, wall: 0, controller: 0, gallery: 0 },
     lastPingSeen: new Map<string, number>(),
     scopeCleanupTimers: new Map<ScopeId, ReturnType<typeof setTimeout>>(),
@@ -229,7 +229,7 @@ export const controllerTransientByWallId: Map<
 > = _hmr.controllerTransientByWallId;
 
 // Active video registry for the VSYNC loop — only playing videos are tracked
-export const activeVideos: Map<number, { scopeId: ScopeId; layer: Layer }> = _hmr.activeVideos;
+export const activeVideos: Map<string, { scopeId: ScopeId; layer: Layer }> = _hmr.activeVideos;
 
 /** Running peer counts — O(1) reads instead of iterating all peers */
 export const peerCounts: {
@@ -360,17 +360,20 @@ export function canSendNonCritical(peer: Peer): boolean {
 }
 
 // ── Active video registry ─────────────────────────────────────────────────────
-
-export function registerActiveVideo(numericId: number, scopeId: ScopeId, layer: Layer) {
-    activeVideos.set(numericId, { scopeId, layer });
+export function activeVideoKey(scopeId: ScopeId, numericId: number): string {
+    return `${scopeId}:${numericId}`;
 }
 
-export function unregisterActiveVideo(numericId: number) {
-    activeVideos.delete(numericId);
+export function registerActiveVideo(numericId: number, scopeId: ScopeId, layer: Layer) {
+    activeVideos.set(activeVideoKey(scopeId, numericId), { scopeId, layer });
+}
+
+export function unregisterActiveVideo(numericId: number, scopeId: ScopeId) {
+    activeVideos.delete(activeVideoKey(scopeId, numericId));
 }
 
 export function clearActiveVideosForScope(scopeId: ScopeId) {
-    for (const [numericId, entry] of activeVideos) {
-        if (entry.scopeId === scopeId) activeVideos.delete(numericId);
+    for (const [key, entry] of activeVideos) {
+        if (entry.scopeId === scopeId) activeVideos.delete(key);
     }
 }

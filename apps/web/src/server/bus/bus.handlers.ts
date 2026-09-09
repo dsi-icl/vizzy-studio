@@ -315,7 +315,7 @@ handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
     }
 
     if (deletedPersistentLayer) {
-        unregisterActiveVideo(data.numericId);
+        unregisterActiveVideo(data.numericId, scopeId);
     }
     // deleteLayerNodes(data.numericId);
     if (isControllerTransientDelete || (deletedControllerTransient && !deletedPersistentLayer)) {
@@ -777,7 +777,7 @@ handlers.set('video_pause', ({ data, scopeId }) => {
         layer.playback.anchorMediaTime += elapsed;
         layer.playback.anchorServerTime = 0;
 
-        unregisterActiveVideo(data.numericId);
+        unregisterActiveVideo(data.numericId, scopeId);
         sendVideoSyncToRelevantWalls(data.numericId, scopeId, layer.playback, {
             criticalToWalls: true
         });
@@ -793,7 +793,7 @@ handlers.set('video_seek', ({ data, scopeId }) => {
         layer.playback.anchorMediaTime = data.mediaTime;
         layer.playback.anchorServerTime = 0;
 
-        unregisterActiveVideo(data.numericId);
+        unregisterActiveVideo(data.numericId, scopeId);
         sendVideoSyncToRelevantWalls(data.numericId, scopeId, layer.playback, {
             criticalToWalls: true
         });
