@@ -103,6 +103,13 @@ export class WallEngine {
             throw new Error('WallEngine can only be used in the browser');
         }
         // Escape Vite's module scope by anchoring the Singleton to the Window
+        if (window.__WALL_ENGINE__ && window.__WALL_ENGINE__.wallId !== wallId) {
+            // Client-side routing can change the wall target or slug. The cached
+            // engine still holds a BusClient connected to the previous wallId, so
+            // tearing it down is safer
+            window.__WALL_ENGINE__.destroy();
+            window.__WALL_ENGINE__ = undefined;
+        }
         if (!window.__WALL_ENGINE__) {
             if (!viewport) throw new Error('Viewport must be provided on first initialization');
             window.__WALL_ENGINE__ = new WallEngine(wallId, viewport);
