@@ -4,6 +4,7 @@ type RoleHolder = {
 
 type PublisherRoleHolder = RoleHolder & {
     trustedPublisher?: boolean | null;
+    canManageSignage?: boolean | null;
 };
 
 export function isAdmin(role: string | null | undefined): boolean {
@@ -21,5 +22,6 @@ export function canViewProjectAudits(actor: RoleHolder | null | undefined): bool
 export function canPublishProject(actor: PublisherRoleHolder | null | undefined): boolean {
     if (isAdmin(actor?.role)) return true;
     if (isOperator(actor?.role)) return true;
+    if (actor?.canManageSignage === true) return true;
     return actor?.trustedPublisher === true;
 }
