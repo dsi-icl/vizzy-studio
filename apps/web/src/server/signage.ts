@@ -3,7 +3,7 @@ import type { PublicDoc } from '@repo/db/collections';
 import type { AuthContext, SignageSlideEntry, SignageSlideshowDocument } from '@repo/db/documents';
 import { stageLayoutsEqual, type StageLayout } from '@repo/db/schema';
 
-import { canEditSlideshow, isGlobalManager } from '~/lib/signageAccess';
+import { canEditSlideshow, canManageSlideshow, isGlobalManager } from '~/lib/signageAccess';
 import { logAuditSuccess } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { getStageLayoutLimits } from '~/server/projects';
@@ -39,6 +39,17 @@ function sanitizeCollaborators(
         byEmail.set(email, collaborator.role);
     }
     return Array.from(byEmail, ([email, role]) => ({ email, role }));
+}
+
+function collaboratorsEqual(
+    left: Slideshow['collaborators'],
+    right: Slideshow['collaborators']
+): boolean {
+    if (left.length !== right.length) return false;
+    const key = ({ email, role }: { email: string; role: string }) => `${email}\0${role}`;
+    const leftKeys = left.map(key).sort();
+    const rightKeys = right.map(key).sort();
+    return leftKeys.every((entry, index) => entry === rightKeys[index]);
 }
 
 function slideReference({ projectId, slideId }: SignageSlideEntry): string {
@@ -168,6 +179,15 @@ export async function updateSignageSlideshow(
     if (changesTargets && !isGlobalManager(actor)) {
         throw new Error('Only admins and operators can change targets or activation');
     }
+    const nextCollaborators = sanitizeCollaborators(input.collaborators, current.createdBy);
+    if (
+        !collaboratorsEqual(current.collaborators, nextCollaborators) &&
+        !canManageSlideshow(actor, current)
+    ) {
+        throw new Error(
+            'Only the slideshow creator, admins and operators can change collaborators'
+        );
+    }
     await assertLayoutWithinConfiguredGrid(input.layout);
     if (new Set(input.entries.map(({ id: entryId }) => entryId)).size !== input.entries.length) {
         throw new Error('Slideshow entry IDs must be unique');
@@ -188,7 +208,7 @@ export async function updateSignageSlideshow(
             entries: input.entries,
             targetWallIds,
             enabled: input.enabled,
-            collaborators: sanitizeCollaborators(input.collaborators, current.createdBy)
+            collaborators: nextCollaborators
         });
     } catch (error) {
         if (error && typeof error === 'object' && 'code' in error && error.code === 11_000) {
@@ -215,6 +235,9 @@ export async function updateSignageSlideshow(
 export async function deleteSignageSlideshow(actor: SignageActor, id: string): Promise<void> {
     const slideshow = await getSignageSlideshow(actor, id);
     if (!canEditSlideshow(actor, slideshow)) throw new Error('Forbidden');
+    if (!canManageSlideshow(actor, slideshow)) {
+        throw new Error('Only the slideshow creator, admins and operators can delete a slideshow');
+    }
     if (slideshow.enabled && !isGlobalManager(actor)) {
         throw new Error('Only admins and operators can disable an active slideshow');
     }

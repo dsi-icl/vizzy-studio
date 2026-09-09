@@ -34,3 +34,11 @@ export function canEditSlideshow(
         ({ email, role }) => email === user.email && role === 'editor'
     );
 }
+
+export function canManageSlideshow(
+    user: { email: string; role?: string | null } | null | undefined,
+    slideshow: { createdBy: string }
+): boolean {
+    if (!user) return false;
+    return slideshow.createdBy === user.email || isGlobalManager(user);
+}

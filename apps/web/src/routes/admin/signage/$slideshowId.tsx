@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 
 import { SignageEntryList } from '~/components/SignageEntryList';
 import { WallPresetPicker } from '~/components/WallPresetPicker';
-import { canEditSlideshow, isGlobalManager } from '~/lib/signageAccess';
+import { canEditSlideshow, canManageSlideshow, isGlobalManager } from '~/lib/signageAccess';
 import { adminWallsQueryOptions } from '~/server/admin.queries';
 import { wallLayoutTemplatesQueryOptions } from '~/server/projects.queries';
 import { $deleteSignageSlideshow, $updateSignageSlideshow } from '~/server/signage.fns';
@@ -61,7 +61,8 @@ function SignageEditor({
     const [draft, setDraft] = useState(initial);
     const globalManager = isGlobalManager(user);
     const canEdit = canEditSlideshow(user, initial);
-    const canDelete = canEdit && (globalManager || !initial.enabled);
+    const canManage = canManageSlideshow(user, initial);
+    const canDelete = canManage && !initial.enabled;
     const sourcesQuery = useQuery(signageSourcesQueryOptions(draft.layout));
     const runtimeQuery = useQuery(signageRuntimeStatusQueryOptions(initial.id));
     const wallsQuery = useQuery({
@@ -179,7 +180,7 @@ function SignageEditor({
     return (
         <div className="space-y-6 pb-10">
             <div className="flex items-center justify-between gap-3">
-                <Button variant="ghost" render={<Link to="/admin/signage" />}>
+                <Button variant="ghost" render={<Link to="/admin/signage" />} nativeButton={false}>
                     <ArrowLeftIcon /> Slideshows
                 </Button>
                 <div className="flex gap-2">
@@ -482,13 +483,14 @@ function SignageEditor({
                     <div>
                         <h3 className="font-medium">Sharing</h3>
                         <p className="text-xs text-muted-foreground">
-                            Editors can update the loop; viewers have read-only access.
+                            {!canManage &&
+                                'Only the slideshow creator, admins and operators can change who has access.'}
                         </p>
                     </div>
                     <Button
                         size="sm"
                         variant="outline"
-                        disabled={!canEdit}
+                        disabled={!canManage}
                         onClick={() =>
                             setDraft((current) => ({
                                 ...current,
@@ -518,7 +520,7 @@ function SignageEditor({
                                     aria-label={`Collaborator ${index + 1} email`}
                                     placeholder="person@example.com"
                                     value={collaborator.email}
-                                    disabled={!canEdit}
+                                    disabled={!canManage}
                                     onChange={(event) =>
                                         setDraft((current) => ({
                                             ...current,
@@ -538,7 +540,7 @@ function SignageEditor({
                                     aria-label={`Collaborator ${index + 1} role`}
                                     className="h-8 rounded-md border border-input bg-transparent px-2.5 text-sm disabled:opacity-50 dark:bg-input/30"
                                     value={collaborator.role}
-                                    disabled={!canEdit}
+                                    disabled={!canManage}
                                     onChange={(event) =>
                                         setDraft((current) => ({
                                             ...current,
@@ -564,7 +566,7 @@ function SignageEditor({
                                     size="icon-sm"
                                     variant="ghost"
                                     aria-label={`Remove collaborator ${index + 1}`}
-                                    disabled={!canEdit}
+                                    disabled={!canManage}
                                     onClick={() =>
                                         setDraft((current) => ({
                                             ...current,
