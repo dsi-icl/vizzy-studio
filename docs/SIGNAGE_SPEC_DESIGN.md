@@ -572,6 +572,20 @@ Project visibility and stage publication have separate purposes:
 - A wall may receive a private project's assets only while it is authorized for the project
   currently bound by the server.
 
+`canManageSignage` automatically grants `canPublishProject`. Signage resolves
+`stage.publishedCommitId` rather than `headCommitId`, so that a wall never shows a half-finished
+slide left by an autosaved draft. A signage manager would need to publish a commit to see the
+slides in signage slide source. The two roles stay separate: the grant is derived inside
+`canPublishProject`, never written onto the user, so withdrawing signage access withdraws
+publishing with it.
+
+Slide entry permissions are checked only for newly referenced slides, not for every entry already
+in the loop. Slideshows are collaborative across projects, so re-validating the whole list would
+stop a signage manager (non admin / operator) from saving any slideshow carrying another team's slides.
+Unpublishing the stage drops the unpublished entries from every wall on the next transition, without
+the slideshow being edited at all. Duplicating an entry that is
+already queued is likewise not a bypass, since the referenced slide is already on air.
+
 The signage management UI marks wall-template mismatches visibly. They remain advisory rather than
 blocking in this iteration.
 

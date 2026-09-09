@@ -274,16 +274,16 @@ export async function resolveSignageEntries(
                 };
             }
             const stage = stages[0];
-            if (!stage.headCommitId) {
+            if (!stage.publishedCommitId) {
                 return {
                     entry,
                     valid: false,
                     projectName: project.name,
                     stageName: stage.name,
-                    reason: 'Stage has no content'
+                    reason: 'Stage is not published'
                 };
             }
-            const commit = await dbCol.commits.findById(stage.headCommitId);
+            const commit = await dbCol.commits.findById(stage.publishedCommitId);
             const slide = commit?.content.slides.find(({ id }) => id === entry.slideId);
             if (
                 !commit ||
@@ -296,7 +296,7 @@ export async function resolveSignageEntries(
                     valid: false,
                     projectName: project.name,
                     stageName: stage.name,
-                    reason: 'Slide missing from stage'
+                    reason: 'Published slide missing'
                 };
             }
             return {
@@ -322,9 +322,9 @@ export async function listSignageSources(actor: SignageActor, layout: StageLayou
         );
         if (stages.length !== 1) continue;
         const stage = stages[0];
-        const headCommitId = stage.headCommitId;
-        if (!headCommitId) continue;
-        const commit = await dbCol.commits.findById(headCommitId);
+        const publishedCommitId = stage.publishedCommitId;
+        if (!publishedCommitId) continue;
+        const commit = await dbCol.commits.findById(publishedCommitId);
         if (!commit || commit.projectId !== project.id || commit.stageId !== stage.id) continue;
         sources.push({
             projectId: project.id,

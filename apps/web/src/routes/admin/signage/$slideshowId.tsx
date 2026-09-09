@@ -154,7 +154,7 @@ function SignageEditor({
                 return [...retained.slice(0, target), ...refreshed, ...retained.slice(target)];
             })()
         }));
-        toast.success('Project entries refreshed from the latest stage content');
+        toast.success('Project entries refreshed from the latest published stage');
     };
 
     const updateDefaultSeconds = (
@@ -375,8 +375,9 @@ function SignageEditor({
                         Playlist.
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        Note: Only shows slides that have been created on a stage which has the same
-                        dimensions as this slideshow (columns, rows, width, height).
+                        Note: Only shows published slides from a stage with the same dimensions as
+                        this slideshow (columns, rows, width, height). Publish a commit to make its
+                        slides available here.
                     </p>
                 </div>
                 {sourcesQuery.isLoading ? (
@@ -448,7 +449,7 @@ function SignageEditor({
                     </div>
                 ) : (
                     <p className="text-sm text-muted-foreground">
-                        No accessible stage matches this layout.
+                        No accessible published stage matches this layout.
                     </p>
                 )}
             </section>
@@ -464,7 +465,7 @@ function SignageEditor({
                 </div>
                 {draft.entries.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                        Import a project or add individual slides.
+                        Import a project or add individual published slides.
                     </p>
                 ) : (
                     <SignageEntryList
