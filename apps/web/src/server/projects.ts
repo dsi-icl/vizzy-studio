@@ -80,6 +80,7 @@ import {
     updateProjectCustomRenderSettings,
     updateRuntimeStageLayout
 } from '~/lib/busState';
+import { KeyedSerialQueue } from '~/lib/scopePersistence';
 import { revokeUploadToken, validateUploadToken } from '~/lib/uploadTokens';
 import { logAuditSuccess } from '~/server/audit';
 import { dbCol, collections } from '~/server/collections';
@@ -386,7 +387,25 @@ export async function updateProject(
     return updated;
 }
 
-export async function createStage(
+const stageWriteQueue = new KeyedSerialQueue<string>();
+
+export function createStage(...args: Parameters<typeof createStageSerialized>) {
+    return stageWriteQueue.run(args[0], () => createStageSerialized(...args));
+}
+
+export function updateStage(...args: Parameters<typeof updateStageSerialized>) {
+    return stageWriteQueue.run(args[0], () => updateStageSerialized(...args));
+}
+
+export function setDefaultStage(...args: Parameters<typeof setDefaultStageSerialized>) {
+    return stageWriteQueue.run(args[0], () => setDefaultStageSerialized(...args));
+}
+
+export function archiveStage(...args: Parameters<typeof archiveStageSerialized>) {
+    return stageWriteQueue.run(args[0], () => archiveStageSerialized(...args));
+}
+
+async function createStageSerialized(
     projectId: string,
     input: { name: string; layout: StageLayout },
     userEmail: string,
@@ -430,7 +449,7 @@ export async function createStage(
     return stage;
 }
 
-export async function updateStage(
+async function updateStageSerialized(
     projectId: string,
     stageId: string,
     input: { name?: string; layout?: StageLayout },
@@ -475,7 +494,7 @@ export async function updateStage(
     return getProjectStage(updated, stageId);
 }
 
-export async function setDefaultStage(
+async function setDefaultStageSerialized(
     projectId: string,
     stageId: string,
     userEmail: string,
@@ -501,7 +520,7 @@ export async function setDefaultStage(
     return updated;
 }
 
-export async function archiveStage(
+async function archiveStageSerialized(
     projectId: string,
     stageId: string,
     userEmail: string,
