@@ -126,7 +126,7 @@ export interface WallDocument {
     boundSlideId?: string | null;
     boundSource?: 'live' | 'gallery' | 'signage' | null;
     layoutTemplate?: (StageLayout & { configuredAt: number; configuredBy: string }) | null;
-    openToEditors?: boolean;
+    allowLivePreview?: boolean;
     site?: string | null;
     notes?: string | null;
     createdAt: number;

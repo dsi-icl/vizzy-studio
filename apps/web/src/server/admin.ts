@@ -369,7 +369,7 @@ export async function adminGetWall(wallId: string) {
         site: wall.site ?? null,
         notes: wall.notes ?? null,
         layoutTemplate: wall.layoutTemplate ?? null,
-        openToEditors: wall.openToEditors === true,
+        allowLivePreview: wall.allowLivePreview === true,
         observedLayout:
             observedColumns && observedRows
                 ? {
@@ -471,25 +471,25 @@ export async function adminUpdateWallLayoutTemplate(input: {
     return updated.layoutTemplate ?? null;
 }
 
-export async function adminUpdateWallOpenToEditors(input: {
+export async function adminUpdateWallAllowLivePreview(input: {
     wallId: string;
-    openToEditors: boolean;
+    allowLivePreview: boolean;
     actorEmail: string;
 }) {
     const existing = await findWallById(input.wallId);
     if (!existing) throw new Error('Wall not found');
     const updated = await dbCol.walls.update(existing.id, {
-        openToEditors: input.openToEditors
+        allowLivePreview: input.allowLivePreview
     });
     if (!updated) throw new Error('Wall not found');
     await logAuditSuccess({
-        action: 'WALL_OPEN_TO_EDITORS_UPDATED',
+        action: 'WALL_ALLOW_LIVE_PREVIEW_UPDATED',
         actorId: input.actorEmail,
         resourceType: 'wall',
         resourceId: String(existing.wallId),
-        changes: { openToEditors: input.openToEditors }
+        changes: { allowLivePreview: input.allowLivePreview }
     });
-    return updated.openToEditors === true;
+    return updated.allowLivePreview === true;
 }
 
 export async function adminListDevicesForWall(wallId: string) {

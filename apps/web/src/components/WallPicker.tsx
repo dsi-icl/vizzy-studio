@@ -10,18 +10,26 @@ import { useEditorStore } from '~/lib/editorStore';
 import { canBindWall } from '~/lib/signageAccess';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
-export function useBindableWalls() {
+/**
+ * Every wall is listed, previewable or not, and the ones that cannot be bound are
+ * shown disabled with a reason. Filtering them out instead made the picker's
+ * visibility depend on data that arrives after the socket hydrates, which flashed the
+ * toolbar icon in and out on reconnect. `$listWalls` already returns every wall to any
+ * authenticated user, so nothing is disclosed by rendering them.
+ */
+export function useWalls() {
     const { user } = useAuth();
     const { data, isLoading } = useQuery(wallsQueryOptions());
     const walls = useMemo(
-        () => (data ?? []).filter((wall) => canBindWall(user, wall)),
+        () =>
+            (data ?? []).map((wall) => ({ ...wall, livePreviewAllowed: canBindWall(user, wall) })),
         [data, user]
     );
     return { walls, isLoading };
 }
 
 function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
-    const { walls, isLoading } = useBindableWalls();
+    const { walls, isLoading } = useWalls();
     const liveNodeCounts = useEditorStore((s) => s.wallNodeCounts);
     const stageLayout = useEditorStore((s) => s.stageLayout);
 
@@ -49,14 +57,18 @@ function WallList({ onSelect }: { onSelect: (wallId: string) => void }) {
                 return (
                     <button
                         key={wall.id}
-                        disabled={mismatched}
+                        disabled={!wall.livePreviewAllowed || mismatched}
                         onClick={() => onSelect(wall.wallId)}
                         className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors not-disabled:cursor-pointer not-disabled:hover:bg-accent disabled:opacity-50"
                     >
                         <div>
                             <div className="font-medium">{wall.name}</div>
                             <div className="text-xs text-muted-foreground">
-                                {mismatched ? (
+                                {/* Live preview outranks a layout mismatch: only an admin can
+                                    lift it, whereas a mismatch is fixed by changing stage. */}
+                                {!wall.livePreviewAllowed ? (
+                                    <>Live preview not enabled</>
+                                ) : mismatched ? (
                                     <>
                                         Needs {wall.layoutTemplate!.columns}×
                                         {wall.layoutTemplate!.rows} layout

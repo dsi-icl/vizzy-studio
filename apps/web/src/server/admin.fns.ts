@@ -38,7 +38,7 @@ import {
     adminSetConfig,
     adminUpdateWallMetadata,
     adminUpdateWallLayoutTemplate,
-    adminUpdateWallOpenToEditors,
+    adminUpdateWallAllowLivePreview,
     adminUnbindWall
 } from './admin';
 import { logAuditSuccess } from './audit';
@@ -210,18 +210,18 @@ export const $adminUpdateWallLayoutTemplate = createServerFn({ method: 'POST' })
         })
     );
 
-export const $adminUpdateWallOpenToEditors = createServerFn({ method: 'POST' })
+export const $adminUpdateWallAllowLivePreview = createServerFn({ method: 'POST' })
     .middleware([adminMiddleware])
     .validator(
         z.object({
             wallId: z.string(),
-            openToEditors: z.boolean()
+            allowLivePreview: z.boolean()
         })
     )
     .handler(({ data, context }) =>
-        adminUpdateWallOpenToEditors({
+        adminUpdateWallAllowLivePreview({
             wallId: data.wallId,
-            openToEditors: data.openToEditors,
+            allowLivePreview: data.allowLivePreview,
             actorEmail: context.user.email
         })
     );

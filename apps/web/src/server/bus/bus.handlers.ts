@@ -506,7 +506,7 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
                 action: 'WS_BIND_WALL_DENIED',
                 actorId: userEmail ?? entry.peer.id,
                 projectId: data.projectId,
-                reasonCode: 'SIGNAGE_ONLY_WALL',
+                reasonCode: 'WALL_LIVE_PREVIEW_FORBIDDEN',
                 resourceType: 'wall',
                 resourceId: data.wallId,
                 executionContext: {

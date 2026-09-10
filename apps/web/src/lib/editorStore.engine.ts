@@ -71,8 +71,9 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
                 data.projectId === state.projectId &&
                 data.commitId === state.commitId &&
                 data.slideId === state.activeSlideId;
+            const isOwnBinding = matchesCurrentScope && data.boundSource === 'live';
 
-            if (matchesCurrentScope) {
+            if (isOwnBinding) {
                 store.setState({ boundWallId: data.wallId });
                 engine.boundWallId = data.wallId;
             } else if (currentlyBound === data.wallId) {
