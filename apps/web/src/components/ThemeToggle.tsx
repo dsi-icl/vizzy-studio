@@ -19,7 +19,7 @@ export function ThemeToggle() {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger
-                render={<Button variant="outline" className={actionButtonClass} />}
+                render={<Button variant="outline" title="Theme" className={actionButtonClass} />}
             >
                 <MoonIcon className="block h-[1.2rem] w-[1.2rem] rotate-0 transition-all dark:hidden dark:-rotate-90" />
                 <SunIcon className="hidden h-[1.2rem] w-[1.2rem] rotate-90 transition-all dark:block dark:rotate-0" />

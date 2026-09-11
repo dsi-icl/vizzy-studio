@@ -42,6 +42,7 @@ export function KeyboardToggle() {
             <Button
                 variant={isTouchOnly ? 'outline' : 'ghost'}
                 className={actionButtonClass}
+                title="Toggle keyboard"
                 onClick={() => toggleKeyboard()}
             >
                 <KeyboardIcon className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all" />
