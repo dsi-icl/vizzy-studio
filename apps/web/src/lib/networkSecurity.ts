@@ -50,11 +50,18 @@ export function isForbiddenIp(ip: string): boolean {
         ) {
             return true;
         }
-        // IPv4-mapped IPv6 (::ffff:x.x.x.x)
+        // IPv4-mapped IPv6, in dotted (::ffff:127.0.0.1) or hex (::ffff:7f00:1) form.
+        // URL parsing normalizes the dotted form to hex
         if (normalized.startsWith('::ffff:')) {
-            const mappedIpv4 = normalized.slice(7);
-            if (isIP(mappedIpv4) === 4) {
-                return isForbiddenIp(mappedIpv4);
+            const mapped = normalized.slice(7);
+            if (isIP(mapped) === 4) {
+                return isForbiddenIp(mapped);
+            }
+            const hexGroups = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(mapped);
+            if (hexGroups) {
+                const high = parseInt(hexGroups[1] ?? '0', 16);
+                const low = parseInt(hexGroups[2] ?? '0', 16);
+                return isForbiddenIp(`${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`);
             }
         }
         return false;
@@ -99,8 +106,12 @@ export async function assertSafeTargetUrl(rawUrl: string, allowlist: string[] = 
         throw new Error('Host is not allowlisted');
     }
 
-    if (isForbiddenIp(host)) {
-        throw new Error('Blocked IP target');
+    const literalIp = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+    if (isIP(literalIp) !== 0) {
+        if (isForbiddenIp(literalIp)) {
+            throw new Error('Blocked IP target');
+        }
+        return parsed;
     }
 
     // Resolve DNS and ensure no resolved address belongs to private/forbidden spaces
