@@ -11,6 +11,13 @@ import type { SignageSlideEntry } from '@repo/db/documents';
 import { stageLayoutsEqual } from '@repo/db/schema';
 import { Badge } from '@repo/ui/components/badge';
 import { Button } from '@repo/ui/components/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogTitle
+} from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
@@ -59,6 +66,7 @@ function SignageEditor({
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const { data: persistedStatus } = useSuspenseQuery(signageEntryStatusQueryOptions(initial.id));
     const [draft, setDraft] = useState(initial);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const globalManager = isGlobalManager(user);
     const canEdit = canEditSlideshow(user, initial);
     const canManage = canManageSlideshow(user, initial);
@@ -179,25 +187,10 @@ function SignageEditor({
 
     return (
         <div className="space-y-6 pb-10">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
                 <Button variant="ghost" render={<Link to="/admin/signage" />} nativeButton={false}>
                     <ArrowLeftIcon /> Slideshows
                 </Button>
-                <div className="flex gap-2">
-                    <Button
-                        variant="destructive"
-                        disabled={!canDelete || deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate()}
-                    >
-                        <TrashIcon /> Delete
-                    </Button>
-                    <Button
-                        disabled={!canEdit || saveMutation.isPending || !draft.name.trim()}
-                        onClick={() => saveMutation.mutate()}
-                    >
-                        Save
-                    </Button>
-                </div>
             </div>
 
             {!canEdit && (
@@ -652,6 +645,51 @@ function SignageEditor({
                     </label>
                 </section>
             )}
+
+            <div className="flex justify-end gap-2 border-t pt-4">
+                <Button
+                    variant="destructive"
+                    disabled={!canDelete || deleteMutation.isPending}
+                    onClick={() => setDeleteConfirmOpen(true)}
+                >
+                    <TrashIcon /> Delete
+                </Button>
+                <Button
+                    disabled={!canEdit || saveMutation.isPending || !draft.name.trim()}
+                    onClick={() => saveMutation.mutate()}
+                >
+                    {saveMutation.isPending ? 'Saving...' : 'Save'}
+                </Button>
+            </div>
+
+            <Dialog
+                open={deleteConfirmOpen}
+                onOpenChange={(open) => {
+                    if (!open) setDeleteConfirmOpen(false);
+                }}
+            >
+                <DialogContent className="w-80 p-5">
+                    <DialogTitle>Delete slideshow</DialogTitle>
+                    <DialogDescription className="mt-1">
+                        {`Delete "${initial.name}" and all of its slides permanently? This cannot be undone.`}
+                    </DialogDescription>
+                    <div className="mt-4 flex justify-end gap-2">
+                        <DialogClose>
+                            <Button variant="outline" size="sm">
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => deleteMutation.mutate()}
+                        >
+                            {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

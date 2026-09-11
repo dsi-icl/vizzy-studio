@@ -24,7 +24,15 @@ import {
 } from '@phosphor-icons/react';
 import type { SignageSlideEntry } from '@repo/db/documents';
 import { Button } from '@repo/ui/components/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogTitle
+} from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
+import { useState } from 'react';
 
 type EntryStatus = {
     entry: SignageSlideEntry;
@@ -193,6 +201,11 @@ export function SignageEntryList({
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
     const statusByEntryId = new Map(statuses.map((status) => [status.entry.id, status]));
+    const [pendingRemovalId, setPendingRemovalId] = useState<string | null>(null);
+    const pendingRemoval = entries.find(({ id }) => id === pendingRemovalId);
+    const pendingRemovalName = pendingRemoval
+        ? (statusByEntryId.get(pendingRemoval.id)?.slideName ?? pendingRemoval.slideId)
+        : '';
 
     const handleDragEnd = ({ active, over }: DragEndEvent) => {
         if (readOnly) return;
@@ -204,41 +217,80 @@ export function SignageEntryList({
     };
 
     return (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext
-                items={entries.map(({ id }) => id)}
-                strategy={verticalListSortingStrategy}
+        <>
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
             >
-                <div className="space-y-2">
-                    {entries.map((entry, index) => (
-                        <SortableEntry
-                            key={entry.id}
-                            entry={entry}
-                            index={index}
-                            count={entries.length}
-                            status={statusByEntryId.get(entry.id)}
-                            defaultDisplayDurationMs={defaultDisplayDurationMs}
-                            defaultGapDurationMs={defaultGapDurationMs}
-                            onUpdate={(patch) =>
-                                onChange(
-                                    entries.map((candidate) =>
-                                        candidate.id === entry.id
-                                            ? { ...candidate, ...patch }
-                                            : candidate
+                <SortableContext
+                    items={entries.map(({ id }) => id)}
+                    strategy={verticalListSortingStrategy}
+                >
+                    <div className="space-y-2">
+                        {entries.map((entry, index) => (
+                            <SortableEntry
+                                key={entry.id}
+                                entry={entry}
+                                index={index}
+                                count={entries.length}
+                                status={statusByEntryId.get(entry.id)}
+                                defaultDisplayDurationMs={defaultDisplayDurationMs}
+                                defaultGapDurationMs={defaultGapDurationMs}
+                                onUpdate={(patch) =>
+                                    onChange(
+                                        entries.map((candidate) =>
+                                            candidate.id === entry.id
+                                                ? { ...candidate, ...patch }
+                                                : candidate
+                                        )
                                     )
-                                )
-                            }
-                            onMove={(direction) => {
-                                const target = index + direction;
-                                if (target < 0 || target >= entries.length) return;
-                                onChange(arrayMove(entries, index, target));
+                                }
+                                onMove={(direction) => {
+                                    const target = index + direction;
+                                    if (target < 0 || target >= entries.length) return;
+                                    onChange(arrayMove(entries, index, target));
+                                }}
+                                onRemove={() => setPendingRemovalId(entry.id)}
+                                readOnly={readOnly}
+                            />
+                        ))}
+                    </div>
+                </SortableContext>
+            </DndContext>
+
+            <Dialog
+                open={pendingRemoval !== undefined}
+                onOpenChange={(open) => {
+                    if (!open) setPendingRemovalId(null);
+                }}
+            >
+                <DialogContent className="w-80 p-5">
+                    <DialogTitle>Remove slide</DialogTitle>
+                    <DialogDescription className="mt-1">
+                        {`Remove "${pendingRemovalName}" from the playlist? The slide is only removed once you save the slideshow.`}
+                    </DialogDescription>
+                    <div className="mt-4 flex justify-end gap-2">
+                        <DialogClose>
+                            <Button variant="outline" size="sm">
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                                if (pendingRemoval) {
+                                    onChange(entries.filter(({ id }) => id !== pendingRemoval.id));
+                                }
+                                setPendingRemovalId(null);
                             }}
-                            onRemove={() => onChange(entries.filter(({ id }) => id !== entry.id))}
-                            readOnly={readOnly}
-                        />
-                    ))}
-                </div>
-            </SortableContext>
-        </DndContext>
+                        >
+                            Remove
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
