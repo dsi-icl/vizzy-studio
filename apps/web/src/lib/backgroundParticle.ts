@@ -1,16 +1,16 @@
+import { DEFAULT_STAGE_LAYOUT, stageLayoutKey, type StageLayout } from '@repo/db/schema';
 import { createNoise2D } from 'simplex-noise';
 
 import type { BackgroundNoiseLayer } from '~/lib/backgroundNoise';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 
-const PARTICLE_COUNT = 5_400;
+const PARTICLES_PER_PANEL = 84;
+const MAX_PARTICLE_COUNT = 12_000;
 const MAX_DIST = 280;
 const LINE_THICKNESS = 2.6;
 const NODE_SIZE = 4.4;
 const NOISE_SCL = 0.0001;
 const NOISE_TIME_SHIFT = 24_000;
 const MOTION_TIME_SCALE = 4_600;
-const VALLEY_WIDTH = COLS * SCREEN_W * 0.46;
 const VERTICAL_DENSITY_BOOST = 0.4;
 const CLOUD_OPACITY = 0.5;
 // Floors so a heavily downscaled preview keeps the graph legible — features
@@ -37,6 +37,7 @@ type ParticleState = {
 
 type ParticleRuntime = {
     seed: number;
+    layoutKey: string;
     noiseCanvas: HTMLCanvasElement;
     noiseCtx: CanvasRenderingContext2D;
     particles: ParticleState[];
@@ -73,9 +74,16 @@ function toCssRgba(c: [number, number, number, number], alphaMul = 1): string {
     return `rgba(${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])} / ${clamp01((c[3] / 255) * alphaMul)})`;
 }
 
-function ensureRuntime(canvas: HTMLCanvasElement, layer: BackgroundNoiseLayer): ParticleRuntime {
+function ensureRuntime(
+    canvas: HTMLCanvasElement,
+    layer: BackgroundNoiseLayer,
+    layout: StageLayout
+): ParticleRuntime {
     const existing = RUNTIME_BY_CANVAS.get(canvas);
-    if (existing && existing.seed === layer.noiseSeed) return existing;
+    const resolvedLayoutKey = stageLayoutKey(layout);
+    if (existing && existing.seed === layer.noiseSeed && existing.layoutKey === resolvedLayoutKey) {
+        return existing;
+    }
 
     const noiseCanvas = document.createElement('canvas');
     noiseCanvas.width = 240;
@@ -84,9 +92,13 @@ function ensureRuntime(canvas: HTMLCanvasElement, layer: BackgroundNoiseLayer): 
     if (!noiseCtx) throw new Error('Failed to create 2D context for particle noise canvas');
 
     const rngParticles = seededRandom(layer.noiseSeed || 1);
-    const worldW = COLS * SCREEN_W;
-    const worldH = ROWS * SCREEN_H;
-    const particles: ParticleState[] = Array.from({ length: PARTICLE_COUNT }, (_, id) => ({
+    const worldW = layout.columns * layout.screenWidth;
+    const worldH = layout.rows * layout.screenHeight;
+    const particleCount = Math.min(
+        MAX_PARTICLE_COUNT,
+        Math.max(PARTICLES_PER_PANEL, layout.columns * layout.rows * PARTICLES_PER_PANEL)
+    );
+    const particles: ParticleState[] = Array.from({ length: particleCount }, (_, id) => ({
         id,
         x0: rngParticles() * worldW,
         y0: rngParticles() * worldH,
@@ -106,6 +118,7 @@ function ensureRuntime(canvas: HTMLCanvasElement, layer: BackgroundNoiseLayer): 
 
     const runtime: ParticleRuntime = {
         seed: layer.noiseSeed,
+        layoutKey: resolvedLayoutKey,
         noiseCanvas,
         noiseCtx,
         particles,
@@ -124,23 +137,25 @@ export function renderBackgroundParticle(
     row: number,
     t: number,
     colSpan = 1,
-    rowSpan = 1
+    rowSpan = 1,
+    layout: StageLayout = DEFAULT_STAGE_LAYOUT
 ): void {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const runtime = ensureRuntime(canvas, layer);
+    const runtime = ensureRuntime(canvas, layer, layout);
     const { noiseCanvas, noiseCtx, particles, noiseA, noiseB, noiseC } = runtime;
 
     const w = canvas.width;
     const h = canvas.height;
-    const worldW = COLS * SCREEN_W;
-    const worldH = ROWS * SCREEN_H;
-    const worldStartX = col * SCREEN_W;
-    const worldStartY = row * SCREEN_H;
-    const worldSpanX = Math.max(1e-6, colSpan) * SCREEN_W;
-    const worldSpanY = Math.max(1e-6, rowSpan) * SCREEN_H;
+    const worldW = layout.columns * layout.screenWidth;
+    const worldH = layout.rows * layout.screenHeight;
+    const worldStartX = col * layout.screenWidth;
+    const worldStartY = row * layout.screenHeight;
+    const worldSpanX = Math.max(1e-6, colSpan) * layout.screenWidth;
+    const worldSpanY = Math.max(1e-6, rowSpan) * layout.screenHeight;
     const centerX = worldW / 2;
+    const valleyWidth = worldW * 0.46;
     const motionT = t * MOTION_TIME_SCALE;
     const timeShift = t * NOISE_TIME_SHIFT;
 
@@ -216,7 +231,7 @@ export function renderBackgroundParticle(
         if (p.worldY < 0) p.worldY += worldH;
 
         const distFromCenterX = Math.abs(p.worldX - centerX);
-        const horizontalProb = Math.min(1, Math.pow(distFromCenterX / VALLEY_WIDTH, 2));
+        const horizontalProb = Math.min(1, Math.pow(distFromCenterX / valleyWidth, 2));
         const verticalProb = (p.worldY / worldH) * VERTICAL_DENSITY_BOOST;
         const finalLifeProb = Math.min(1, horizontalProb + verticalProb);
         p.isAlive = p.id / particles.length < finalLifeProb;

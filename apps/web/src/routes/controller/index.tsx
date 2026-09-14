@@ -1,4 +1,5 @@
 import { CircleNotchIcon, SlideshowIcon, TriangleDashedIcon } from '@phosphor-icons/react';
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 import {
     ResizableHandle,
     ResizablePanel,
@@ -6,7 +7,6 @@ import {
 } from '@repo/ui/components/resizable';
 import { cn } from '@repo/ui/lib/utils';
 import { createFileRoute, useLocation } from '@tanstack/react-router';
-import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import QRCode from 'qrcode';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -21,7 +21,6 @@ import { ControllerEngine } from '~/lib/controllerEngine';
 import { useControllerStore } from '~/lib/controllerStore';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { isTouchEvent } from '~/lib/pointerEvents';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import type { LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
@@ -42,7 +41,7 @@ interface BindingStatus {
     commitId?: string;
     slideId?: string;
     customRenderUrl?: string;
-    boundSource?: 'live' | 'gallery';
+    boundSource?: 'live' | 'gallery' | 'signage';
 }
 
 interface SlideEntry {
@@ -124,8 +123,9 @@ function Controller() {
     const stageLastX = useRef(0);
 
     const stageSlot = useRef<HTMLDivElement>(null);
-    const stageInstance = useRef<Konva.Stage>(null);
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
+    const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
+    const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
     const [requestedSlideId, setRequestedSlideId] = useState<string | null>(null);
     const searchStr = useLocation({
@@ -245,6 +245,7 @@ function Controller() {
         setHasBindingSignal(false);
         return engine.onSnapshot((snapshot) => {
             setHasBindingSignal(true);
+            setStageLayout(snapshot.layout);
             boundSlideIdRef.current = snapshot.binding.slideId ?? null;
             setBinding((prev) => {
                 if (
@@ -719,7 +720,7 @@ function Controller() {
         const slot = stageSlot.current;
         if (!slot) return;
 
-        const logicalHeight = SCREEN_H * ROWS;
+        const logicalHeight = screenHeight * rows;
         const minScale = 0.01;
 
         const recomputeScale = () => {
@@ -736,7 +737,7 @@ function Controller() {
         observer.observe(slot);
 
         return () => observer.disconnect();
-    }, []);
+    }, [rows, screenHeight]);
 
     if (!wallId)
         return (
@@ -911,18 +912,17 @@ function Controller() {
 
                                 <ViewerSlatePreview
                                     stageSlot={stageSlot}
-                                    stageInstance={stageInstance}
                                     stageScaleFactor={stageScaleFactor}
                                     layers={sortedLayers}
+                                    layout={stageLayout}
                                 />
                                 <div
                                     ref={stageSlot}
                                     className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-black"
                                 >
                                     <Stage
-                                        ref={stageInstance}
-                                        width={COLS * SCREEN_W * stageScaleFactor}
-                                        height={ROWS * SCREEN_H * stageScaleFactor}
+                                        width={columns * screenWidth * stageScaleFactor}
+                                        height={rows * screenHeight * stageScaleFactor}
                                         onMouseDown={handleDrawStart}
                                         onMouseMove={handleDrawMove}
                                         onMouseUp={handleDrawEnd}
@@ -940,6 +940,7 @@ function Controller() {
                                                     key={`bg_${backgroundLayer.numericId}`}
                                                     layer={backgroundLayer}
                                                     previewScale={1}
+                                                    layout={stageLayout}
                                                 />
                                             ) : null}
                                             {foregroundLayers

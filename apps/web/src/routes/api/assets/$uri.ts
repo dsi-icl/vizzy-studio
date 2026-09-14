@@ -453,7 +453,10 @@ export const Route = createFileRoute('/api/assets/$uri')({
                         });
                     }
 
-                    if (project.visibility !== 'public' || !project.publishedCommitId) {
+                    const hasPublishedStage = project.stages.some(
+                        ({ publishedCommitId }) => publishedCommitId
+                    );
+                    if (project.visibility !== 'public' || !hasPublishedStage) {
                         cacheControl = 'private, max-age=31536000, immutable';
                         if (!user && !device) {
                             return logAssetDeniedResponse({

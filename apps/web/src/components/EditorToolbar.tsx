@@ -67,10 +67,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
     const isAdmin = user?.role === 'admin';
 
     // Project header — only changes on project load
-    const { projectId, projectName, parentSaveMessage } = useEditorStore(
+    const { projectId, projectName, stageName, parentSaveMessage } = useEditorStore(
         useShallow((s) => ({
             projectId: s.projectId,
             projectName: s.projectName,
+            stageName: s.stageName,
             parentSaveMessage: s.parentSaveMessage
         }))
     );
@@ -255,7 +256,13 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     </TipButton>
                 </div>
 
-                <div className="w-full grow text-center text-xs text-muted-foreground">
+                <div className="w-full grow truncate text-center text-xs text-muted-foreground">
+                    {stageName && (
+                        <>
+                            <span className="font-medium text-foreground">{stageName}</span>
+                            {' / '}
+                        </>
+                    )}
                     {projectName} - {parentSaveMessage}
                     {saveStatus === 'dirty' && <span> - Unsaved</span>}
                 </div>

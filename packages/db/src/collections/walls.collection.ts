@@ -6,7 +6,7 @@ import { type MigrationMap, type PublicDoc, toEpoch, BaseCollection } from './_b
 
 export class WallsCollection extends BaseCollection<WallDocument> {
     readonly collectionName = 'walls';
-    readonly currentVersion = 1;
+    readonly currentVersion = 2;
 
     protected readonly migrations: MigrationMap = {
         0: (doc) => ({
@@ -14,7 +14,8 @@ export class WallsCollection extends BaseCollection<WallDocument> {
             createdAt: toEpoch(doc.createdAt ?? Date.now()),
             lastSeen: toEpoch(doc.lastSeen ?? Date.now()),
             ...(doc.updatedAt != null ? { updatedAt: toEpoch(doc.updatedAt) } : {})
-        })
+        }),
+        1: (doc) => doc
     };
 
     constructor(db: Db) {

@@ -2,6 +2,7 @@ import { cancelScopeCleanup, scheduleScopeCleanup } from './busState.persistence
 import {
     clearControllerTransientForWall,
     scopeWatchers,
+    signageBlankWalls,
     wallBindings,
     wallBindingSources,
     wallPeersByScope,
@@ -13,7 +14,11 @@ import { revokePortalTokensForWall } from './portalTokens';
 
 const WALL_UNBIND_GRACE_MS = 5_000; // 5 seconds
 
-export function bindWall(wallId: string, scopeId: ScopeId, source: 'live' | 'gallery' = 'gallery') {
+export function bindWall(
+    wallId: string,
+    scopeId: ScopeId,
+    source: 'live' | 'gallery' | 'signage' = 'gallery'
+) {
     const oldScopeId = wallBindings.get(wallId);
     // Never let old controller API credentials survive a wall rebind.
     revokePortalTokensForWall(wallId);
@@ -39,6 +44,7 @@ export function bindWall(wallId: string, scopeId: ScopeId, source: 'live' | 'gal
 
     wallBindings.set(wallId, scopeId);
     wallBindingSources.set(wallId, source);
+    signageBlankWalls.delete(wallId);
     cancelScopeCleanup(scopeId);
 
     // Wire up new binding
@@ -83,6 +89,35 @@ export function unbindWall(wallId: string) {
     }
     wallBindings.delete(wallId);
     wallBindingSources.delete(wallId);
+    signageBlankWalls.delete(wallId);
+}
+
+/**
+ * Temporarily disconnect a signage wall from scope broadcasts while retaining
+ * its authoritative binding and ownership metadata.
+ */
+export function setSignageWallBlank(wallId: string, blank: boolean) {
+    const scopeId = wallBindings.get(wallId);
+    if (scopeId === undefined || wallBindingSources.get(wallId) !== 'signage') return;
+    const wallPeers = wallsByWallId.get(wallId);
+    if (blank) {
+        signageBlankWalls.add(wallId);
+        const scopedPeers = wallPeersByScope.get(scopeId);
+        if (scopedPeers && wallPeers) {
+            for (const entry of wallPeers) scopedPeers.delete(entry);
+            if (scopedPeers.size === 0) wallPeersByScope.delete(scopeId);
+        }
+        return;
+    }
+
+    signageBlankWalls.delete(wallId);
+    if (!wallPeers) return;
+    let scopedPeers = wallPeersByScope.get(scopeId);
+    if (!scopedPeers) {
+        scopedPeers = new Set();
+        wallPeersByScope.set(scopeId, scopedPeers);
+    }
+    for (const entry of wallPeers) scopedPeers.add(entry);
 }
 
 export function scheduleWallUnbindGrace(wallId: string, onExpire: () => void) {

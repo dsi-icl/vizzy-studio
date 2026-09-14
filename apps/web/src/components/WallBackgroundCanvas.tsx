@@ -1,5 +1,6 @@
 'use client';
 
+import type { StageLayout } from '@repo/db/schema';
 import { useEffect, useRef } from 'react';
 
 import {
@@ -9,7 +10,6 @@ import {
 } from '~/lib/backgroundNoise';
 import { renderBackgroundParticle } from '~/lib/backgroundParticle';
 import { renderBackgroundWaves } from '~/lib/backgroundWave';
-import { SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import type { Layer } from '~/lib/types';
 
 type BackgroundLayer = Extract<Layer, { type: 'background' }>;
@@ -19,9 +19,16 @@ interface WallBackgroundCanvasProps {
     col: number;
     row: number;
     getNow: () => number;
+    layout: StageLayout;
 }
 
-export function WallBackgroundCanvas({ layer, col, row, getNow }: WallBackgroundCanvasProps) {
+export function WallBackgroundCanvas({
+    layer,
+    col,
+    row,
+    getNow,
+    layout
+}: WallBackgroundCanvasProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const getNowRef = useRef(getNow);
     useEffect(() => {
@@ -44,11 +51,11 @@ export function WallBackgroundCanvas({ layer, col, row, getNow }: WallBackground
         const draw = () => {
             const t = (getNowRef.current() / 1000) * BACKGROUND_T_SPEED * layer.speedFactor;
             if (isWaveBackground) {
-                renderBackgroundWaves(canvasRef.current!, layer, col, row, t);
+                renderBackgroundWaves(canvasRef.current!, layer, col, row, t, 1, 1, layout);
             } else if (isParticleBackground) {
-                renderBackgroundParticle(canvasRef.current!, layer, col, row, t);
+                renderBackgroundParticle(canvasRef.current!, layer, col, row, t, 1, 1, layout);
             } else {
-                renderBackgroundNoise(canvasRef.current!, layer, col, row, t);
+                renderBackgroundNoise(canvasRef.current!, layer, col, row, t, 1, 1, layout);
             }
         };
 
@@ -68,20 +75,21 @@ export function WallBackgroundCanvas({ layer, col, row, getNow }: WallBackground
         layer.noiseSeed,
         layer.speedFactor,
         col,
-        row
+        row,
+        layout
     ]);
 
     return (
         <canvas
             ref={canvasRef}
-            width={SCREEN_W}
-            height={SCREEN_H}
+            width={layout.screenWidth}
+            height={layout.screenHeight}
             style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                width: `${SCREEN_W}px`,
-                height: `${SCREEN_H}px`,
+                width: `${layout.screenWidth}px`,
+                height: `${layout.screenHeight}px`,
                 zIndex: 0,
                 imageRendering: 'auto',
                 pointerEvents: 'none'

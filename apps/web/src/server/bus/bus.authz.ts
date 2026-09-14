@@ -1,6 +1,6 @@
 import type { Peer } from 'crossws';
 
-import { scopedState, wallBindings, type PeerEntry } from '~/lib/busState';
+import { scopedState, wallBindings, wallBindingSources, type PeerEntry } from '~/lib/busState';
 import { logAuditDenied } from '~/server/audit';
 import {
     buildRateLimitSubjectKey,
@@ -140,6 +140,20 @@ export function isWsMessageAuthorized(
 ): boolean {
     const type = data.type;
 
+    if (
+        entry.meta.specimen === 'controller' &&
+        wallBindingSources.get(entry.meta.wallId) === 'signage' &&
+        (type === 'bind_wall' ||
+            type === 'unbind_wall' ||
+            type === 'upsert_layer' ||
+            type === 'delete_layer' ||
+            type === 'video_play' ||
+            type === 'video_pause' ||
+            type === 'video_seek')
+    ) {
+        return false;
+    }
+
     if (type === 'leave_scope') {
         return entry.meta.specimen === 'editor';
     }
@@ -168,6 +182,18 @@ export function isWsMessageAuthorized(
             return isControllerDevice(entry) || isAdminUser(entry);
         }
         if (entry.meta.specimen === 'gallery') return isAdminUser(entry) || isGalleryDevice(entry);
+        if (
+            type === 'unbind_wall' &&
+            entry.meta.specimen === 'editor' &&
+            scopeId !== null &&
+            wallBindings.get(data.wallId) === scopeId &&
+            wallBindingSources.get(data.wallId) === 'live'
+        ) {
+            const boundProjectId = getScopeProjectId(scopeId);
+            return Boolean(
+                boundProjectId && getCachedEditorPermission(entry, boundProjectId)?.canEdit
+            );
+        }
         return isAdminUser(entry);
     }
 

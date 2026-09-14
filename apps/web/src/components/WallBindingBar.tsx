@@ -8,7 +8,7 @@ import { TipButton } from '@repo/ui/components/tip-button';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { WallPickerPopover } from '~/components/WallPicker';
+import { useWalls, WallPickerPopover } from '~/components/WallPicker';
 import type { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 
@@ -18,6 +18,7 @@ interface WallBindingBarProps {
 }
 
 export function WallBindingBar({ engine, boundWallId }: WallBindingBarProps) {
+    const { walls, isLoading: wallsLoading } = useWalls();
     const [bindPending, setBindPending] = useState<{ requestId: string; wallId: string } | null>(
         null
     );
@@ -112,6 +113,11 @@ export function WallBindingBar({ engine, boundWallId }: WallBindingBarProps) {
             setLastBindAttempt((prev) => (prev ? { ...prev, denied: false } : prev));
         }
     }, [boundWallId]);
+
+    // Visibility deliberately does not depend on `boundWallId`, which only arrives once
+    // the socket has hydrated and the slide is in place. Gating on it made the icon
+    // appear and then vanish on every reconnect.
+    if (wallsLoading || walls.length === 0) return null;
 
     if (boundWallId) {
         return (

@@ -57,6 +57,7 @@ const RESOURCE_FILTERS = [
     { value: 'user', label: 'User' },
     { value: 'device', label: 'Device' },
     { value: 'wall', label: 'Wall' },
+    { value: 'signage_slideshow', label: 'Signage slideshow' },
     { value: 'bootstrap', label: 'Bootstrap' },
     { value: 'config', label: 'Config' },
     { value: 'smtp', label: 'SMTP' }

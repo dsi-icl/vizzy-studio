@@ -66,10 +66,11 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     allGalleries: new Set<PeerEntry>(),
     allEditors: new Set<PeerEntry>(),
     wallBindings: new Map<string, ScopeId>(),
-    wallBindingSources: new Map<string, 'live' | 'gallery'>(),
+    wallBindingSources: new Map<string, 'live' | 'gallery' | 'signage'>(),
+    signageBlankWalls: new Set<string>(),
     scopeWatchers: new Map<ScopeId, Set<string>>(),
     wallPeersByScope: new Map<ScopeId, Set<PeerEntry>>(),
-    activeVideos: new Map<number, { scopeId: ScopeId; layer: Layer }>(),
+    activeVideos: new Map<string, { scopeId: ScopeId; layer: Layer }>(),
     peerCounts: { editor: 0, wall: 0, controller: 0, gallery: 0 },
     lastPingSeen: new Map<string, number>(),
     scopeCleanupTimers: new Map<ScopeId, ReturnType<typeof setTimeout>>(),
@@ -94,6 +95,9 @@ if (!_hmr.allGalleries) {
 }
 if (!_hmr.wallUnbindTimers) {
     _hmr.wallUnbindTimers = new Map<string, ReturnType<typeof setTimeout>>();
+}
+if (!_hmr.signageBlankWalls) {
+    _hmr.signageBlankWalls = new Set<string>();
 }
 if (typeof _hmr.peerCounts.gallery !== 'number') {
     _hmr.peerCounts.gallery = 0;
@@ -207,7 +211,9 @@ export const allEditors: Set<PeerEntry> = _hmr.allEditors;
 
 // wallId > ScopeId: which content a wall displays
 export const wallBindings: Map<string, ScopeId> = _hmr.wallBindings;
-export const wallBindingSources: Map<string, 'live' | 'gallery'> = _hmr.wallBindingSources;
+export const wallBindingSources: Map<string, 'live' | 'gallery' | 'signage'> =
+    _hmr.wallBindingSources;
+export const signageBlankWalls: Set<string> = _hmr.signageBlankWalls;
 
 // scopeId > Set<wallId>: reverse index used only for binding cleanup
 export const scopeWatchers: Map<ScopeId, Set<string>> = _hmr.scopeWatchers;
@@ -223,7 +229,7 @@ export const controllerTransientByWallId: Map<
 > = _hmr.controllerTransientByWallId;
 
 // Active video registry for the VSYNC loop — only playing videos are tracked
-export const activeVideos: Map<number, { scopeId: ScopeId; layer: Layer }> = _hmr.activeVideos;
+export const activeVideos: Map<string, { scopeId: ScopeId; layer: Layer }> = _hmr.activeVideos;
 
 /** Running peer counts — O(1) reads instead of iterating all peers */
 export const peerCounts: {
@@ -354,17 +360,20 @@ export function canSendNonCritical(peer: Peer): boolean {
 }
 
 // ── Active video registry ─────────────────────────────────────────────────────
-
-export function registerActiveVideo(numericId: number, scopeId: ScopeId, layer: Layer) {
-    activeVideos.set(numericId, { scopeId, layer });
+export function activeVideoKey(scopeId: ScopeId, numericId: number): string {
+    return `${scopeId}:${numericId}`;
 }
 
-export function unregisterActiveVideo(numericId: number) {
-    activeVideos.delete(numericId);
+export function registerActiveVideo(numericId: number, scopeId: ScopeId, layer: Layer) {
+    activeVideos.set(activeVideoKey(scopeId, numericId), { scopeId, layer });
+}
+
+export function unregisterActiveVideo(numericId: number, scopeId: ScopeId) {
+    activeVideos.delete(activeVideoKey(scopeId, numericId));
 }
 
 export function clearActiveVideosForScope(scopeId: ScopeId) {
-    for (const [numericId, entry] of activeVideos) {
-        if (entry.scopeId === scopeId) activeVideos.delete(numericId);
+    for (const [key, entry] of activeVideos) {
+        if (entry.scopeId === scopeId) activeVideos.delete(key);
     }
 }

@@ -1,7 +1,7 @@
+import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 import { createNoise3D } from 'simplex-noise';
 
 import type { BackgroundNoiseLayer } from '~/lib/backgroundNoise';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 
 // Static bearing sine (user-provided coefficients):
 // y = a * sin((x - h)/b) + k
@@ -63,7 +63,8 @@ export function renderBackgroundWaves(
     row: number,
     t: number,
     colSpan = 1,
-    rowSpan = 1
+    rowSpan = 1,
+    layout: StageLayout = DEFAULT_STAGE_LAYOUT
 ): void {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -88,13 +89,17 @@ export function renderBackgroundWaves(
     const worldStartRow = row;
     const worldSpanCol = Math.max(1e-6, colSpan);
     const worldSpanRow = Math.max(1e-6, rowSpan);
+    const rasterScale = Math.min(
+        w / (worldSpanCol * layout.screenWidth),
+        h / (worldSpanRow * layout.screenHeight)
+    );
 
     // Every displacement below is authored in the wall's native pixel space
-    // (one SCREEN_W x SCREEN_H panel).  The full-wall preview rasters many
+    // (one layout.screenWidth x layout.screenHeight panel).  The full-wall preview rasters many
     // screens into one small canvas, so convert to that raster's pixels.
     // Both factors are exactly 1 on the per-screen wall path.
-    const pxScale = h / worldSpanRow / SCREEN_H;
-    const xStep = Math.max(1, Math.round(15 * (w / worldSpanCol / SCREEN_W)));
+    const pxScale = h / worldSpanRow / layout.screenHeight;
+    const xStep = Math.max(1, Math.round(15 * (w / worldSpanCol / layout.screenWidth)));
     // Strokes are the one term that cannot shrink linearly: under ~1 device
     // pixel the ribbons fade out entirely.  Floor the factor so downscaled
     // previews stay visible, while keeping the near/far thickness ratio.
@@ -103,7 +108,7 @@ export function renderBackgroundWaves(
     for (let i = 0; i < waveCount; i++) {
         const depth = i / Math.max(1, waveCount - 1);
         // Tight ribbon clamping: keep lines close in a narrow vertical band.
-        const baseWorldYRows = lerp(2.45, 2.95, Math.pow(depth, 1.02));
+        const baseWorldYRows = layout.rows * lerp(0.6125, 0.7375, Math.pow(depth, 1.02));
         const rowColorMix = clamp01(0.08 + depth * 0.85);
         const rowColor: [number, number, number, number] = [
             lerp(c1[0], c2[0], rowColorMix),
@@ -122,7 +127,7 @@ export function renderBackgroundWaves(
         for (let x = 0; x <= w; x += xStep) {
             const localX01 = x / Math.max(1, w);
             const worldX = worldStartCol + localX01 * worldSpanCol;
-            const worldX01 = worldX / COLS;
+            const worldX01 = worldX / layout.columns;
 
             // 3D ribbon effect: progressively increase wave excursion per line.
             // Front/deeper lines carry larger amplitude on the same backbone frequencies.
@@ -132,11 +137,11 @@ export function renderBackgroundWaves(
             // Stronger low-frequency backbone shared by all lines.
             const baseLowA = Math.sin(worldX * 5.1 - phaseT * 0.05 + depth * 0.9);
             const baseLowB = Math.sin(worldX * 5.66 + phaseT * 5.17 + depth * 5.3);
-            const low1 = baseLowA * lerp(20, 1, depth) * ampGain * 2;
-            const low2 = baseLowB * lerp(34, 5, depth) * ampGain;
+            const low1 = baseLowA * lerp(20, 1, depth) * ampGain * 2 * rasterScale;
+            const low2 = baseLowB * lerp(34, 5, depth) * ampGain * rasterScale;
 
             // Mid/high components kept subtler so the low bands dominate the shape.
-            const baseAmp = lerp(101, 11, depth) * ampGain;
+            const baseAmp = lerp(101, 11, depth) * ampGain * rasterScale;
             const s1 = Math.sin(worldX * 0.72 + phaseT * 0.42 + depth * 5.1) * baseAmp * 5;
             const s2 =
                 Math.sin(worldX * 2.35 + phaseT * 0.19 + depth * 9.7) *
@@ -147,30 +152,39 @@ export function renderBackgroundWaves(
 
             // Static bearing component (no time dependency) with requested unit mapping.
             // worldX is in SCREEN_W units; convert to SCREEN_H-axis units for x in formula.
-            const bearingX = worldX * (SCREEN_W / Math.max(1e-6, SCREEN_H));
+            const bearingX = worldX * (layout.screenWidth / Math.max(1e-6, layout.screenHeight));
             const bearingY = BEARING_A * Math.sin((bearingX - BEARING_H) / BEARING_B) + BEARING_K;
             // Convert bearing y-units (SCREEN_W units) to row units (SCREEN_H units),
             // then apply as a whole-ribbon world-space offset.
             const bearingGainRows =
                 BEARING_GAIN_ROWS_BASE * lerp(0.55, 2.15, Math.pow(depth, 1.28));
             const bearingRowOffset =
-                (bearingY - BEARING_K) * (SCREEN_W / Math.max(1e-6, SCREEN_H)) * bearingGainRows;
+                (bearingY - BEARING_K) *
+                (layout.screenWidth / Math.max(1e-6, layout.screenHeight)) *
+                bearingGainRows;
             const worldYRows = baseWorldYRows + bearingRowOffset;
-            const worldY01 = worldYRows / ROWS;
+            const worldY01 = worldYRows / layout.rows;
             const yBase = ((worldYRows - worldStartRow) / worldSpanRow) * h;
 
             // Left side slightly higher (smaller y), strongest near top of wave pack.
             const leftLift =
-                (1 - worldX01) * (1 - worldX01) * lerp(42, 16, depth) * (1 - worldY01 * 0.4);
+                (1 - worldX01) *
+                (1 - worldX01) *
+                lerp(42, 16, depth) *
+                (1 - worldY01 * 0.4) *
+                rasterScale;
 
             // Static world-scale low frequency: never time-dependent, always biases left higher.
             const staticLeftLowFreq =
                 Math.sin(worldX * 0.14 + worldYRows * 0.08 + depth * 1.1) *
                 (1 - worldX01) *
-                lerp(34, 12, depth);
+                lerp(34, 12, depth) *
+                rasterScale;
 
             const contourNoise =
-                noise3D(worldX * 0.72 + 31, worldYRows * 0.58 + 13, t * 0.9) * lerp(5, 2, depth);
+                noise3D(worldX * 0.72 + 31, worldYRows * 0.58 + 13, t * 0.9) *
+                lerp(5, 2, depth) *
+                rasterScale;
 
             // yBase is already span-normalised; everything else is native
             // wall pixels, so it scales as one block.

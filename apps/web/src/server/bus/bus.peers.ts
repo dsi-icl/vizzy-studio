@@ -16,6 +16,7 @@ import {
     registerPeer,
     scopeLabel,
     scopedState,
+    signageBlankWalls,
     seedScopeFromDb,
     sendJSON,
     setEditorScope,
@@ -81,9 +82,11 @@ export async function registerEditorPeer(
         return false;
     }
 
-    const [canView, canEdit] = await Promise.all([
+    const [canView, canEdit, project, commit] = await Promise.all([
         canViewProject(userActor, scopeInput.projectId),
-        canEditProject(userActor, scopeInput.projectId)
+        canEditProject(userActor, scopeInput.projectId),
+        dbCol.projects.findById(scopeInput.projectId),
+        dbCol.commits.findById(scopeInput.commitId)
     ]);
     if (!canView) {
         await logAuditDenied({
@@ -111,6 +114,32 @@ export async function registerEditorPeer(
         }
         return false;
     }
+    const stage =
+        commit?.projectId === scopeInput.projectId
+            ? project?.stages.find(({ id }) => id === commit.stageId)
+            : null;
+    if (!stage || stage.archivedAt) {
+        await logAuditDenied({
+            action: 'WS_SESSION_DENIED',
+            reasonCode: 'INVALID_STAGE_SCOPE',
+            projectId: scopeInput.projectId,
+            resourceType: 'scope',
+            resourceId: makeScopeLabel(
+                scopeInput.projectId,
+                scopeInput.commitId,
+                scopeInput.slideId
+            ),
+            authContext,
+            executionContext: {
+                surface: 'ws',
+                operation: 'registerEditorPeer',
+                peerId: peer.id
+            }
+        });
+        sendJSON(peer, { type: 'auth_denied' });
+        peer.close();
+        return false;
+    }
     editorProjectPermissions.set(peer.id, {
         projectId: scopeInput.projectId,
         canView,
@@ -122,7 +151,12 @@ export async function registerEditorPeer(
         scopeId,
         scopeInput.projectId,
         scopeInput.commitId,
-        scopeInput.slideId
+        scopeInput.slideId,
+        undefined,
+        undefined,
+        undefined,
+        stage.layout,
+        stage.id
     );
 
     const existing = peers.get(peer.id);
@@ -292,7 +326,7 @@ export async function completeHelloRegistration(
         const boundScope = wallBindings.get(effectiveWallId);
 
         peer.send(
-            boundScope !== undefined
+            boundScope !== undefined && !signageBlankWalls.has(effectiveWallId)
                 ? getWallHydratePayload(boundScope, effectiveWallId)
                 : EMPTY_HYDRATE
         );
@@ -447,7 +481,11 @@ export async function completeHelloRegistration(
         ...(effectiveWallId ? { wallId: effectiveWallId } : {}),
         authContext
     });
-    void sendGalleryStateSnapshot(peer, effectiveWallId);
+    const canReceiveWallLayout =
+        Boolean(galleryDevice?.assignedWallId) ||
+        passedAuthContext.user?.role === 'admin' ||
+        passedAuthContext.user?.role === 'operator';
+    void sendGalleryStateSnapshot(peer, effectiveWallId, canReceiveWallLayout);
     console.log(
         `[WS] Gallery joined${effectiveWallId ? ` wallId=${effectiveWallId}` : ` (global)`}`
     );
@@ -472,6 +510,10 @@ export function handleEditorScopeVacated(scopeId: number) {
         if (boundScopeId !== scopeId) continue;
         if (wallBindingSources.get(wallId) !== 'live') continue;
 
+        if (process.__SIGNAGE_IS_TARGET_WALL__?.(wallId)) {
+            process.__SIGNAGE_RESUME_WALL__?.(wallId);
+            continue;
+        }
         unbindWall(wallId);
         hydrateWallNodes(wallId);
         broadcastToControllersByWallRaw(

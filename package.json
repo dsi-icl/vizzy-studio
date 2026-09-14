@@ -176,9 +176,9 @@
     "overrides": {
         "babel-plugin-react-compiler": "experimental",
         "bson": "7.2.0",
-        "react": "^19.2.7",
-        "react-dom": "^19.2.7",
-        "svgdom": "0.1.24",
+        "react": "^19.2.8",
+        "react-dom": "^19.2.8",
+        "svgdom": "0.1.28",
         "typescript": "^7.0.2",
         "vite": "^8.1.5"
     },

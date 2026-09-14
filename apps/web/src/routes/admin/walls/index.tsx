@@ -2,13 +2,18 @@ import { MonitorIcon } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
+import { Toggle } from '@repo/ui/components/toggle';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { Suspense } from 'react';
 import { toast } from 'sonner';
 
-import { $adminCreateWall, $adminUnbindWall } from '~/server/admin.fns';
+import {
+    $adminCreateWall,
+    $adminUnbindWall,
+    $adminUpdateWallAllowLivePreview
+} from '~/server/admin.fns';
 import { adminWallBindingMetaQueryOptions, adminWallsQueryOptions } from '~/server/admin.queries';
 
 export const Route = createFileRoute('/admin/walls/')({
@@ -39,6 +44,17 @@ function AdminWalls() {
             toast.success('Wall created');
         },
         onError: (e: any) => toast.error(e.message ?? 'Failed to create wall')
+    });
+
+    const allowLivePreviewMutation = useMutation({
+        mutationFn: ({ wallId, allowLivePreview }: { wallId: string; allowLivePreview: boolean }) =>
+            $adminUpdateWallAllowLivePreview({ data: { wallId, allowLivePreview } }),
+        onSuccess: (allowLivePreview) => {
+            queryClient.invalidateQueries({ queryKey: adminWallsQueryOptions().queryKey });
+            queryClient.invalidateQueries({ queryKey: ['walls'] });
+            toast.success(allowLivePreview ? 'Live preview enabled' : 'Live preview disabled');
+        },
+        onError: (e: any) => toast.error(e.message ?? 'Failed to update live preview access')
     });
 
     const form = useForm({
@@ -105,6 +121,7 @@ function AdminWalls() {
                                 <th className="px-4 py-3 text-left font-medium">Name</th>
                                 <th className="px-4 py-3 text-left font-medium">Assigned Nodes</th>
                                 <th className="px-4 py-3 text-left font-medium">Intended Nodes</th>
+                                <th className="px-4 py-3 text-left font-medium">Live Preview</th>
                                 <th className="px-4 py-3 text-left font-medium">Bound Project</th>
                             </tr>
                         </thead>
@@ -173,6 +190,26 @@ function AdminWalls() {
                                                 {intendedConnectedNodes}
                                             </span>
                                         </td>
+                                        <td
+                                            className="px-4 py-3"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <Toggle
+                                                size="sm"
+                                                variant="outline"
+                                                aria-label={`Allow live preview on ${wall.wallId}`}
+                                                pressed={wall.allowLivePreview === true}
+                                                disabled={allowLivePreviewMutation.isPending}
+                                                onPressedChange={(pressed) =>
+                                                    allowLivePreviewMutation.mutate({
+                                                        wallId: wall.wallId,
+                                                        allowLivePreview: pressed
+                                                    })
+                                                }
+                                            >
+                                                {wall.allowLivePreview ? 'Enabled' : 'Disabled'}
+                                            </Toggle>
+                                        </td>
                                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
                                             <div className="flex items-center justify-between gap-2">
                                                 {wall.boundProjectId ? (
@@ -193,13 +230,18 @@ function AdminWalls() {
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
-                                                        disabled={unbindMutation.isPending}
+                                                        disabled={
+                                                            unbindMutation.isPending ||
+                                                            wall.boundSource === 'signage'
+                                                        }
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             unbindMutation.mutate(wall.wallId);
                                                         }}
                                                     >
-                                                        Unbind
+                                                        {wall.boundSource === 'signage'
+                                                            ? 'Signage managed'
+                                                            : 'Unbind'}
                                                     </Button>
                                                 )}
                                             </div>

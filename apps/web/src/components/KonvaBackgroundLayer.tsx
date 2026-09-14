@@ -1,43 +1,43 @@
+import type { StageLayout } from '@repo/db/schema';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Image } from 'react-konva';
 
 import { BACKGROUND_T_SPEED, renderBackgroundNoise } from '~/lib/backgroundNoise';
 import { renderBackgroundParticle } from '~/lib/backgroundParticle';
+import { resolveBackgroundRasterSize } from '~/lib/backgroundRasterBudget';
 import { renderBackgroundWaves } from '~/lib/backgroundWave';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
 import type { Layer } from '~/lib/types';
-
-const WALL_W = COLS * SCREEN_W;
-const WALL_H = ROWS * SCREEN_H;
-const MAX_PREVIEW_W = 4096;
 
 type BackgroundLayer = Extract<Layer, { type: 'background' }>;
 
 interface KonvaBackgroundLayerProps {
     layer: BackgroundLayer;
     previewScale: number;
+    layout: StageLayout;
 }
 
 /**
  * Static noise snapshot rendered as a Konva Image covering the full wall.
  * Non-interactive — click/drag pass through to layers below.
  */
-function KonvaBackgroundLayerInner({ layer, previewScale }: KonvaBackgroundLayerProps) {
+function KonvaBackgroundLayerInner({ layer, previewScale, layout }: KonvaBackgroundLayerProps) {
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
     const renderedWidthRef = useRef(0);
     const lastConfigKeyRef = useRef('');
+    const wallWidth = layout.columns * layout.screenWidth;
+    const wallHeight = layout.rows * layout.screenHeight;
 
-    const previewWidthBucket = useMemo(() => {
+    const previewRasterSize = useMemo(() => {
         const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-        const requested = Math.round(WALL_W * Math.max(previewScale, 0.001) * dpr);
-        const minWidth = 1536;
-        const clamped = Math.max(minWidth, Math.min(MAX_PREVIEW_W, requested));
-        // Quantize so tiny scale jitter doesn't trigger redraws.
-        return Math.min(MAX_PREVIEW_W, Math.ceil(clamped / 256) * 256);
-    }, [previewScale]);
+        return resolveBackgroundRasterSize(wallWidth, wallHeight, previewScale, dpr);
+    }, [previewScale, wallHeight, wallWidth]);
 
     useEffect(() => {
         const configKey = [
+            layout.columns,
+            layout.rows,
+            layout.screenWidth,
+            layout.screenHeight,
             layer.backgroundType,
             layer.backgroundColor,
             layer.atmosphereColor,
@@ -47,13 +47,13 @@ function KonvaBackgroundLayerInner({ layer, previewScale }: KonvaBackgroundLayer
             layer.speedFactor
         ].join('|');
         const configChanged = configKey !== lastConfigKeyRef.current;
-        const needsSharperRaster = previewWidthBucket > renderedWidthRef.current;
+        const needsSharperRaster = previewRasterSize.width > renderedWidthRef.current;
 
         if (!configChanged && !needsSharperRaster && canvas) return;
 
         const offscreen = document.createElement('canvas');
-        offscreen.width = Math.max(previewWidthBucket, renderedWidthRef.current || 0);
-        offscreen.height = Math.max(1, Math.round((offscreen.width * WALL_H) / WALL_W));
+        offscreen.width = previewRasterSize.width;
+        offscreen.height = previewRasterSize.height;
         // Use current wall-clock t (same formula as WallBackgroundCanvas) so
         // the preview matches what the wall is showing right now.
         const t = (Date.now() / 1000) * BACKGROUND_T_SPEED * layer.speedFactor;
@@ -64,11 +64,20 @@ function KonvaBackgroundLayerInner({ layer, previewScale }: KonvaBackgroundLayer
                 ctx.fillRect(0, 0, offscreen.width, offscreen.height);
             }
         } else if (layer.backgroundType === 'waves') {
-            renderBackgroundWaves(offscreen, layer, 0, 0, t, COLS, ROWS);
+            renderBackgroundWaves(offscreen, layer, 0, 0, t, layout.columns, layout.rows, layout);
         } else if (layer.backgroundType === 'particle') {
-            renderBackgroundParticle(offscreen, layer, 0, 0, t, COLS, ROWS);
+            renderBackgroundParticle(
+                offscreen,
+                layer,
+                0,
+                0,
+                t,
+                layout.columns,
+                layout.rows,
+                layout
+            );
         } else {
-            renderBackgroundNoise(offscreen, layer, 0, 0, t, COLS, ROWS);
+            renderBackgroundNoise(offscreen, layer, 0, 0, t, layout.columns, layout.rows, layout);
         }
         renderedWidthRef.current = offscreen.width;
         lastConfigKeyRef.current = configKey;
@@ -82,7 +91,9 @@ function KonvaBackgroundLayerInner({ layer, previewScale }: KonvaBackgroundLayer
         layer.motifColor2,
         layer.noiseSeed,
         layer.speedFactor,
-        previewWidthBucket
+        previewRasterSize,
+        layout,
+        wallHeight
     ]);
 
     if (!canvas) return null;
@@ -108,6 +119,10 @@ export const KonvaBackgroundLayer = memo(
     KonvaBackgroundLayerInner,
     (prev, next) =>
         prev.previewScale === next.previewScale &&
+        prev.layout.columns === next.layout.columns &&
+        prev.layout.rows === next.layout.rows &&
+        prev.layout.screenWidth === next.layout.screenWidth &&
+        prev.layout.screenHeight === next.layout.screenHeight &&
         prev.layer.backgroundType === next.layer.backgroundType &&
         prev.layer.backgroundColor === next.layer.backgroundColor &&
         prev.layer.atmosphereColor === next.layer.atmosphereColor &&

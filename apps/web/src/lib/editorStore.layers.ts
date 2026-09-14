@@ -7,7 +7,6 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { COLS, ROWS, SCREEN_H, SCREEN_W } from './stageConstants';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
@@ -629,14 +628,14 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         },
 
         addBackgroundLayer: () => {
-            const { layers } = get();
+            const { layers, stageLayout } = get();
             // Singleton: if one already exists, do nothing (settings accessible via toolbar popover)
             const existing = Array.from(layers.values()).find((l) => l.type === 'background');
             if (existing) return;
 
             const numericId = helpers.allocateId();
-            const wallW = COLS * SCREEN_W;
-            const wallH = ROWS * SCREEN_H;
+            const wallW = stageLayout.columns * stageLayout.screenWidth;
+            const wallH = stageLayout.rows * stageLayout.screenHeight;
 
             const newLayer: LayerWithEditorState = {
                 numericId,

@@ -1,28 +1,24 @@
-import Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
 import { Circle, KonvaNodeEvents, Layer, Line, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
-import { getDOGridLines } from '~/lib/editorHelpers';
+import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 
 type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
-    stageInstance: RefObject<Konva.Stage | null>;
     stageScaleFactor: number;
 };
 
 const PREVIEW_SCALE = 0.15;
 
-export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: SlatePreviewProps) {
+export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps) {
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
-
-    const stageWidth = stageInstance.current?.width() || 0;
-    const stageHeight = stageInstance.current?.height() || 0;
+    const stageLayout = useEditorStore((s) => s.stageLayout);
 
     useEffect(() => {
         if (!stageSlot.current) return;
@@ -43,8 +39,8 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
     const canvasHeight = stageSlot.current?.clientHeight || viewportHeight;
     const safeStageScaleFactor = Math.max(stageScaleFactor, 1e-6);
     const previewScale = safeStageScaleFactor * PREVIEW_SCALE;
-    const logicalStageWidth = stageWidth / safeStageScaleFactor;
-    const logicalStageHeight = stageHeight / safeStageScaleFactor;
+    const { width: logicalStageWidth, height: logicalStageHeight } =
+        getStageLogicalSize(stageLayout);
     const logicalCanvasWidth = canvasWidth / safeStageScaleFactor;
     const logicalCanvasHeight = canvasHeight / safeStageScaleFactor;
 
@@ -159,6 +155,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                                         key={`bg_${shape.numericId}`}
                                         layer={shape}
                                         previewScale={1}
+                                        layout={stageLayout}
                                     />
                                 );
                             }
@@ -208,7 +205,7 @@ export function SlatePreview({ stageSlot, stageInstance, stageScaleFactor }: Sla
                         draggable
                         onDragMove={handleHorizontalDragMove}
                     />
-                    {showGrid && getDOGridLines(logicalStageWidth, logicalStageHeight)}
+                    {showGrid && getStageGridLines(stageLayout)}
                 </Layer>
             </Stage>
         </div>

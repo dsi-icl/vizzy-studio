@@ -11,6 +11,8 @@ import type {
 } from 'mongodb';
 import { ObjectId as OID } from 'mongodb';
 
+import { buildMigrationWriteback } from './_migration';
+
 /** Converts any legacy timestamp format (Date, ISO string, epoch number) to epoch ms. */
 export function toEpoch(value: unknown): number {
     if (typeof value === 'number') return value;
@@ -146,11 +148,13 @@ export abstract class BaseCollection<TDoc extends BaseDoc> {
         // Write back if any migration ran. The filter ensures this is a no-op if
         // a concurrent update already advanced the version past our starting point.
         if (version > initialVersion) {
-            const { _id, ...rest } = current;
             this.raw
                 .updateOne(
-                    { _id, _version: { $not: { $gte: this.currentVersion } } },
-                    { $set: { ...rest, _version: version } }
+                    {
+                        _id: current._id,
+                        _version: { $not: { $gte: this.currentVersion } }
+                    },
+                    buildMigrationWriteback(doc, current, version)
                 )
                 .catch(() => {});
         }

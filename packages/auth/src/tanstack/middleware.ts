@@ -33,6 +33,7 @@ export const authMiddleware = createMiddleware().server(async ({ next, context }
                     email: user.email,
                     role: normalizeRole(user.role),
                     ...(user.trustedPublisher === true ? { trustedPublisher: true } : {}),
+                    ...(user.canManageSignage === true ? { canManageSignage: true } : {}),
                     ...(typeof authSession?.session?.impersonatedBy === 'string' &&
                     authSession.session.impersonatedBy.length > 0
                         ? { impersonatedBy: authSession.session.impersonatedBy }
@@ -72,6 +73,7 @@ export const freshAuthMiddleware = createMiddleware().server(async ({ next, cont
                     email: user.email,
                     role: normalizeRole(user.role),
                     ...(user.trustedPublisher === true ? { trustedPublisher: true } : {}),
+                    ...(user.canManageSignage === true ? { canManageSignage: true } : {}),
                     ...(typeof authSession?.session?.impersonatedBy === 'string' &&
                     authSession.session.impersonatedBy.length > 0
                         ? { impersonatedBy: authSession.session.impersonatedBy }
@@ -105,6 +107,7 @@ export const adminMiddleware = createMiddleware().server(async ({ next, context 
                     email: user.email,
                     role: normalizeRole(user.role),
                     ...(user.trustedPublisher === true ? { trustedPublisher: true } : {}),
+                    ...(user.canManageSignage === true ? { canManageSignage: true } : {}),
                     ...(typeof authSession?.session?.impersonatedBy === 'string' &&
                     authSession.session.impersonatedBy.length > 0
                         ? { impersonatedBy: authSession.session.impersonatedBy }
@@ -138,6 +141,42 @@ export const operatorMiddleware = createMiddleware().server(async ({ next, conte
                     email: user.email,
                     role: normalizeRole(user.role),
                     ...(user.trustedPublisher === true ? { trustedPublisher: true } : {}),
+                    ...(user.canManageSignage === true ? { canManageSignage: true } : {}),
+                    ...(typeof authSession?.session?.impersonatedBy === 'string' &&
+                    authSession.session.impersonatedBy.length > 0
+                        ? { impersonatedBy: authSession.session.impersonatedBy }
+                        : {})
+                }
+            }
+        }
+    });
+});
+
+/** Allows platform operators and users explicitly granted signage-management access. */
+export const signageMiddleware = createMiddleware().server(async ({ next, context }) => {
+    const authSession = await _getAuthSession();
+    const user = authSession?.user ?? null;
+
+    if (!user) {
+        setResponseStatus(401);
+        throw new Error('Unauthorized');
+    }
+
+    if (user.role !== 'admin' && user.role !== 'operator' && user.canManageSignage !== true) {
+        setResponseStatus(403);
+        throw new Error('Forbidden');
+    }
+
+    return next({
+        context: {
+            ...(context ?? {}),
+            user,
+            authContext: {
+                user: {
+                    email: user.email,
+                    role: normalizeRole(user.role),
+                    ...(user.trustedPublisher === true ? { trustedPublisher: true } : {}),
+                    ...(user.canManageSignage === true ? { canManageSignage: true } : {}),
                     ...(typeof authSession?.session?.impersonatedBy === 'string' &&
                     authSession.session.impersonatedBy.length > 0
                         ? { impersonatedBy: authSession.session.impersonatedBy }

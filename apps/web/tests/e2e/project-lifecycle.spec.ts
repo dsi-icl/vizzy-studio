@@ -57,7 +57,8 @@ test('create, publish, rename, and archive transitions update the public gallery
         await galleryPage.goto('/gallery');
         await expect(galleryPage.getByText(originalName, { exact: true })).toBeHidden();
 
-        await adminPage.getByRole('button', { name: 'Edit', exact: true }).click();
+        await adminPage.goto(`/quarry/projects/${projectId}/commits`);
+        await adminPage.getByRole('button', { name: 'Edit stage' }).first().click();
         await expect(adminPage).toHaveURL(
             new RegExp(`/quarry/editor/${projectId}/[0-9a-f]{24}/[^/]+$`)
         );

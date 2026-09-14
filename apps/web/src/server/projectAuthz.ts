@@ -9,6 +9,7 @@ type Actor = {
     email: string;
     role?: string;
     trustedPublisher?: boolean;
+    canManageSignage?: boolean;
 };
 
 function hasProjectMembership(
@@ -77,6 +78,7 @@ export function actorFromAuthContext(authContext: {
         email?: string | null;
         role?: string | null;
         trustedPublisher?: boolean | null;
+        canManageSignage?: boolean | null;
     } | null;
 }): Actor | null {
     const email = authContext.user?.email;
@@ -84,6 +86,7 @@ export function actorFromAuthContext(authContext: {
     return {
         email,
         role: authContext.user?.role ?? undefined,
-        trustedPublisher: authContext.user?.trustedPublisher === true
+        trustedPublisher: authContext.user?.trustedPublisher === true,
+        canManageSignage: authContext.user?.canManageSignage === true
     };
 }

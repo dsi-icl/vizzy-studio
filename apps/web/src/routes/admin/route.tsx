@@ -7,7 +7,8 @@ import {
     ImageIcon,
     MonitorIcon,
     UsersIcon,
-    PanoramaIcon
+    PanoramaIcon,
+    SlideshowIcon
 } from '@phosphor-icons/react';
 import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import { Tabs, TabsList, TabsTrigger } from '@repo/ui/components/tabs';
@@ -41,14 +42,23 @@ export const Route = createFileRoute('/admin')({
             });
         }
         const role = user?.role;
-        if (role !== 'admin' && role !== 'operator') throw redirect({ to: '/quarry' });
+        const canManageSignage = user?.canManageSignage === true;
+        if (role !== 'admin' && role !== 'operator' && !canManageSignage) {
+            throw redirect({ to: '/quarry' });
+        }
+        if (role !== 'admin' && role !== 'operator') {
+            if (!location.pathname.startsWith('/admin/signage')) {
+                throw redirect({ to: '/admin/signage' });
+            }
+        }
         if (role === 'operator') {
             const pathname = location.pathname.replace(/\/+$/, '') || '/admin';
             const allowed =
                 pathname === '/admin' ||
                 pathname === '/admin/users' ||
                 pathname === '/admin/projects' ||
-                pathname === '/admin/assets';
+                pathname === '/admin/assets' ||
+                pathname.startsWith('/admin/signage');
             if (!allowed) throw redirect({ to: '/admin/users' });
         }
         return { user };
@@ -62,6 +72,7 @@ export const Route = createFileRoute('/admin')({
 const ADMIN_NAV = [
     { to: '/admin/users', label: 'Users', icon: UsersIcon },
     { to: '/admin/projects', label: 'Projects', icon: FolderIcon },
+    { to: '/admin/signage', label: 'Signage', icon: SlideshowIcon },
     { to: '/admin/audits', label: 'Audits', icon: ActivityIcon },
     { to: '/admin/walls', label: 'Walls', icon: PanoramaIcon },
     { to: '/admin/devices', label: 'Devices', icon: MonitorIcon },
@@ -71,18 +82,23 @@ const ADMIN_NAV = [
 ] as const;
 
 const OPERATOR_NAV = ADMIN_NAV.filter(
-    (tab) => tab.to === '/admin/users' || tab.to === '/admin/projects' || tab.to === '/admin/assets'
+    (tab) =>
+        tab.to === '/admin/users' ||
+        tab.to === '/admin/projects' ||
+        tab.to === '/admin/signage' ||
+        tab.to === '/admin/assets'
 );
 
 const TAB_ORDER = {
     users: 0,
     projects: 1,
-    audits: 2,
-    walls: 3,
-    devices: 4,
-    assets: 5,
-    config: 6,
-    stats: 7
+    signage: 2,
+    audits: 3,
+    walls: 4,
+    devices: 5,
+    assets: 6,
+    config: 7,
+    stats: 8
 } as const;
 
 type AdminTabKey = keyof typeof TAB_ORDER;
@@ -90,6 +106,10 @@ type AdminTabKey = keyof typeof TAB_ORDER;
 const TAB_SUBHEADERS: Record<AdminTabKey, { title: string; description?: string }> = {
     users: { title: 'Users' },
     projects: { title: 'Projects' },
+    signage: {
+        title: 'Digital Signage',
+        description: 'Build timed slide loops and assign them to presentation walls.'
+    },
     audits: {
         title: 'Audit Explorer',
         description: 'Cross-project audit trail with filters for operational investigation.'
@@ -124,6 +144,7 @@ const slidePanelVariants = {
 
 function getTabFromPath(pathname: string): AdminTabKey {
     if (pathname.startsWith('/admin/projects')) return 'projects';
+    if (pathname.startsWith('/admin/signage')) return 'signage';
     if (pathname.startsWith('/admin/audits')) return 'audits';
     if (pathname.startsWith('/admin/walls')) return 'walls';
     if (pathname.startsWith('/admin/devices')) return 'devices';
@@ -137,7 +158,15 @@ function AdminLayout() {
     const { data: user } = useSuspenseQuery(authQueryOptions());
     const location = useLocation();
     const navigate = useNavigate();
-    const nav = useMemo(() => (user?.role === 'operator' ? OPERATOR_NAV : ADMIN_NAV), [user?.role]);
+    const nav = useMemo(
+        () =>
+            user?.role === 'admin'
+                ? ADMIN_NAV
+                : user?.role === 'operator'
+                  ? OPERATOR_NAV
+                  : ADMIN_NAV.filter((tab) => tab.to === '/admin/signage'),
+        [user?.role]
+    );
     const currentTab = getTabFromPath(location.pathname);
     const resolvedPathname = useRouterState({
         select: (s) => s.location.pathname
