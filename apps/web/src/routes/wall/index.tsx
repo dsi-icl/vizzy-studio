@@ -8,6 +8,7 @@ import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react'
 import { MapWrapper } from '~/components/MapWrapper';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
+import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { signedFetch } from '~/lib/signedFetch';
 import { COLS, ROWS, SCREEN_H, SCREEN_W } from '~/lib/stageConstants';
@@ -649,7 +650,7 @@ function WallApp() {
                         {...iframeProps}
                         src={iframeSrc}
                         title={`Web layer ${layer.numericId}`}
-                        sandbox="allow-scripts allow-forms"
+                        sandbox={resolveIframeSandbox(iframeSrc)}
                         onLoad={() => {
                             markIframeReady(`web:${layer.numericId}`, iframeGateCycle);
                         }}
@@ -660,7 +661,9 @@ function WallApp() {
                                 !iframe.src.includes('/web-nonet') &&
                                 !iframe.src.includes('/web-corsissue')
                             ) {
-                                iframe.src = '/web-nonet?l=wall';
+                                const fallback = '/web-nonet?l=wall';
+                                iframe.setAttribute('sandbox', resolveIframeSandbox(fallback));
+                                iframe.src = fallback;
                             }
                         }}
                         className="bg-background"
@@ -797,7 +800,7 @@ function WallApp() {
                 key={`custom-render:${iframeGateCycle}`}
                 title="Custom Render Wall"
                 src={finalSrc}
-                sandbox={customRenderProxy ? 'allow-scripts' : 'allow-scripts allow-forms'}
+                sandbox={resolveIframeSandbox(finalSrc)}
                 style={{
                     position: 'absolute',
                     top: customRenderCompat ? `${-myViewport.y}px` : 0,
