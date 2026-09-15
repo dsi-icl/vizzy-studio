@@ -146,6 +146,7 @@ export function EditorSlate() {
             ? layers.get(Number.parseInt(selectedLayerIds[0], 10))
             : undefined;
     const isSingleSelectedLayerLocked = Boolean(singleSelectedLayer?.config.locked);
+    const selectedLineLayer = singleSelectedLayer?.type === 'line' ? singleSelectedLayer : null;
     const hoveredLayer = hoveredLayerId
         ? layers.get(Number.parseInt(hoveredLayerId, 10))
         : undefined;
@@ -1481,6 +1482,11 @@ export function EditorSlate() {
         handleTouchEnd(e);
     };
 
+    const handlePreviewScrollTo = useCallback((scrollLeft: number) => {
+        const slot = stageSlot.current;
+        if (slot) slot.scrollLeft = scrollLeft;
+    }, []);
+
     const handleStageWheel = useCallback(
         (e: KonvaEventObject<WheelEvent>) => {
             const slot = stageSlot.current;
@@ -1500,6 +1506,7 @@ export function EditorSlate() {
     );
 
     useEffect(() => {
+        // A Group's child changes do not automatically refresh its Transformer.
         if (selectedLayerIds.length === 1 && trRef.current) {
             // Unlocked lines are selectable but not transformable. A locked line still
             // attaches so the Transformer can provide its dashed, handle-free outline.
@@ -1521,7 +1528,7 @@ export function EditorSlate() {
             trRef.current.nodes([]);
             trRef.current.getLayer()?.batchDraw();
         }
-    }, [isSingleSelectedLayerLocked, selectedLayerIds]);
+    }, [isSingleSelectedLayerLocked, selectedLayerIds, selectedLineLayer]);
 
     useEffect(() => {
         const transformer = hoverTrRef.current;
@@ -1544,6 +1551,7 @@ export function EditorSlate() {
             <SlatePreview
                 stageSlot={stageSlot}
                 stageScaleFactor={stageScaleFactor}
+                onScrollTo={handlePreviewScrollTo}
                 onWheel={handleStageWheel}
             />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">

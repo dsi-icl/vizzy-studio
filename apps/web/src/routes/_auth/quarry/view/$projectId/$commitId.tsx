@@ -71,10 +71,8 @@ function CommitViewer() {
 
     // Default to first slide
     useEffect(() => {
-        if (!activeSlideId && slides.length > 0) {
-            setActiveSlideId(slides[0].id);
-        }
-    }, [activeSlideId, slides]);
+        setActiveSlideId((current) => current ?? slides[0]?.id ?? null);
+    }, [slides]);
 
     const activeLayers = useMemo(() => {
         const slide = slides.find((s) => s.id === activeSlideId);

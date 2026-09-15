@@ -11,12 +11,18 @@ import { useEditorStore } from '~/lib/editorStore';
 type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
     stageScaleFactor: number;
+    onScrollTo: (scrollLeft: number) => void;
     onWheel: (e: KonvaEventObject<WheelEvent>) => void;
 };
 
 const PREVIEW_SCALE = 0.15;
 
-export function SlatePreview({ stageSlot, stageScaleFactor, onWheel }: SlatePreviewProps) {
+export function SlatePreview({
+    stageSlot,
+    stageScaleFactor,
+    onScrollTo,
+    onWheel
+}: SlatePreviewProps) {
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
@@ -51,11 +57,7 @@ export function SlatePreview({ stageSlot, stageScaleFactor, onWheel }: SlatePrev
         if (x < 0) e.target.x(0);
         if (x > logicalStageWidth - e.target.width())
             e.target.x(logicalStageWidth - e.target.width());
-        const slot = stageSlot.current;
-        if (slot) {
-            // oxlint-disable-next-line react-hooks-js/immutability
-            slot.scrollLeft = x * safeStageScaleFactor;
-        }
+        onScrollTo(x * safeStageScaleFactor);
         e.target.y(0);
     };
 
@@ -75,11 +77,7 @@ export function SlatePreview({ stageSlot, stageScaleFactor, onWheel }: SlatePrev
                     if (x > logicalStageWidth - logicalCanvasWidth)
                         x = logicalStageWidth - logicalCanvasWidth;
                     setScrollLeft(x * safeStageScaleFactor);
-                    const slot = stageSlot.current;
-                    if (slot) {
-                        // oxlint-disable-next-line react-hooks-js/immutability
-                        slot.scrollLeft = x * safeStageScaleFactor;
-                    }
+                    onScrollTo(x * safeStageScaleFactor);
                 }}
                 className="m-auto block w-fit cursor-pointer bg-[#222]"
             >
