@@ -53,7 +53,7 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
                 return <GlobeIcon size={16} weight="bold" />;
             case 'shape': {
                 switch ((layer as Extract<LayerWithEditorState, { type: 'shape' }>).shape) {
-                    case 'circle':
+                    case 'oval':
                         return <CircleIcon size={16} weight="bold" />;
                     case 'rectangle':
                         return <RectangleIcon size={16} weight="bold" />;
@@ -86,8 +86,8 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
                 return (layer as Extract<LayerWithEditorState, { type: 'web' }>).url;
             case 'shape': {
                 switch ((layer as Extract<LayerWithEditorState, { type: 'shape' }>).shape) {
-                    case 'circle':
-                        return 'Circle';
+                    case 'oval':
+                        return 'Oval';
                     case 'rectangle':
                         return 'Rectangle';
                     default:

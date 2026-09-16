@@ -8,7 +8,7 @@ import {
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import type { Layer, LayerWithEditorState } from './types';
+import { migrateLegacyLayers, type Layer, type LayerWithEditorState } from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -50,7 +50,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
             set((s) => {
-                const mergedLayers = layers.map((layer) => {
+                const mergedLayers = migrateLegacyLayers(layers).map((layer) => {
                     if (layer.type !== 'video') return layer;
                     const existing = s.layers.get(layer.numericId);
                     if (existing?.type === 'video') {
@@ -576,7 +576,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
-        addShapeLayer: (shape: 'rectangle' | 'circle') => {
+        addShapeLayer: (shape: 'rectangle' | 'oval') => {
             const {
                 allocateId,
                 allocateZIndex,

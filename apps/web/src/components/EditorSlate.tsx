@@ -18,7 +18,7 @@ import {
     Transformer,
     Rect,
     Line,
-    Circle
+    Ellipse
 } from 'react-konva';
 import { toast } from 'sonner';
 
@@ -57,6 +57,17 @@ import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $createUploadToken } from '~/server/projects.fns';
 
 import { SlatePreview } from './SlatePreview';
+
+/**
+ * `cx`/`cy` always address a layer's centre. Konva draws an Ellipse from its own
+ * centre, so only the top-left-origin nodes need the half-size offset that moves
+ * their origin there.
+ */
+const applyCenterOrigin = (node: Konva.Node, width: number, height: number) => {
+    const drawsFromCenter = node.getClassName() === 'Ellipse';
+    node.offsetX(drawsFromCenter ? 0 : width / 2);
+    node.offsetY(drawsFromCenter ? 0 : height / 2);
+};
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
@@ -453,8 +464,7 @@ export function EditorSlate() {
                         node.y(cy);
                         node.width(width);
                         node.height(height);
-                        node.offsetX(width / 2);
-                        node.offsetY(height / 2);
+                        applyCenterOrigin(node, width, height);
                         node.scaleX(scaleX);
                         node.scaleY(scaleY);
                         node.rotation(rotation);
@@ -914,8 +924,7 @@ export function EditorSlate() {
             node.width(newWidth);
             node.height(newHeight);
             node.scale({ x: 1, y: 1 });
-            node.offsetX(newWidth / 2);
-            node.offsetY(newHeight / 2);
+            applyCenterOrigin(node, newWidth, newHeight);
 
             const newAbsTransform = node.getAbsoluteTransform().copy();
             const newOriginWorld = newAbsTransform.point({ x: 0, y: 0 });
@@ -1029,8 +1038,7 @@ export function EditorSlate() {
 
                     node.width(nextWidth);
                     node.height(nextHeight);
-                    node.offsetX(nextWidth / 2);
-                    node.offsetY(nextHeight / 2);
+                    applyCenterOrigin(node, nextWidth, nextHeight);
                     node.position({
                         x: nextLeft + nextWidth / 2,
                         y: nextTop + nextHeight / 2
@@ -1600,14 +1608,13 @@ export function EditorSlate() {
                                             />
                                         );
                                     }
-                                    if (layer.shape === 'circle') {
+                                    if (layer.shape === 'oval') {
                                         return (
-                                            <Circle
+                                            <Ellipse
                                                 key={`shape_${layer.numericId}`}
                                                 {...commonProps}
-                                                offsetX={layer.config.width / 2}
-                                                offsetY={layer.config.height / 2}
-                                                radius={layer.config.width / 2}
+                                                radiusX={layer.config.width / 2}
+                                                radiusY={layer.config.height / 2}
                                                 dash={layer.strokeDash}
                                                 lineCap="round"
                                                 lineJoin="round"

@@ -224,7 +224,8 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => addShapeLayer('circle')}
+                                    aria-label="Add oval"
+                                    onClick={() => addShapeLayer('oval')}
                                 >
                                     <CircleIcon />
                                 </Button>
