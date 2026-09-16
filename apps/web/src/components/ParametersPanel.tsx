@@ -114,7 +114,8 @@ export function ParametersPanel({
 
     const updateMapView = useCallback(
         (field: MapViewField, value: number) => {
-            if (!selectedLayer || selectedLayer.type !== 'map') return;
+            if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
+                return;
             const updatedLayer = {
                 ...selectedLayer,
                 view: { ...selectedLayer.view, [field]: value }
@@ -133,7 +134,8 @@ export function ParametersPanel({
 
     const updateMapStyle = useCallback(
         (value: MapStyleId) => {
-            if (!selectedLayer || selectedLayer.type !== 'map') return;
+            if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
+                return;
             const updatedLayer = { ...selectedLayer, style: value };
 
             useEditorStore.setState((s) => {
@@ -283,6 +285,7 @@ export function ParametersPanel({
                                         <SideButtonNumberField
                                             label="Longitude"
                                             allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
                                             step={0.1}
                                             smallStep={0.01}
                                             min={-180}
@@ -295,6 +298,7 @@ export function ParametersPanel({
                                         <SideButtonNumberField
                                             label="Latitude"
                                             allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
                                             step={0.1}
                                             smallStep={0.01}
                                             min={-85.0511}
@@ -307,6 +311,7 @@ export function ParametersPanel({
                                         <SideButtonNumberField
                                             label="Zoom"
                                             allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
                                             step={0.25}
                                             smallStep={0.1}
                                             min={0}
@@ -319,6 +324,7 @@ export function ParametersPanel({
                                         <SideButtonNumberField
                                             label="Pitch"
                                             allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
                                             step={1}
                                             smallStep={0.25}
                                             min={0}
@@ -331,6 +337,7 @@ export function ParametersPanel({
                                         <SideButtonNumberField
                                             label="Bearing"
                                             allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
                                             step={1}
                                             smallStep={0.25}
                                             min={0}
@@ -343,6 +350,7 @@ export function ParametersPanel({
                                         <div className="flex flex-col items-start gap-1">
                                             <Label className="text-sm font-medium">Style</Label>
                                             <Select
+                                                disabled={isSelectedLayerLocked}
                                                 value={selectedLayer.style ?? DEFAULT_MAP_STYLE_ID}
                                                 onValueChange={(value) =>
                                                     updateMapStyle(value as MapStyleId)

@@ -1607,29 +1607,31 @@ export function EditorSlate() {
                             height: stagePixelHeight
                         }}
                     >
-                        <Stage
-                            width={stagePixelWidth}
-                            height={stagePixelHeight}
-                            scaleX={stageScaleFactor}
-                            scaleY={stageScaleFactor}
-                            style={{
-                                position: 'absolute',
-                                inset: 0,
-                                pointerEvents: 'none',
-                                zIndex: 0
-                            }}
-                        >
-                            <FastLayer listening={false}>
-                                {backgroundLayer ? (
-                                    <KonvaBackgroundLayer
-                                        key={`bg_${backgroundLayer.numericId}`}
-                                        layer={backgroundLayer}
-                                        previewScale={stageScaleFactor}
-                                        layout={stageLayout}
-                                    />
-                                ) : null}
-                            </FastLayer>
-                        </Stage>
+                        {visibleMapLayers.length > 0 && (
+                            <Stage
+                                width={stagePixelWidth}
+                                height={stagePixelHeight}
+                                scaleX={stageScaleFactor}
+                                scaleY={stageScaleFactor}
+                                style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    pointerEvents: 'none',
+                                    zIndex: 0
+                                }}
+                            >
+                                <FastLayer listening={false}>
+                                    {backgroundLayer ? (
+                                        <KonvaBackgroundLayer
+                                            key={`bg_${backgroundLayer.numericId}`}
+                                            layer={backgroundLayer}
+                                            previewScale={stageScaleFactor}
+                                            layout={stageLayout}
+                                        />
+                                    ) : null}
+                                </FastLayer>
+                            </Stage>
+                        )}
                         <div
                             aria-hidden="true"
                             style={{
@@ -1673,6 +1675,18 @@ export function EditorSlate() {
                                 zIndex: 2
                             }}
                         >
+                            {visibleMapLayers.length === 0 && (
+                                <FastLayer listening={false}>
+                                    {backgroundLayer ? (
+                                        <KonvaBackgroundLayer
+                                            key={`bg_${backgroundLayer.numericId}`}
+                                            layer={backgroundLayer}
+                                            previewScale={stageScaleFactor}
+                                            layout={stageLayout}
+                                        />
+                                    ) : null}
+                                </FastLayer>
+                            )}
                             <KonvaLayer>
                                 {/* oxlint-disable-next-line react-hooks-js/refs */}
                                 {foregroundLayers.map((layer) => {
