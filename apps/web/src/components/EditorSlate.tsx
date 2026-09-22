@@ -120,11 +120,9 @@ export function EditorSlate() {
     const setEraserWidth = useEditorStore((s) => s.setEraserWidth);
     const commitLineErase = useEditorStore((s) => s.commitLineErase);
 
-    // Peer cursors are per-slide; remounting on scope change drops the previous
-    // slide's cursors instead of leaving them to age out.
-    const peerCursorScopeKey = useEditorStore(
-        (s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`
-    );
+    // Remount slide-scoped cursors and maps so reused layer IDs cannot retain
+    // the previous slide's cursors or preview images.
+    const slideScopeKey = useEditorStore((s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`);
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
@@ -1589,8 +1587,7 @@ export function EditorSlate() {
             <SlatePreview
                 stageSlot={stageSlot}
                 stageScaleFactor={stageScaleFactor}
-                onScrollTo={handlePreviewScrollTo}
-                onWheel={handleStageWheel}
+                previewScopeKey={slideScopeKey}
             />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
@@ -1644,9 +1641,10 @@ export function EditorSlate() {
                             {projectId
                                 ? visibleMapLayers.map((layer) => (
                                       <EditorMapOverlay
-                                          key={`map_overlay_${layer.numericId}`}
+                                          key={`map_overlay_${slideScopeKey}/${layer.numericId}`}
                                           layer={layer}
                                           projectId={projectId}
+                                          previewKey={`${slideScopeKey}/${layer.numericId}`}
                                           selected={selectedLayerIdSet.has(
                                               layer.numericId.toString()
                                           )}
@@ -1981,10 +1979,7 @@ export function EditorSlate() {
                                     }}
                                 />
                             </KonvaLayer>
-                            <PeerCursors
-                                key={peerCursorScopeKey}
-                                stageScaleFactor={stageScaleFactor}
-                            />
+                            <PeerCursors key={slideScopeKey} stageScaleFactor={stageScaleFactor} />
                         </Stage>
                     </div>
                 </div>
