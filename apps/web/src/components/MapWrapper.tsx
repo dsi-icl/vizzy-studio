@@ -3,7 +3,7 @@
 import { MapboxOverlay, type MapboxOverlayProps } from '@deck.gl/mapbox';
 import type { StyleSpecification } from 'maplibre-gl';
 import { useCallback, useMemo, type FC, type HTMLAttributes, type RefAttributes } from 'react';
-import Map, { useControl } from 'react-map-gl/maplibre';
+import Map, { type MapProps, useControl } from 'react-map-gl/maplibre';
 
 import { setRefs } from '~/lib/setRefs';
 import { DEFAULT_MAP_STYLE_ID, type Layer, type MapStyleId } from '~/lib/types';
@@ -24,6 +24,7 @@ const MAP_STYLES: Record<MapStyleId, StyleSpecification> = {
 type MapWrapperProps = {
     layer: MapLayer;
     projectId: string;
+    onIdle?: MapProps['onIdle'];
 } & RefAttributes<HTMLDivElement> &
     Partial<HTMLAttributes<HTMLDivElement>>;
 
@@ -33,7 +34,14 @@ function DeckGLOverlay(props: MapboxOverlayProps) {
     return null;
 }
 
-export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, ...props }) => {
+export const MapWrapper: FC<MapWrapperProps> = ({
+    ref,
+    layer,
+    projectId,
+    onIdle,
+    style,
+    ...props
+}) => {
     const styleId = layer.style ?? DEFAULT_MAP_STYLE_ID;
     const tileUrl = useMemo(() => {
         const path = `/api/projects/${encodeURIComponent(projectId)}/tiles/protomaps/{z}/{x}/{y}`;
@@ -96,6 +104,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({ ref, layer, projectId, style, 
                 bearing={layer.view.bearing}
                 attributionControl={false}
                 transformRequest={transformRequest}
+                onIdle={onIdle}
                 onLoad={(event) => {
                     event.target.setVerticalFieldOfView(10);
                 }}

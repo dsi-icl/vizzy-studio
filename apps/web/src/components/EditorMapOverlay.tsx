@@ -1,9 +1,14 @@
+import { useCallback, useEffect } from 'react';
+import type { MapProps } from 'react-map-gl/maplibre';
+
 import { MapWrapper } from '~/components/MapWrapper';
+import { removeMapPreview, updateMapPreview } from '~/lib/mapPreviewStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
 interface EditorMapOverlayProps {
     layer: Extract<LayerWithEditorState, { type: 'map' }>;
     projectId: string;
+    previewKey: string;
     selected: boolean;
     stageScaleFactor: number;
 }
@@ -11,9 +16,16 @@ interface EditorMapOverlayProps {
 export function EditorMapOverlay({
     layer,
     projectId,
+    previewKey,
     selected,
     stageScaleFactor
 }: EditorMapOverlayProps) {
+    const capturePreview = useCallback<NonNullable<MapProps['onIdle']>>(
+        (event) => updateMapPreview(previewKey, event.target.getCanvas()),
+        [previewKey]
+    );
+    useEffect(() => () => removeMapPreview(previewKey), [previewKey]);
+
     const hidden = !layer.config.visible;
     return (
         <div
@@ -35,6 +47,7 @@ export function EditorMapOverlay({
             <MapWrapper
                 layer={layer}
                 projectId={projectId}
+                onIdle={capturePreview}
                 style={{
                     position: 'relative',
                     width: '100%',
