@@ -1601,7 +1601,7 @@ export function EditorSlate() {
 
                                 const props = {
                                     listening: !isDrawing && !isErasing,
-                                    isDrawing,
+                                    isDrawing: isDrawing || isErasing,
                                     isPinching,
                                     isLocked,
                                     opacity: hiddenOpacity,
