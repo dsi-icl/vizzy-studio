@@ -1,18 +1,26 @@
 import { create } from 'zustand';
 
+import { ERASER_DEFAULT_WIDTH, clampEraserWidth } from './eraser';
+import { appendEraserPoint as appendBoundedEraserPoint } from './lineEraser';
+
 export interface ControllerState {
     isDrawing: boolean;
+    isErasing: boolean;
+    eraserWidth: number;
     strokeColor: string;
     strokeWidth: number;
     strokeDash: number[];
     currentLine: number[];
     setDrawing: (isDrawing: boolean) => void;
     toggleDrawing: () => void;
+    setErasing: (isErasing: boolean) => void;
+    setEraserWidth: (width: number) => void;
     setStrokeColor: (strokeColor: string) => void;
     setStrokeWidth: (strokeWidth: number) => void;
     setStrokeDash: (strokeDash: number[]) => void;
     startLine: (x: number, y: number) => void;
     appendLinePoint: (x: number, y: number) => void;
+    appendEraserPoint: (x: number, y: number) => number[] | null;
     clearCurrentLine: () => void;
     consumeCurrentLine: () => number[];
 }
@@ -24,6 +32,8 @@ export const useControllerStore =
         ? window.__CONTROLLER_STORE__
         : create<ControllerState>()((set, get) => ({
               isDrawing: false,
+              isErasing: false,
+              eraserWidth: ERASER_DEFAULT_WIDTH,
               strokeColor: '#ff0000',
               strokeWidth: 10,
               strokeDash: [],
@@ -35,14 +45,18 @@ export const useControllerStore =
                       }
                       return {
                           isDrawing,
-                          currentLine: isDrawing ? s.currentLine : []
+                          isErasing: isDrawing ? false : s.isErasing,
+                          currentLine: []
                       };
                   }),
               toggleDrawing: () =>
                   set((s) => ({
                       isDrawing: !s.isDrawing,
-                      currentLine: s.isDrawing ? [] : s.currentLine
+                      isErasing: false,
+                      currentLine: []
                   })),
+              setErasing: (isErasing) => set({ isErasing, isDrawing: false, currentLine: [] }),
+              setEraserWidth: (width) => set({ eraserWidth: clampEraserWidth(width) }),
               setStrokeColor: (strokeColor) => set({ strokeColor }),
               setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
               setStrokeDash: (strokeDash) => set({ strokeDash }),
@@ -51,6 +65,22 @@ export const useControllerStore =
                   set((s) => ({
                       currentLine: s.currentLine.concat([Math.round(x), Math.round(y)])
                   })),
+              appendEraserPoint: (x, y) => {
+                  const currentLine = get().currentLine;
+                  const roundedX = Math.round(x);
+                  const roundedY = Math.round(y);
+                  if (
+                      currentLine[currentLine.length - 2] === roundedX &&
+                      currentLine[currentLine.length - 1] === roundedY
+                  ) {
+                      return null;
+                  }
+
+                  const path = [...currentLine];
+                  const batch = appendBoundedEraserPoint(path, roundedX, roundedY);
+                  set({ currentLine: path });
+                  return batch;
+              },
               clearCurrentLine: () =>
                   set((s) => (s.currentLine.length === 0 ? s : { currentLine: [] })),
               consumeCurrentLine: () => {

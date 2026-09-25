@@ -1,8 +1,9 @@
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
-import { Circle, KonvaNodeEvents, Layer, Line, Rect, Stage } from 'react-konva';
+import { Circle, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
@@ -10,11 +11,18 @@ import { useEditorStore } from '~/lib/editorStore';
 type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
     stageScaleFactor: number;
+    onScrollTo: (scrollLeft: number) => void;
+    onWheel: (e: KonvaEventObject<WheelEvent>) => void;
 };
 
 const PREVIEW_SCALE = 0.15;
 
-export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps) {
+export function SlatePreview({
+    stageSlot,
+    stageScaleFactor,
+    onScrollTo,
+    onWheel
+}: SlatePreviewProps) {
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
@@ -49,19 +57,8 @@ export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps)
         if (x < 0) e.target.x(0);
         if (x > logicalStageWidth - e.target.width())
             e.target.x(logicalStageWidth - e.target.width());
-        const slot = stageSlot.current;
-        if (slot) {
-            // oxlint-disable-next-line react-hooks-js/immutability
-            slot.scrollLeft = x * safeStageScaleFactor;
-        }
+        onScrollTo(x * safeStageScaleFactor);
         e.target.y(0);
-    };
-
-    const handlePreviewWheel = (e: KonvaEventObject<WheelEvent>) => {
-        e.evt.preventDefault();
-        const slot = stageSlot.current;
-        if (!slot) return;
-        slot.scrollLeft += e.evt.deltaX + e.evt.deltaY;
     };
 
     return (
@@ -71,7 +68,7 @@ export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps)
                 height={logicalStageHeight * previewScale}
                 scaleX={previewScale}
                 scaleY={previewScale}
-                onWheel={handlePreviewWheel}
+                onWheel={onWheel}
                 onClick={(e) => {
                     let x =
                         (e.target.getStage()?.getPointerPosition()?.x ?? 0) / previewScale -
@@ -80,11 +77,7 @@ export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps)
                     if (x > logicalStageWidth - logicalCanvasWidth)
                         x = logicalStageWidth - logicalCanvasWidth;
                     setScrollLeft(x * safeStageScaleFactor);
-                    const slot = stageSlot.current;
-                    if (slot) {
-                        // oxlint-disable-next-line react-hooks-js/immutability
-                        slot.scrollLeft = x * safeStageScaleFactor;
-                    }
+                    onScrollTo(x * safeStageScaleFactor);
                 }}
                 className="m-auto block w-fit cursor-pointer bg-[#222]"
             >
@@ -95,16 +88,10 @@ export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps)
                         .map((shape) => {
                             if (shape.type === 'line')
                                 return (
-                                    <Line
+                                    <KonvaLineSegments
                                         key={`lin_${shape.numericId}`}
-                                        points={shape.line}
-                                        stroke={shape.strokeColor}
+                                        layer={shape}
                                         strokeWidth={shape.strokeWidth * 2}
-                                        dash={shape.strokeDash}
-                                        dashEnabled={true}
-                                        tension={0.4}
-                                        lineCap="round"
-                                        lineJoin="round"
                                     />
                                 );
                             if (shape.type === 'shape') {
