@@ -1,7 +1,13 @@
 import '@tanstack/react-start/server-only';
 import type { Binary, ObjectId } from 'mongodb';
 
-import type { CollaboratorRole, ProjectStage, ProjectVisibility, StageLayout } from './schema';
+import type {
+    CollaboratorRole,
+    ImageDeepZoomAsset,
+    ProjectStage,
+    ProjectVisibility,
+    StageLayout
+} from './schema';
 
 export type { ProjectStage, StageLayout };
 
@@ -103,6 +109,10 @@ export interface AssetDocument {
     mimeType?: string | null;
     blurhash?: string | null;
     previewUrl?: string | null;
+    /** New tiled uploads only. Missing means the existing image processing path. */
+    deepZoom?: ImageDeepZoomAsset;
+    /** Internal queue identity for new tiled uploads; never derived for legacy assets. */
+    deepZoomJobId?: string;
     sizes?: number[] | null;
     public?: boolean | null;
     /** Set on auto-generated assets (e.g. web screenshots) to exclude from library listings */

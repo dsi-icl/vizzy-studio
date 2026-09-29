@@ -1,8 +1,9 @@
 import '@tanstack/react-start/server-only';
-import type { Db, Document, FindOptions, ObjectId } from 'mongodb';
+import type { ClientSession, Db, Document, FindOptions, ObjectId } from 'mongodb';
 import { ObjectId as OID } from 'mongodb';
 
 import type { AssetDocument } from '../documents';
+import type { ImageDeepZoomAsset } from '../schema';
 import { type MigrationMap, type PublicDoc, toEpoch, BaseCollection } from './_base';
 
 type AssetInsertData = Omit<AssetDocument, '_id' | 'id' | 'createdAt' | 'updatedAt' | '_version'>;
@@ -22,6 +23,49 @@ export class AssetsCollection extends BaseCollection<AssetDocument> {
 
     constructor(db: Db) {
         super(db.collection('assets'));
+    }
+
+    /** Only the transactional tiled-upload path supplies a deterministic id. */
+    async insertDeepZoomUpload(id: string, data: AssetInsertData, session: ClientSession) {
+        const now = Date.now();
+        const doc = {
+            _id: new OID(id),
+            ...this.toRaw(data),
+            deepZoomJobId: id,
+            createdAt: now,
+            updatedAt: now,
+            _version: this.currentVersion
+        };
+        await this.raw.insertOne(doc, { session });
+        return this.expose(this.fromDB(doc));
+    }
+
+    async findDeepZoomUpload(id: string, session?: ClientSession) {
+        const record = await this.raw.findOne(
+            { _id: new OID(id), deepZoomJobId: id, deepZoom: { $exists: true } },
+            { session }
+        );
+        return record ? this.expose(this.fromDB(record)) : null;
+    }
+
+    /** The caller fences this update with the matching job lease in the same transaction. */
+    async updateDeepZoomJob(
+        id: string,
+        deepZoom: ImageDeepZoomAsset,
+        fields: { previewUrl?: string; blurhash?: string },
+        session: ClientSession
+    ) {
+        const result = await this.raw.updateOne(
+            {
+                _id: new OID(id),
+                deepZoomJobId: id,
+                deletedAt: { $exists: false },
+                'deepZoom.status': { $ne: 'ready' }
+            },
+            { $set: { deepZoom, ...fields, updatedAt: Date.now() } },
+            { session }
+        );
+        return result.matchedCount === 1;
     }
 
     protected fromDB(doc: Document): AssetDocument {
@@ -68,7 +112,14 @@ export class AssetsCollection extends BaseCollection<AssetDocument> {
     ): Promise<PublicDoc<AssetDocument>[]> {
         if (urls.length === 0) return [];
         const filter: Record<string, unknown> = {
-            url: { $in: urls },
+            $and: [
+                {
+                    $or: [
+                        { url: { $in: urls } },
+                        { deepZoom: { $exists: true }, previewUrl: { $in: urls } }
+                    ]
+                }
+            ],
             hidden: { $ne: true },
             $or: [{ projectId: new OID(projectId) }, { public: true }]
         };
