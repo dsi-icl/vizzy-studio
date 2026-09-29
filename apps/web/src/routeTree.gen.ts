@@ -53,6 +53,7 @@ import { Route as AdminWallsIndexRouteImport } from './routes/admin/walls/index'
 import { Route as AdminWallsWallIdRouteRouteImport } from './routes/admin/walls/$wallId/route'
 import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiImageTilesSplatRouteImport } from './routes/api/image-tiles/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
 import { Route as AuthQuarryProjectsProjectIdRouteRouteImport } from './routes/_auth/quarry/projects/$projectId/route'
@@ -293,6 +294,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiImageTilesSplatRoute = ApiImageTilesSplatRouteImport.update({
+  id: '/api/image-tiles/$',
+  path: '/api/image-tiles/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/api/uploads/$',
   path: '/api/uploads/$',
@@ -452,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/quarry/': typeof AuthQuarryIndexRoute
@@ -514,6 +521,7 @@ export interface FileRoutesByTo {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/quarry': typeof AuthQuarryIndexRoute
@@ -581,6 +589,7 @@ export interface FileRoutesById {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/_auth/quarry/': typeof AuthQuarryIndexRoute
@@ -648,6 +657,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
     | '/quarry/'
@@ -710,6 +720,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
     | '/quarry'
@@ -776,6 +787,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
     | '/_auth/quarry/'
@@ -829,6 +841,7 @@ export interface RootRouteChildren {
   WallIndexRoute: typeof WallIndexRoute
   ApiAssetsUriRoute: typeof ApiAssetsUriRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiImageTilesSplatRoute: typeof ApiImageTilesSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
@@ -1145,6 +1158,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/image-tiles/$': {
+      id: '/api/image-tiles/$'
+      path: '/api/image-tiles/$'
+      fullPath: '/api/image-tiles/$'
+      preLoaderRoute: typeof ApiImageTilesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads/$': {
@@ -1493,6 +1513,7 @@ const rootRouteChildren: RootRouteChildren = {
   WallIndexRoute: WallIndexRoute,
   ApiAssetsUriRoute: ApiAssetsUriRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiImageTilesSplatRoute: ApiImageTilesSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
