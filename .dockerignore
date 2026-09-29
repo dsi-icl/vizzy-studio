@@ -18,6 +18,7 @@ dist
 **/.wrangler
 **/.vercel
 **/.cache
+**/.data
 apps/web/.uploads
 apps/web/.tmp
 apps/web/public/assets
