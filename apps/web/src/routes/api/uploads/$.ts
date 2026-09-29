@@ -2,6 +2,7 @@ import { copyFile, open, stat, unlink } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { extname, join } from 'node:path';
 
+import { env } from '@repo/env';
 import { createFileRoute } from '@tanstack/react-router';
 import { FileStore } from '@tus/file-store';
 import { Server } from '@tus/server';
@@ -13,8 +14,10 @@ import {
     SUPPORTED_VIDEO_EXTS
 } from '~/lib/assetMime';
 import { PUBLIC_ASSET_PROJECT_ID } from '~/lib/constants';
-import { enqueueJob } from '~/lib/jobs/repo';
+import { readImageTileSettings } from '~/lib/jobs/imageTileRuntime';
+import { finalizeImageTileUpload, findAcceptedImageTileUpload, enqueueJob } from '~/lib/jobs/repo';
 import { jobSignalBus } from '~/lib/jobs/signalBus';
+import { readImageUploadPolicy, inspectNewImageUpload } from '~/lib/serverAssetUtils';
 import { UPLOAD_DIR, TMP_DIR, ASSET_DIR } from '~/lib/serverVariables';
 import { validateUploadToken } from '~/lib/uploadTokens';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
@@ -139,6 +142,7 @@ const tusServer = new Server({
         const tusFilePath = join(UPLOAD_DIR, upload.id);
         const uploaderIp = getClientIpFromHeaders(req.headers);
 
+        let retainTusSource = false;
         const auditExecutionContext = {
             surface: 'http' as const,
             operation: 'tus.onUploadFinish',
@@ -204,6 +208,10 @@ const tusServer = new Server({
                 throw new Error('Upload finalize rate limit exceeded');
             }
 
+            // A successful Deep Zoom finalize is idempotent even after its Tus
+            // source was cleaned or the new-upload gate has since been closed.
+            if (await findAcceptedImageTileUpload(projectId, upload.id, userEmail)) return {};
+
             // Detect type via magic bytes
             const headerBytes = await readHeaderBytes(tusFilePath, 48);
             const detectedType = detectMediaType(headerBytes);
@@ -226,33 +234,56 @@ const tusServer = new Server({
             let blurhash: string | null = null;
             let mimeType: string | null = null;
             let sizes: number[] = [];
+            let tiledAsset: Awaited<ReturnType<typeof finalizeImageTileUpload>> | null = null;
 
             if (isImage) {
                 // ── Image: copy with upload.id-based name ──
                 assetFilename = `${upload.id}${ext}`;
                 const finalPath = join(ASSET_DIR, assetFilename);
-                await copyFile(tusFilePath, finalPath);
-
                 mimeType = ASSET_MIME_TYPES[ext] ?? `image/${ext.slice(1)}`;
-                const imageJobId = await enqueueJob({
-                    nodeId: LOCAL_NODE_ID,
-                    type: 'process_image_asset',
-                    payload: {
+                const policy = readImageUploadPolicy(env);
+                const plan = await inspectNewImageUpload(tusFilePath, policy);
+                if (plan.kind === 'deep-zoom' && policy.enabled) {
+                    const settings = readImageTileSettings(env);
+                    retainTusSource = true;
+                    tiledAsset = await finalizeImageTileUpload({
                         uploadId: upload.id,
-                        sourceExt: ext,
-                        sourceFilename: assetFilename
+                        projectId,
+                        createdBy: userEmail,
+                        name: originalName,
+                        filename: assetFilename,
+                        sourcePath: tusFilePath,
+                        mimeType,
+                        width: plan.width,
+                        height: plan.height,
+                        maxPixels: policy.maxPixels,
+                        settings
+                    });
+                    // Asset + job are durable together. The tiled branch never
+                    // waits for slicing, even with legacy STRICT_BLOCKING on.
+                    retainTusSource = false;
+                } else {
+                    await copyFile(tusFilePath, finalPath);
+                    const imageJobId = await enqueueJob({
+                        nodeId: LOCAL_NODE_ID,
+                        type: 'process_image_asset',
+                        payload: {
+                            uploadId: upload.id,
+                            sourceExt: ext,
+                            sourceFilename: assetFilename
+                        }
+                    });
+                    if (STRICT_BLOCKING) {
+                        const imageJob = await jobSignalBus.waitForTerminal(imageJobId);
+                        if (imageJob.status !== 'completed') {
+                            throw new Error(imageJob.error || 'Image processing job failed');
+                        }
+                        const result = imageJob.result as
+                            | { blurhash?: string; sizes?: number[] }
+                            | undefined;
+                        blurhash = result?.blurhash ?? null;
+                        sizes = result?.sizes ?? [];
                     }
-                });
-                if (STRICT_BLOCKING) {
-                    const imageJob = await jobSignalBus.waitForTerminal(imageJobId);
-                    if (imageJob.status !== 'completed') {
-                        throw new Error(imageJob.error || 'Image processing job failed');
-                    }
-                    const result = imageJob.result as
-                        | { blurhash?: string; sizes?: number[] }
-                        | undefined;
-                    blurhash = result?.blurhash ?? null;
-                    sizes = result?.sizes ?? [];
                 }
             } else if (isVideo) {
                 // ── Video: transcode + generate preview ──
@@ -306,18 +337,20 @@ const tusServer = new Server({
                     0;
 
                 const isPublicAsset = projectId === PUBLIC_ASSET_PROJECT_ID;
-                const created = await dbCol.assets.insert({
-                    projectId,
-                    name: originalName,
-                    url: assetFilename,
-                    size: fileSize,
-                    mimeType,
-                    blurhash,
-                    previewUrl: previewFilename ?? undefined,
-                    sizes: sizes.length > 0 ? sizes : undefined,
-                    public: isPublicAsset,
-                    createdBy: userEmail
-                });
+                const created =
+                    tiledAsset ??
+                    (await dbCol.assets.insert({
+                        projectId,
+                        name: originalName,
+                        url: assetFilename,
+                        size: fileSize,
+                        mimeType,
+                        blurhash,
+                        previewUrl: previewFilename ?? undefined,
+                        sizes: sizes.length > 0 ? sizes : undefined,
+                        public: isPublicAsset,
+                        createdBy: userEmail
+                    }));
                 await logAuditSuccess({
                     action: 'UPLOAD_FINALIZED',
                     actorId: userEmail,
@@ -346,6 +379,7 @@ const tusServer = new Server({
                         blurhash: blurhash ?? undefined,
                         previewUrl: previewFilename ?? undefined,
                         sizes: sizes.length > 0 ? sizes : undefined,
+                        deepZoom: created.deepZoom,
                         createdAt: String(Date.now()),
                         createdBy: userEmail
                     });
@@ -370,7 +404,7 @@ const tusServer = new Server({
             throw err instanceof Error ? err : new Error(String(err));
         } finally {
             // Clean up the raw tus upload (keep .json metadata for reference)
-            await unlink(tusFilePath).catch(() => {});
+            if (!retainTusSource) await unlink(tusFilePath).catch(() => {});
         }
     }
 });
