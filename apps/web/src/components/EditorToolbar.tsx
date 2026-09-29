@@ -238,9 +238,12 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     >
                         <TextTIcon />
                     </TipButton>
-                    {/* TODO: Switcher to guarding by "tester" role once multi-role is implemented */}
-                    {isAdmin ? (
-                        <TipButton tip="Add map layer" onClick={addMapLayer}>
+                    {user ? (
+                        <TipButton
+                            tip="Add map layer"
+                            aria-label="Add map layer"
+                            onClick={addMapLayer}
+                        >
                             <MapPinIcon />
                         </TipButton>
                     ) : null}
