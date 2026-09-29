@@ -65,6 +65,7 @@ function MobileUpload() {
             if (selectedFiles.length === 0 || !token) return;
             scrubInsecureTusResumeEntries();
 
+            const shouldAttachHandlers = !uppyRef.current;
             const uppy =
                 uppyRef.current ??
                 new Uppy({
@@ -101,34 +102,44 @@ function MobileUpload() {
 
             setFiles((prev) => [...prev, ...newEntries]);
 
-            uppy.on('upload-progress', (file, progress) => {
-                if (!file || !progress.bytesTotal) return;
-                const pct = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
-                setFiles((prev) =>
-                    prev.map((f) => (f.name === file.name ? { ...f, progress: pct } : f))
-                );
-            });
+            if (shouldAttachHandlers) {
+                uppy.on('upload-progress', (file, progress) => {
+                    if (!file || !progress.bytesTotal) return;
+                    const pct = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
+                    setFiles((prev) =>
+                        prev.map((f) => (f.name === file.name ? { ...f, progress: pct } : f))
+                    );
+                });
 
-            uppy.on('upload-success', (file) => {
-                if (!file) return;
-                setFiles((prev) =>
-                    prev.map((f) =>
-                        f.name === file.name ? { ...f, progress: 100, status: 'complete' } : f
-                    )
-                );
-                setTotalComplete((c) => c + 1);
-            });
+                uppy.on('upload-success', (file) => {
+                    if (!file) return;
+                    setFiles((prev) =>
+                        prev.map((f) =>
+                            f.name === file.name ? { ...f, progress: 100, status: 'complete' } : f
+                        )
+                    );
+                    setTotalComplete((c) => c + 1);
+                });
 
-            uppy.on('upload-error', (file) => {
-                if (!file) return;
-                setFiles((prev) =>
-                    prev.map((f) => (f.name === file.name ? { ...f, status: 'error' } : f))
-                );
-            });
+                uppy.on('upload-error', (file) => {
+                    if (!file) return;
+                    setFiles((prev) =>
+                        prev.map((f) => (f.name === file.name ? { ...f, status: 'error' } : f))
+                    );
+                });
+            }
 
             uppy.upload();
         },
         [projectId, userEmail, token]
+    );
+
+    useEffect(
+        () => () => {
+            uppyRef.current?.destroy();
+            uppyRef.current = null;
+        },
+        [projectId, token]
     );
 
     const handleFileInput = useCallback(

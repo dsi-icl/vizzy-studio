@@ -39,6 +39,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { AssetLibrary } from '~/components/AssetLibrary';
 import { AssetPreviewPortal, isVideoAsset } from '~/components/AssetPreviewOverlay';
+import { assetPickerFilename } from '~/lib/mediaUtils';
 import { z } from '~/lib/zod';
 import {
     projectAssetsQueryOptions,
@@ -575,7 +576,9 @@ export function ProjectForm({
                                         heroSelectionDraft ?? getNormalizedHeroSelection()
                                     }
                                     includeSelectedSoftDeletedInPicker={true}
-                                    onSelectAsset={(asset) => toggleHeroImage(asset.url)}
+                                    onSelectAsset={(asset) =>
+                                        toggleHeroImage(assetPickerFilename(asset))
+                                    }
                                 />
                             </div>
                         ) : (
