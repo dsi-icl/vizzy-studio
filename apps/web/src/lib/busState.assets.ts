@@ -12,14 +12,20 @@ export { broadcastAssetToEditorsByProject };
 
 function startAssetChangeStream() {
     try {
-        const changeStream = dbCol.assets.watch([{ $match: { operationType: 'insert' } }], {
-            fullDocument: 'updateLookup'
-        });
+        const changeStream = dbCol.assets.watch(
+            [{ $match: { operationType: { $in: ['insert', 'update', 'replace'] } } }],
+            {
+                fullDocument: 'updateLookup'
+            }
+        );
 
         changeStream.on('change', (change: ChangeStreamDocument) => {
-            if (change.operationType === 'insert' && change.fullDocument) {
+            if ('fullDocument' in change && change.fullDocument) {
                 const rawAsset = change.fullDocument;
-                if (rawAsset.hidden) return;
+                if (rawAsset.hidden || rawAsset.deletedAt != null) return;
+                // asset_added is the existing resource-list invalidation signal.
+                // Reuse it for tile status updates; never upsert a layer here.
+                if (change.operationType !== 'insert' && !rawAsset.deepZoom) return;
                 broadcastAssetToEditorsByProject(String(rawAsset.projectId), {
                     id: String(rawAsset._id),
                     name: rawAsset.name,
@@ -30,6 +36,8 @@ function startAssetChangeStream() {
                     mimeType: rawAsset.mimeType ?? undefined,
                     blurhash: rawAsset.blurhash ?? undefined,
                     previewUrl: rawAsset.previewUrl ?? undefined,
+                    deepZoom: rawAsset.deepZoom,
+                    sizes: rawAsset.sizes ?? undefined,
                     createdAt: String(rawAsset.createdAt),
                     createdBy: String(rawAsset.createdBy)
                 });
