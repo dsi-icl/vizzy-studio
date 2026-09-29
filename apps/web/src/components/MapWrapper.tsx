@@ -25,6 +25,7 @@ type MapWrapperProps = {
     layer: MapLayer;
     projectId: string;
     onIdle?: MapProps['onIdle'];
+    onRender?: MapProps['onRender'];
 } & RefAttributes<HTMLDivElement> &
     Partial<HTMLAttributes<HTMLDivElement>>;
 
@@ -39,6 +40,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     layer,
     projectId,
     onIdle,
+    onRender,
     style,
     ...props
 }) => {
@@ -105,6 +107,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
                 attributionControl={false}
                 transformRequest={transformRequest}
                 onIdle={onIdle}
+                onRender={onRender}
                 onLoad={(event) => {
                     event.target.setVerticalFieldOfView(10);
                 }}

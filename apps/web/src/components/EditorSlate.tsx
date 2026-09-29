@@ -26,6 +26,7 @@ import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/Asset
 import { EditorMapOverlay } from '~/components/EditorMapOverlay';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaMapLayer } from '~/components/KonvaMapLayer';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -938,6 +939,12 @@ export function EditorSlate() {
 
         if (layer.type === 'map') {
             // MapWrapper is DOM, so drag/resize needs React state updates while Konva moves.
+            // Keep the original geometry before mirroring it. Otherwise transform
+            // end compares the final node against this same live config and skips
+            // the upsert that makes the change persist beyond the binary preview.
+            if (!node.getAttr('preTransformConfig')) {
+                node.setAttr('preTransformConfig', { ...layer.config });
+            }
             const mirroredConfig: Layer['config'] = {
                 ...layer.config,
                 cx: Math.round(node.x()),
@@ -1085,7 +1092,7 @@ export function EditorSlate() {
                 node.scaleY(updatedConfig.scaleY);
             }
 
-            // A text reflow has already mirrored the live geometry onto the stored
+            // Text reflow and map transforms mirror the live geometry onto the stored
             // config, so that copy is no baseline; fall back to it only when no
             // mirror ran, where it is still the pre-interaction geometry.
             const prevConfig =
@@ -1463,31 +1470,6 @@ export function EditorSlate() {
                             height: stagePixelHeight
                         }}
                     >
-                        {visibleMapLayers.length > 0 && (
-                            <Stage
-                                width={stagePixelWidth}
-                                height={stagePixelHeight}
-                                scaleX={stageScaleFactor}
-                                scaleY={stageScaleFactor}
-                                style={{
-                                    position: 'absolute',
-                                    inset: 0,
-                                    pointerEvents: 'none',
-                                    zIndex: 0
-                                }}
-                            >
-                                <FastLayer listening={false}>
-                                    {backgroundLayer ? (
-                                        <KonvaBackgroundLayer
-                                            key={`bg_${backgroundLayer.numericId}`}
-                                            layer={backgroundLayer}
-                                            previewScale={stageScaleFactor}
-                                            layout={stageLayout}
-                                        />
-                                    ) : null}
-                                </FastLayer>
-                            </Stage>
-                        )}
                         <div
                             aria-hidden="true"
                             style={{
@@ -1504,9 +1486,6 @@ export function EditorSlate() {
                                           layer={layer}
                                           projectId={projectId}
                                           previewKey={`${slideScopeKey}/${layer.numericId}`}
-                                          selected={selectedLayerIdSet.has(
-                                              layer.numericId.toString()
-                                          )}
                                           stageScaleFactor={stageScaleFactor}
                                       />
                                   ))
@@ -1532,18 +1511,16 @@ export function EditorSlate() {
                                 zIndex: 2
                             }}
                         >
-                            {visibleMapLayers.length === 0 && (
-                                <FastLayer listening={false}>
-                                    {backgroundLayer ? (
-                                        <KonvaBackgroundLayer
-                                            key={`bg_${backgroundLayer.numericId}`}
-                                            layer={backgroundLayer}
-                                            previewScale={stageScaleFactor}
-                                            layout={stageLayout}
-                                        />
-                                    ) : null}
-                                </FastLayer>
-                            )}
+                            <FastLayer listening={false}>
+                                {backgroundLayer ? (
+                                    <KonvaBackgroundLayer
+                                        key={`bg_${backgroundLayer.numericId}`}
+                                        layer={backgroundLayer}
+                                        previewScale={stageScaleFactor}
+                                        layout={stageLayout}
+                                    />
+                                ) : null}
+                            </FastLayer>
                             <KonvaLayer>
                                 {/* oxlint-disable-next-line react-hooks-js/refs */}
                                 {foregroundLayers.map((layer) => {
@@ -1622,39 +1599,12 @@ export function EditorSlate() {
                                     }
                                     if (layer.type === 'map') {
                                         return (
-                                            <Rect
+                                            <KonvaMapLayer
                                                 key={`map_${layer.numericId}`}
                                                 layer={layer}
-                                                fill="rgba(0, 161, 255, 0.01)"
-                                                stroke={
-                                                    isSelected
-                                                        ? 'rgba(0, 161, 255, 0.9)'
-                                                        : 'rgba(255, 255, 255, 0.22)'
-                                                }
-                                                strokeWidth={2}
-                                                id={layer.numericId.toString()}
-                                                x={layer.config.cx}
-                                                y={layer.config.cy}
-                                                width={layer.config.width}
-                                                height={layer.config.height}
-                                                scaleX={layer.config.scaleX}
-                                                scaleY={layer.config.scaleY}
-                                                offsetX={layer.config.width / 2}
-                                                offsetY={layer.config.height / 2}
-                                                rotation={layer.config.rotation}
-                                                opacity={hiddenOpacity}
-                                                listening={props.listening}
-                                                draggable={
-                                                    !props.isDrawing &&
-                                                    !props.isPinching &&
-                                                    !props.isLocked
-                                                }
-                                                onClick={props.onSelect}
-                                                onTap={props.onSelect}
-                                                onDragMove={props.onTransform}
-                                                onTransform={props.onTransform}
-                                                onDragEnd={props.onTransformEnd}
-                                                onTransformEnd={props.onTransformEnd}
+                                                previewKey={`${slideScopeKey}/${layer.numericId}`}
+                                                selected={isSelected}
+                                                {...props}
                                             />
                                         );
                                     }

@@ -298,7 +298,7 @@ async function writeScope(
             return { success: true };
         }
 
-        // Manual save: create immutable snapshot, then pointer-swap HEAD's parentId
+        // Manual save: create an immutable snapshot and persist the same working copy.
         // Preserve HEAD's current parentId chain on the snapshot
         const currentHead = await dbCol.commits.findById(headId);
         if (!currentHead) return { success: false, error: 'HEAD commit not found' };
@@ -316,8 +316,10 @@ async function writeScope(
             isMutableHead: false
         });
 
-        // Pointer swap: HEAD now points at the snapshot
-        await dbCol.commits.setParent(headId, snapshot.id);
+        // Reloads seed from HEAD, not its parent snapshot. Update both its layers
+        // and snapshot pointer before clearing dirty, otherwise autosave skips
+        // the new content and a fresh scope restores the old map/layer values.
+        await dbCol.commits.saveHeadSnapshot(headId, snapshot.id, updatedSlides);
 
         markScopePersisted(scope, persistedRevision);
         return { success: true, commitId: snapshot.id };
