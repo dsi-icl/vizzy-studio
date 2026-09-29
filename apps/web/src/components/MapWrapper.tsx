@@ -2,8 +2,16 @@
 
 import { MapboxOverlay, type MapboxOverlayProps } from '@deck.gl/mapbox';
 import type { StyleSpecification } from 'maplibre-gl';
-import { useCallback, useMemo, type FC, type HTMLAttributes, type RefAttributes } from 'react';
-import Map, { type MapProps, useControl } from 'react-map-gl/maplibre';
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    type FC,
+    type HTMLAttributes,
+    type RefAttributes
+} from 'react';
+import Map, { type MapProps, type MapRef, useControl } from 'react-map-gl/maplibre';
 
 import { setRefs } from '~/lib/setRefs';
 import { DEFAULT_MAP_STYLE_ID, type Layer, type MapStyleId } from '~/lib/types';
@@ -26,6 +34,7 @@ type MapWrapperProps = {
     projectId: string;
     onIdle?: MapProps['onIdle'];
     onRender?: MapProps['onRender'];
+    pixelRatio?: number;
 } & RefAttributes<HTMLDivElement> &
     Partial<HTMLAttributes<HTMLDivElement>>;
 
@@ -41,9 +50,23 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     projectId,
     onIdle,
     onRender,
+    pixelRatio,
     style,
     ...props
 }) => {
+    // Render the authored editor viewport, then enlarge it to the layer bounds.
+    // Camera zoom alone cannot preserve framing across different viewport sizes.
+    const viewportScale = layer.viewportScale ?? 1;
+    const mapPixelRatio =
+        (pixelRatio ?? (typeof window === 'undefined' ? 1 : window.devicePixelRatio)) /
+        viewportScale;
+    const mapRef = useRef<MapRef>(null);
+    useEffect(() => {
+        // react-map-gl only applies pixelRatio when the map is constructed.
+        // Update the backing resolution when the editor preview is zoomed.
+        mapRef.current?.setPixelRatio(mapPixelRatio);
+    }, [mapPixelRatio]);
+
     const styleId = layer.style ?? DEFAULT_MAP_STYLE_ID;
     const tileUrl = useMemo(() => {
         const path = `/api/projects/${encodeURIComponent(projectId)}/tiles/protomaps/{z}/{x}/{y}`;
@@ -95,8 +118,10 @@ export const MapWrapper: FC<MapWrapperProps> = ({
             }}
         >
             <Map
+                ref={mapRef}
                 key={`${styleId}:${tileUrl}`}
                 mapStyle={mapStyle}
+                pixelRatio={mapPixelRatio}
                 interactive={false}
                 longitude={layer.view.longitude}
                 latitude={layer.view.latitude}
@@ -116,7 +141,15 @@ export const MapWrapper: FC<MapWrapperProps> = ({
                         console.warn('[MapWrapper]', event.error);
                     }
                 }}
-                style={{ position: 'absolute', inset: '0px' }}
+                style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: `${viewportScale * 100}%`,
+                    height: `${viewportScale * 100}%`,
+                    transform: `scale(${1 / viewportScale})`,
+                    transformOrigin: 'top left'
+                }}
             >
                 <DeckGLOverlay layers={deckLayers} interleaved />
             </Map>

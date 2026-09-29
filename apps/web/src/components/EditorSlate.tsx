@@ -86,6 +86,8 @@ export function EditorSlate() {
     const isDrawing = useEditorStore((s) => s.isDrawing);
     const isSnapping = useEditorStore((s) => s.isSnapping);
     const projectId = useEditorStore((s) => s.projectId);
+    const loading = useEditorStore((s) => s.loading);
+    const connectionStatus = useEditorStore((s) => s.connectionStatus);
     const addLineLayer = useEditorStore((s) => s.addLineLayer);
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
@@ -396,6 +398,51 @@ export function EditorSlate() {
 
         return () => observer.disconnect();
     }, [rows, screenHeight]);
+
+    useEffect(() => {
+        if (!engine || loading || connectionStatus !== 'connected') return;
+        if (
+            !Array.from(layers.values()).some(
+                (layer) => layer.type === 'map' && layer.viewportScale === undefined
+            )
+        )
+            return;
+
+        // Older maps did not save the editor viewport used by their camera.
+        // Capture the measured authoring scale once, before wall rendering, and
+        // persist it with the layer. Resizing the editor must not reframe the map.
+        const frameId = requestAnimationFrame(() => {
+            const availableHeight = stageSlot.current?.clientHeight ?? 0;
+            if (availableHeight <= 0) return;
+            const viewportScale = Math.max(0.01, availableHeight / (screenHeight * rows));
+            const store = useEditorStore.getState();
+            if (
+                store.loading ||
+                `${store.projectId}/${store.commitId}/${store.activeSlideId}` !== slideScopeKey
+            )
+                return;
+            const updatedLayers = new Map(store.layers);
+            const mapsToUpdate: EditorMapLayer[] = [];
+            for (const layer of store.layers.values()) {
+                if (layer.type !== 'map' || layer.viewportScale !== undefined) continue;
+                const updatedLayer = { ...layer, viewportScale };
+                updatedLayers.set(layer.numericId, updatedLayer);
+                mapsToUpdate.push(updatedLayer);
+            }
+            if (mapsToUpdate.length === 0) return;
+
+            useEditorStore.setState({ layers: updatedLayers });
+            for (const layer of mapsToUpdate) {
+                engine.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'editor:map_viewport',
+                    layer
+                });
+            }
+            store.markDirty();
+        });
+        return () => cancelAnimationFrame(frameId);
+    }, [engine, loading, connectionStatus, layers, slideScopeKey, rows, screenHeight]);
 
     useEffect(() => {
         const slot = stageSlot.current;

@@ -28,8 +28,16 @@ export function EditorMapOverlay({
     );
     useEffect(() => () => removeMapPreview(previewKey), [previewKey]);
 
-    // Render MapLibre at the displayed resolution, but composite its frames in
-    // Konva so maps can appear both above and below the other editor layers.
+    // Preserve the original editor framing until EditorSlate saves its reference
+    // scale. Subsequent preview resizing changes resolution, not the map's view.
+    const authoredLayer = {
+        ...layer,
+        viewportScale: layer.viewportScale ?? stageScaleFactor
+    };
+    const pixelRatio = Math.max(
+        stageScaleFactor * (typeof window === 'undefined' ? 1 : window.devicePixelRatio),
+        1 / Math.max(1, Math.min(layer.config.width, layer.config.height))
+    );
     return (
         <div
             style={{
@@ -44,14 +52,17 @@ export function EditorMapOverlay({
             }}
         >
             <MapWrapper
-                layer={layer}
+                layer={authoredLayer}
                 projectId={projectId}
                 onIdle={capturePreview}
                 onRender={captureFrame}
+                pixelRatio={pixelRatio}
                 style={{
                     position: 'relative',
-                    width: '100%',
-                    height: '100%'
+                    width: layer.config.width,
+                    height: layer.config.height,
+                    transform: `scale(${stageScaleFactor})`,
+                    transformOrigin: 'top left'
                 }}
             />
         </div>
