@@ -11,6 +11,8 @@
         "ui": "bunx shadcn@latest"
     },
     "dependencies": {
+        "@deck.gl/core": "catalog:",
+        "@deck.gl/geo-layers": "catalog:",
         "@dnd-kit/modifiers": "catalog:",
         "@dnd-kit/sortable": "catalog:",
         "@fontsource-variable/inter": "catalog:",
@@ -26,6 +28,7 @@
         "@lexical/table": "catalog:",
         "@lexical/utils": "catalog:",
         "@lexical/yjs": "catalog:",
+        "@math.gl/core": "catalog:",
         "@phosphor-icons/react": "catalog:",
         "@react-three/drei": "catalog:",
         "@react-three/fiber": "catalog:",
