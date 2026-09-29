@@ -138,6 +138,8 @@
         "deps:major": "bunx taze@latest major -Ilwr --peer",
         "dev": "turbo run dev",
         "dev:web": "turbo run dev --filter=@repo/web",
+        "martin:install": "node tooling/martin/local.mjs install",
+        "martin:dev": "node tooling/martin/local.mjs dev",
         "faviconize": "turbo run faviconize",
         "format": "oxfmt",
         "format:check": "oxfmt --check",
