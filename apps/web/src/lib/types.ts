@@ -157,6 +157,8 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('map'),
             style: z.enum(MAP_STYLE_IDS).default(DEFAULT_MAP_STYLE_ID),
+            /** Authoring viewport pixels per stage pixel; keeps editor framing on the wall. */
+            viewportScale: z.number().positive().optional(),
             view: z.object({
                 latitude: z.number(),
                 longitude: z.number(),
