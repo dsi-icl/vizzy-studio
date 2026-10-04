@@ -9,14 +9,12 @@ import { createFileRoute } from '@tanstack/react-router';
 import { createServerOnlyFn } from '@tanstack/react-start';
 
 import { ASSET_MIME_TYPES } from '~/lib/assetMime';
-import { PUBLIC_ASSET_PROJECT_ID } from '~/lib/constants';
 import { ASSET_DIR } from '~/lib/serverVariables';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { dbCol } from '~/server/collections';
-import { canViewProject } from '~/server/projectAuthz';
+import { authorizeAssetRead, resolveAssetAuthContext } from '~/server/projectAuthz';
 import { getClientIpFromHeaders } from '~/server/rateLimit';
 import type { AuthContext } from '~/server/requestAuthContext';
-import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
 const lastNotFoundAuditSeen = new Map<string, number>();
 
@@ -152,11 +150,6 @@ function parseVariantFilename(filename: string): { baseId: string; requested: nu
 
 function escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function normalizeProjectId(value: unknown): string | null {
-    if (typeof value === 'string' && value.length > 0) return value;
-    return null;
 }
 
 async function chooseVariantFallbackFilename(requestedFilename: string): Promise<string | null> {
@@ -392,18 +385,7 @@ export const Route = createFileRoute('/api/assets/$uri')({
         handlers: {
             GET: async ({ request, params, context }) => {
                 const { uri } = params ?? {};
-                let authContext: AuthContext = ((context ?? {}) as { authContext?: AuthContext })
-                    .authContext ?? { guest: true };
-                if (!authContext.user && !authContext.device) {
-                    const mediaCookieDevice = await resolveWallMediaCookieAuthContext(request);
-                    if (mediaCookieDevice) {
-                        authContext = {
-                            ...authContext,
-                            guest: undefined,
-                            device: mediaCookieDevice
-                        };
-                    }
-                }
+                const authContext = await resolveAssetAuthContext(request, context);
                 if (typeof uri !== 'string' || uri.length === 0) {
                     return logAssetNotFoundResponse({
                         request,
@@ -412,8 +394,6 @@ export const Route = createFileRoute('/api/assets/$uri')({
                     });
                 }
                 const requestedFilename = basename(decodeURIComponent(uri));
-                const user = authContext.user;
-                const device = authContext.device;
 
                 const assetRecord = await getAssetRecordForFilename(requestedFilename);
                 if (!assetRecord) {
@@ -426,98 +406,23 @@ export const Route = createFileRoute('/api/assets/$uri')({
                     });
                 }
 
-                const projectId = normalizeProjectId(assetRecord.projectId);
-                if (!projectId) {
-                    return logAssetNotFoundResponse({
+                const access = await authorizeAssetRead(assetRecord, authContext);
+                if (!access.allowed) {
+                    const denied = access.missing
+                        ? logAssetNotFoundResponse
+                        : logAssetDeniedResponse;
+                    return denied({
                         request,
                         authContext,
-                        reasonCode: 'ASSET_PROJECT_NOT_FOUND',
+                        reasonCode: access.reason,
+                        statusMessage: access.statusMessage,
+                        projectId: access.projectId,
                         resourceId: requestedFilename,
-                        statusMessage: 'Project Not Found'
+                        ...(access.details ? { details: access.details } : {})
                     });
                 }
-                const isPublicAsset =
-                    assetRecord.public === true || projectId === PUBLIC_ASSET_PROJECT_ID;
-                let cacheControl = 'public, max-age=31536000, immutable';
-
-                if (!isPublicAsset) {
-                    const project = await dbCol.projects.findById(projectId);
-                    if (!project || project.deletedAt) {
-                        return logAssetNotFoundResponse({
-                            request,
-                            authContext,
-                            reasonCode: 'ASSET_PROJECT_NOT_FOUND',
-                            projectId,
-                            resourceId: requestedFilename,
-                            statusMessage: 'Project Not Found'
-                        });
-                    }
-
-                    const hasPublishedStage = project.stages.some(
-                        ({ publishedCommitId }) => publishedCommitId
-                    );
-                    if (project.visibility !== 'public' || !hasPublishedStage) {
-                        cacheControl = 'private, max-age=31536000, immutable';
-                        if (!user && !device) {
-                            return logAssetDeniedResponse({
-                                request,
-                                authContext,
-                                reasonCode: 'UNAUTHORIZED_GUEST',
-                                projectId,
-                                resourceId: requestedFilename,
-                                statusMessage: 'Unauthorized Guest'
-                            });
-                        }
-
-                        if (user && user.role !== 'admin') {
-                            const allowed = await canViewProject(
-                                { email: user.email, role: user.role },
-                                projectId
-                            );
-                            if (!allowed && !device) {
-                                return logAssetDeniedResponse({
-                                    request,
-                                    authContext,
-                                    reasonCode: 'PROJECT_VIEW_FORBIDDEN',
-                                    projectId,
-                                    resourceId: requestedFilename,
-                                    statusMessage: 'Unauthorized'
-                                });
-                            }
-                        }
-
-                        if (device) {
-                            const deviceWallId =
-                                typeof device.wallId === 'string' && device.wallId.length > 0
-                                    ? device.wallId
-                                    : null;
-
-                            if (!deviceWallId) {
-                                return logAssetDeniedResponse({
-                                    request,
-                                    authContext,
-                                    reasonCode: 'DEVICE_WALL_ID_MISSING',
-                                    projectId,
-                                    resourceId: requestedFilename,
-                                    statusMessage: 'Unauthorized Device'
-                                });
-                            }
-
-                            const wall = await dbCol.walls.findByWallId(deviceWallId);
-                            if (!wall || wall.boundProjectId !== projectId) {
-                                return logAssetDeniedResponse({
-                                    request,
-                                    authContext,
-                                    reasonCode: 'DEVICE_WALL_NOT_BOUND_TO_PROJECT',
-                                    projectId,
-                                    resourceId: requestedFilename,
-                                    details: { wallId: deviceWallId },
-                                    statusMessage: 'Unauthorized Wall'
-                                });
-                            }
-                        }
-                    }
-                }
+                const projectId = access.projectId;
+                const cacheControl = `${access.public ? 'public' : 'private'}, max-age=31536000, immutable`;
 
                 const range = request.headers.get('range');
                 const ifNoneMatch = request.headers.get('if-none-match');

@@ -24,6 +24,18 @@ const RawEnvSchema = z.object({
     ASSET_DIR: z.string().optional(),
     CONTROLLER_DIR: z.string().optional(),
 
+    IMAGE_DEEP_ZOOM_UPLOADS_ENABLED: z.string().optional(),
+    IMAGE_DEEP_ZOOM_TILE_PIXELS: z.string().optional(),
+    IMAGE_DEEP_ZOOM_TILE_EDGE: z.string().optional(),
+    IMAGE_DEEP_ZOOM_MAX_PIXELS: z.string().optional(),
+    IMAGE_DEEP_ZOOM_NODE_ID: z.string().optional(),
+    IMAGE_DEEP_ZOOM_WORKERS: z.string().optional(),
+    IMAGE_DEEP_ZOOM_THREADS: z.string().optional(),
+    IMAGE_DEEP_ZOOM_TIMEOUT_MS: z.string().optional(),
+    IMAGE_TILE_WORKER_NODE: z.string().optional(),
+    IMAGE_TILE_WORKER_PATH: z.string().optional(),
+    IMAGE_MARTIN_URL: z.string().optional(),
+
     PLAYWRIGHT_BROWSERS_PATH: z.string().optional(),
     FFMPEG_PATH: z.string().optional(),
     FFMPEG_STATIC_URL: z.string().optional(),
@@ -79,6 +91,19 @@ export const env = {
     TMP_DIR: raw.TMP_DIR ?? '',
     ASSET_DIR: raw.ASSET_DIR ?? '',
     CONTROLLER_DIR: raw.CONTROLLER_DIR ?? '',
+
+    // Applied only when classifying a new upload, never when reading assets.
+    IMAGE_DEEP_ZOOM_UPLOADS_ENABLED: raw.IMAGE_DEEP_ZOOM_UPLOADS_ENABLED ?? 'false',
+    IMAGE_DEEP_ZOOM_TILE_PIXELS: raw.IMAGE_DEEP_ZOOM_TILE_PIXELS ?? '24000000',
+    IMAGE_DEEP_ZOOM_TILE_EDGE: raw.IMAGE_DEEP_ZOOM_TILE_EDGE ?? '8192',
+    IMAGE_DEEP_ZOOM_MAX_PIXELS: raw.IMAGE_DEEP_ZOOM_MAX_PIXELS ?? '',
+    IMAGE_DEEP_ZOOM_NODE_ID: raw.IMAGE_DEEP_ZOOM_NODE_ID ?? '',
+    IMAGE_DEEP_ZOOM_WORKERS: raw.IMAGE_DEEP_ZOOM_WORKERS ?? '1',
+    IMAGE_DEEP_ZOOM_THREADS: raw.IMAGE_DEEP_ZOOM_THREADS ?? '2',
+    IMAGE_DEEP_ZOOM_TIMEOUT_MS: raw.IMAGE_DEEP_ZOOM_TIMEOUT_MS ?? '3600000',
+    IMAGE_TILE_WORKER_NODE: raw.IMAGE_TILE_WORKER_NODE ?? '',
+    IMAGE_TILE_WORKER_PATH: raw.IMAGE_TILE_WORKER_PATH ?? '',
+    IMAGE_MARTIN_URL: raw.IMAGE_MARTIN_URL ?? '',
 
     PLAYWRIGHT_BROWSERS_PATH: raw.PLAYWRIGHT_BROWSERS_PATH ?? '',
     FFMPEG_PATH: raw.FFMPEG_PATH ?? '',

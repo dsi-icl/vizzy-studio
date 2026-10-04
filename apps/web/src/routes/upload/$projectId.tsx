@@ -16,6 +16,9 @@ import { scrubInsecureTusResumeEntries } from '~/lib/tusClient';
 import { $validateUploadToken } from '~/server/projects.fns';
 
 export const Route = createFileRoute('/upload/$projectId')({
+    validateSearch: (search: Record<string, unknown>) => ({
+        token: typeof search.token === 'string' ? search.token : undefined
+    }),
     head: () => ({
         meta: [{ title: 'Upload · Vizzy Studio' }]
     }),
@@ -30,34 +33,36 @@ interface FileProgress {
 
 function MobileUpload() {
     const { projectId } = Route.useParams();
-    const token =
-        typeof window === 'undefined'
-            ? null
-            : new URLSearchParams(window.location.search).get('token');
+    const { token } = Route.useSearch();
 
-    const [validating, setValidating] = useState(true);
-    const [valid, setValid] = useState(false);
-    const [userEmail, setUserEmail] = useState('');
+    const [validation, setValidation] = useState<{
+        token: string;
+        projectId: string;
+        userEmail: string | null;
+    } | null>(null);
+    const currentValidation =
+        validation?.token === token && validation?.projectId === projectId ? validation : null;
+    const validating = Boolean(token && !currentValidation);
+    const userEmail = currentValidation?.userEmail ?? '';
+    const valid = Boolean(userEmail);
     const [files, setFiles] = useState<FileProgress[]>([]);
     const [totalComplete, setTotalComplete] = useState(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uppyRef = useRef<Uppy | null>(null);
 
-    // Validate the token on mount
+    // Keep each asynchronous result tied to the link that requested it.
     useEffect(() => {
-        if (!token) {
-            setValidating(false);
-            return;
-        }
+        if (!token) return;
+        let ignore = false;
         $validateUploadToken({ data: { token } })
+            .then((result) => (result?.projectId === projectId ? result.userEmail : null))
+            .catch(() => null)
             .then((result) => {
-                if (result && result.projectId === projectId) {
-                    setValid(true);
-                    setUserEmail(result.userEmail);
-                }
-            })
-            .catch(() => {})
-            .finally(() => setValidating(false));
+                if (!ignore) setValidation({ token, projectId, userEmail: result });
+            });
+        return () => {
+            ignore = true;
+        };
     }, [token, projectId]);
 
     const uploadFiles = useCallback(
@@ -65,6 +70,7 @@ function MobileUpload() {
             if (selectedFiles.length === 0 || !token) return;
             scrubInsecureTusResumeEntries();
 
+            const shouldAttachHandlers = !uppyRef.current;
             const uppy =
                 uppyRef.current ??
                 new Uppy({
@@ -101,34 +107,44 @@ function MobileUpload() {
 
             setFiles((prev) => [...prev, ...newEntries]);
 
-            uppy.on('upload-progress', (file, progress) => {
-                if (!file || !progress.bytesTotal) return;
-                const pct = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
-                setFiles((prev) =>
-                    prev.map((f) => (f.name === file.name ? { ...f, progress: pct } : f))
-                );
-            });
+            if (shouldAttachHandlers) {
+                uppy.on('upload-progress', (file, progress) => {
+                    if (!file || !progress.bytesTotal) return;
+                    const pct = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
+                    setFiles((prev) =>
+                        prev.map((f) => (f.name === file.name ? { ...f, progress: pct } : f))
+                    );
+                });
 
-            uppy.on('upload-success', (file) => {
-                if (!file) return;
-                setFiles((prev) =>
-                    prev.map((f) =>
-                        f.name === file.name ? { ...f, progress: 100, status: 'complete' } : f
-                    )
-                );
-                setTotalComplete((c) => c + 1);
-            });
+                uppy.on('upload-success', (file) => {
+                    if (!file) return;
+                    setFiles((prev) =>
+                        prev.map((f) =>
+                            f.name === file.name ? { ...f, progress: 100, status: 'complete' } : f
+                        )
+                    );
+                    setTotalComplete((c) => c + 1);
+                });
 
-            uppy.on('upload-error', (file) => {
-                if (!file) return;
-                setFiles((prev) =>
-                    prev.map((f) => (f.name === file.name ? { ...f, status: 'error' } : f))
-                );
-            });
+                uppy.on('upload-error', (file) => {
+                    if (!file) return;
+                    setFiles((prev) =>
+                        prev.map((f) => (f.name === file.name ? { ...f, status: 'error' } : f))
+                    );
+                });
+            }
 
             uppy.upload();
         },
         [projectId, userEmail, token]
+    );
+
+    useEffect(
+        () => () => {
+            uppyRef.current?.destroy();
+            uppyRef.current = null;
+        },
+        [projectId, token]
     );
 
     const handleFileInput = useCallback(

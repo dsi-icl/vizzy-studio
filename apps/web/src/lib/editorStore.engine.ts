@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand';
 
 import { projectAssetsQueryOptions } from '../server/projects.queries';
+import { PUBLIC_ASSET_PROJECT_ID } from './constants';
 import { EditorEngine } from './editorEngine';
 import type { EditorState } from './editorStore.types';
 import { getBrowserQueryClient } from './queryClient';
@@ -46,10 +47,15 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
                 );
             }
         } else if (data.type === 'asset_added') {
-            if (data.projectId === s.projectId) {
+            const projectId = s.projectId;
+            if (
+                projectId &&
+                (data.projectId === projectId ||
+                    (data.projectId === PUBLIC_ASSET_PROJECT_ID && data.asset.deepZoom))
+            ) {
                 const queryClient = getBrowserQueryClient();
                 queryClient.invalidateQueries({
-                    queryKey: projectAssetsQueryOptions(data.projectId).queryKey
+                    queryKey: projectAssetsQueryOptions(projectId).queryKey
                 });
             }
         } else if (data.type === 'wall_node_count') {
@@ -85,6 +91,11 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
 
     const unsubStatus = engine.onConnectionStatusChange((status) => {
         store.setState({ connectionStatus: status });
+        const projectId = store.getState().projectId;
+        if (status === 'connected' && projectId)
+            void getBrowserQueryClient().invalidateQueries({
+                queryKey: projectAssetsQueryOptions(projectId).queryKey
+            });
     });
 
     const unsubSave = engine.subscribeToSaveResponse((data) => {

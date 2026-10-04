@@ -7,10 +7,12 @@ import QRCode from 'qrcode';
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 
 import { MapWrapper } from '~/components/MapWrapper';
+import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
+import { imagePreviewUrl } from '~/lib/mediaUtils';
 import { signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
@@ -301,10 +303,13 @@ function WallApp() {
             if (data.type === 'hydrate') {
                 // Eagerly warm the browser cache for image URLs before React mounts them
                 for (const layer of data.layers) {
-                    if (layer.type === 'image' && layer.url && !warmedImageUrls.has(layer.url)) {
-                        warmedImageUrls.add(layer.url);
-                        const img = new Image();
-                        img.src = layer.url;
+                    if (layer.type === 'image') {
+                        const url = layer.deepZoom ? imagePreviewUrl(layer.deepZoom) : layer.url;
+                        if (url && !warmedImageUrls.has(url)) {
+                            warmedImageUrls.add(url);
+                            const img = new Image();
+                            img.src = url;
+                        }
                     }
                 }
                 stageHydrateRef.current?.({
@@ -318,15 +323,15 @@ function WallApp() {
                     slideId: data.slideId
                 });
             } else if (data.type === 'upsert_layer') {
-                // Eagerly warm the browser cache for incoming image layers
-                if (
-                    data.layer.type === 'image' &&
-                    data.layer.url &&
-                    !warmedImageUrls.has(data.layer.url)
-                ) {
-                    warmedImageUrls.add(data.layer.url);
-                    const img = new Image();
-                    img.src = data.layer.url;
+                if (data.layer.type === 'image') {
+                    const url = data.layer.deepZoom
+                        ? imagePreviewUrl(data.layer.deepZoom)
+                        : data.layer.url;
+                    if (url && !warmedImageUrls.has(url)) {
+                        warmedImageUrls.add(url);
+                        const img = new Image();
+                        img.src = url;
+                    }
                 }
                 setLayers((prev) => {
                     const existing = prev.find((l) => l.numericId === data.layer.numericId);
@@ -374,8 +379,8 @@ function WallApp() {
 
                 // --- UPGRADED CLIENT-SIDE CULLING MATH (Rotated AABB) ---
                 // 1. Get the scaled width and height
-                const sw = effectivePos.width * effectivePos.scaleX;
-                const sh = effectivePos.height * effectivePos.scaleY;
+                const sw = Math.abs(effectivePos.width * effectivePos.scaleX);
+                const sh = Math.abs(effectivePos.height * effectivePos.scaleY);
 
                 // 2. Convert degrees to radians for JS Math functions
                 const rad = effectivePos.rotation * (Math.PI / 180);
@@ -596,22 +601,31 @@ function WallApp() {
             if (layer.type === 'image')
                 return (
                     <div key={layer.numericId} {...commonProps}>
-                        <img
-                            src={layer.url}
-                            alt={`Layer ${layer.numericId}`}
-                            loading="eager"
-                            fetchPriority="high"
-                            width="100%"
-                            height="100%"
-                            decoding="async"
-                            className="block h-full w-full object-fill"
-                            onLoad={() =>
-                                markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
-                            }
-                            onError={() =>
-                                markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
-                            }
-                        />
+                        {layer.deepZoom ? (
+                            <TiledImage
+                                image={layer.deepZoom}
+                                onReady={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                            />
+                        ) : (
+                            <img
+                                src={layer.url}
+                                alt={`Layer ${layer.numericId}`}
+                                loading="eager"
+                                fetchPriority="high"
+                                width="100%"
+                                height="100%"
+                                decoding="async"
+                                className="block h-full w-full object-fill"
+                                onLoad={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                                onError={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                            />
+                        )}
                     </div>
                 );
 

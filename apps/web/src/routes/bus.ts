@@ -293,7 +293,9 @@ const pendingHandshakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const hooks = defineHooks({
     open(peer) {
-        peer.websocket.binaryType = 'arraybuffer';
+        // crossws exposes a WebSocket facade whose native Bun binaryType setter
+        // cannot be called through its proxy. message() already normalizes both
+        // ArrayBuffer and Buffer/Uint8Array, so no setter is necessary here.
         touchPing(peer.id);
         const timer = setTimeout(() => {
             pendingHandshakeTimers.delete(peer.id);

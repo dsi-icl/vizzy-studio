@@ -1,9 +1,10 @@
 import '@tanstack/react-start/server-only';
-import type { ProjectDocument } from '@repo/db/documents';
+import type { AuthContext, ProjectDocument } from '@repo/db/documents';
 
-import { isAdmin } from '~/lib/authz';
+import { isAdmin, evaluateAssetReadAccess } from '~/lib/authz';
 import { validateUploadToken } from '~/lib/uploadTokens';
 import { dbCol } from '~/server/collections';
+import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
 type Actor = {
     email: string;
@@ -89,4 +90,25 @@ export function actorFromAuthContext(authContext: {
         trustedPublisher: authContext.user?.trustedPublisher === true,
         canManageSignage: authContext.user?.canManageSignage === true
     };
+}
+
+export async function resolveAssetAuthContext(
+    request: Request,
+    context: { authContext?: AuthContext } | undefined
+) {
+    const auth = context?.authContext ?? { guest: true };
+    if (auth.user || auth.device) return auth;
+    const device = await resolveWallMediaCookieAuthContext(request);
+    return device ? { ...auth, guest: undefined, device } : auth;
+}
+
+export function authorizeAssetRead(
+    asset: { projectId?: unknown; public?: boolean | null },
+    auth: AuthContext
+) {
+    return evaluateAssetReadAccess(asset, auth, {
+        project: (id) => dbCol.projects.findById(id),
+        canView: canViewProject,
+        wall: (id) => dbCol.walls.findByWallId(id)
+    });
 }

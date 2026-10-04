@@ -188,6 +188,31 @@ For full flow maps (bind/unbind, hydrate, scope internals, YJS bridge path), see
 See [Browser and Integration Test Harness](./docs/testing/playwright-integration-strategy.md)
 for coverage, determinism rules, product-intent triage, and planned increments.
 
+### Image Deep Zoom worker
+
+Web accepts image uploads; a separate worker consumes image tile jobs from MongoDB,
+and Martin serves the generated MBTiles. Ordinary image/video jobs continue to run in Web.
+
+For local development, configure `apps/web/.env` with
+`IMAGE_DEEP_ZOOM_UPLOADS_ENABLED=true`, a stable `IMAGE_DEEP_ZOOM_NODE_ID`, and
+`IMAGE_MARTIN_URL=http://127.0.0.1:3300`. Install Martin once with `bun run martin:install`,
+then use three terminals:
+
+```sh
+bun run dev
+bun run martin:dev
+bun run image-worker:dev
+```
+
+The worker requires Node 26+ and reads `apps/web/.env`. Restart its command after changing
+worker code; it rebuilds the bundle before starting.
+
+The Dockerfile builds Web with target `production` and the worker with target `image-worker`.
+Use the existing server's container service configuration to run them. Web and worker need
+the same database, data mount and stable `IMAGE_DEEP_ZOOM_NODE_ID`. Set `IMAGE_MARTIN_URL`
+to the image Martin service. Martin reads `image-tiles/`; keep that directory, `previews/`
+and `image-tile-work/` on one filesystem for hard-link publication.
+
 ### Container Source Maps (Debug Builds)
 
 - Local debug image with source maps embedded:

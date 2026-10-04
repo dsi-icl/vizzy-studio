@@ -1,0 +1,8 @@
+# Local development only: keep Martin on the host with the native image worker.
+# macOS Docker bind mounts can lose file events after a container restart.
+listen_addresses: ${VIZZY_IMAGE_MARTIN_LISTEN}
+worker_processes: 1
+cache_size_mb: 16
+mbtiles:
+    paths:
+        - ${VIZZY_IMAGE_TILE_DIR}

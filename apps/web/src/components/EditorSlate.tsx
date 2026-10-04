@@ -37,10 +37,15 @@ import {
     broadcastKeyboardLayerTransform,
     isEditorArrowKey
 } from '~/lib/editorKeyboardMovement';
+import { placeAssetInEditor, uploadImageForPlacement } from '~/lib/editorMediaPlacement';
+import {
+    createEditorPlacementSession,
+    type EditorPlacementSession
+} from '~/lib/editorPlacementSession';
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
-import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
+import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getSnapGridSize } from '~/lib/stageConstants';
 import {
@@ -57,6 +62,7 @@ import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $createUploadToken } from '~/server/projects.fns';
 
 import { SlatePreview } from './SlatePreview';
+import { useImagePinch } from './useImagePinch';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
@@ -127,6 +133,9 @@ export function EditorSlate() {
             ? layers.get(Number.parseInt(selectedLayerIds[0], 10))
             : undefined;
     const isSingleSelectedLayerLocked = Boolean(singleSelectedLayer?.config.locked);
+    const isSelectedTiledRenderer =
+        singleSelectedLayer?.type === 'image' &&
+        Boolean(singleSelectedLayer.deepZoom || singleSelectedLayer.isUploading);
     const hoveredLayer = hoveredLayerId
         ? layers.get(Number.parseInt(hoveredLayerId, 10))
         : undefined;
@@ -203,123 +212,17 @@ export function EditorSlate() {
 
     const addDroppedAssetAsLayer = useCallback(
         async (asset: AssetLibraryAsset, dropPoint: { x: number; y: number }) => {
-            if (!engine) return;
-            if (isFontAsset(asset)) return;
-
-            const isVideo =
-                asset.mimeType?.startsWith('video/') ||
-                /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.name) ||
-                /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.url);
-            const isImage =
-                asset.mimeType?.startsWith('image/') ||
-                /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(asset.name) ||
-                /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i.test(asset.url);
-
-            if (!isVideo && !isImage) return;
-
-            const store = useEditorStore.getState();
-            const numericId = store.allocateId();
-            const zIndex = store.allocateZIndex();
-
-            let mediaWidth = 800;
-            let mediaHeight = 600;
-            let duration = 0;
-
-            if (isVideo) {
-                try {
-                    const vid = document.createElement('video');
-                    vid.muted = true;
-                    vid.playsInline = true;
-                    vid.crossOrigin = 'anonymous';
-                    vid.src = `/api/assets/${asset.url}`;
-                    await new Promise<void>((resolve, reject) => {
-                        vid.onloadeddata = () => resolve();
-                        vid.onerror = () => reject(new Error('Failed to load video'));
-                    });
-                    mediaWidth = vid.videoWidth || mediaWidth;
-                    mediaHeight = vid.videoHeight || mediaHeight;
-                    duration = vid.duration || 0;
-                    vid.removeAttribute('src');
-                    vid.load();
-                } catch {
-                    // Keep defaults.
-                }
-            } else {
-                try {
-                    const img = new window.Image();
-                    img.crossOrigin = 'anonymous';
-                    img.src = `/api/assets/${asset.url}`;
-                    await new Promise<void>((resolve) => {
-                        img.onload = () => resolve();
-                        img.onerror = () => resolve();
-                    });
-                    mediaWidth = img.naturalWidth || mediaWidth;
-                    mediaHeight = img.naturalHeight || mediaHeight;
-                } catch {
-                    // Keep defaults.
-                }
+            if (!engine || typeof asset.id !== 'string') return;
+            try {
+                await placeAssetInEditor({
+                    assetId: asset.id,
+                    point: dropPoint,
+                    origin: 'editor:asset_library_drop'
+                });
+            } catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') return;
+                toast.error(error instanceof Error ? error.message : 'Unable to add this asset');
             }
-
-            const fitted = fitSizeToViewport(
-                mediaWidth,
-                mediaHeight,
-                store.insertionViewport.width,
-                store.insertionViewport.height
-            );
-
-            const config: Layer['config'] = {
-                cx: dropPoint.x,
-                cy: dropPoint.y,
-                width: fitted.width,
-                height: fitted.height,
-                rotation: 0,
-                scaleX: 1,
-                scaleY: 1,
-                zIndex,
-                visible: true
-            };
-
-            const defaultPlayback: Extract<Layer, { type: 'video' }>['playback'] = {
-                status: 'paused',
-                anchorMediaTime: 0,
-                anchorServerTime: engine.getServerTime()
-            };
-
-            const layerName = makeUniqueMediaLayerName(
-                asset.name,
-                useEditorStore.getState().layers.values()
-            );
-
-            const layerBase = {
-                numericId,
-                name: layerName,
-                url: `/api/assets/${asset.url}`,
-                config,
-                isUploading: false,
-                progress: 100
-            };
-
-            const layer: LayerWithEditorState = isVideo
-                ? {
-                      type: 'video',
-                      playback: defaultPlayback,
-                      rvfcActive: false,
-                      duration,
-                      loop: true,
-                      blurhash: asset.blurhash ?? '',
-                      ...layerBase
-                  }
-                : {
-                      type: 'image',
-                      blurhash: asset.blurhash ?? '',
-                      ...layerBase
-                  };
-
-            store.upsertLayer(layer);
-            store.toggleLayerSelection(numericId.toString(), false, false);
-
-            engine.createLayer('editor:asset_library_drop', layer);
-            store.markDirty();
         },
         [engine]
     );
@@ -448,7 +351,13 @@ export function EditorSlate() {
                     const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
                     const isActivelyTransforming = trRef.current.isTransforming();
 
-                    if (node && !node.isDragging() && !isActivelyTransforming && !isPinching) {
+                    if (
+                        node &&
+                        !node.isDragging() &&
+                        !isActivelyTransforming &&
+                        !isPinching &&
+                        !node.getAttr('imagePinching')
+                    ) {
                         node.x(cx);
                         node.y(cy);
                         node.width(width);
@@ -568,13 +477,69 @@ export function EditorSlate() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [editingTextLayerId, engine, isSnapping, snapGrid]);
 
+    const imagePlacementSessions = useRef(new Set<EditorPlacementSession>());
+    useEffect(
+        () => () => {
+            for (const session of imagePlacementSessions.current) session.cancel();
+            imagePlacementSessions.current.clear();
+        },
+        []
+    );
+
     // ── Upload handler (stays here — complex async + file APIs) ───────────
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!engine) return;
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const isImage = file.type.startsWith('image/');
+        const isImage =
+            file.type.startsWith('image/') ||
+            /\.(png|jpe?g|gif|webp|avif|bmp|svg|tiff?)$/i.test(file.name);
+        const uploadScope = {
+            projectId: useEditorStore.getState().projectId,
+            commitId: useEditorStore.getState().commitId,
+            slideId: useEditorStore.getState().activeSlideId
+        };
+        let tokenResult: Awaited<ReturnType<typeof $createUploadToken>>;
+        let placementSession: EditorPlacementSession | undefined;
+        try {
+            syncInsertionCenter();
+            placementSession = createEditorPlacementSession(useEditorStore);
+            imagePlacementSessions.current.add(placementSession);
+            tokenResult = await $createUploadToken({
+                data: { projectId: placementSession.projectId }
+            });
+            placementSession.assertCurrent();
+        } catch (error) {
+            if (placementSession) {
+                placementSession.dispose();
+                imagePlacementSessions.current.delete(placementSession);
+            }
+            // A scope switch while requesting authorization must not start an upload elsewhere.
+            if (!(error instanceof Error && error.name === 'AbortError'))
+                toast.error(error instanceof Error ? error.message : 'Upload failed to initialize');
+            return;
+        }
+        if (isImage && tokenResult.deferImagePlacement) {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            try {
+                await uploadImageForPlacement(file, tokenResult.token, placementSession);
+            } finally {
+                imagePlacementSessions.current.delete(placementSession);
+            }
+            return;
+        }
+        placementSession.dispose();
+        imagePlacementSessions.current.delete(placementSession);
+        const isUploadScopeCurrent = () => {
+            const state = useEditorStore.getState();
+            return (
+                !state.loading &&
+                state.projectId === uploadScope.projectId &&
+                state.commitId === uploadScope.commitId &&
+                state.activeSlideId === uploadScope.slideId
+            );
+        };
         const localUrl = URL.createObjectURL(file);
 
         let mediaWidth = 800;
@@ -627,6 +592,10 @@ export function EditorSlate() {
             tempVid.load();
         }
 
+        if (!isUploadScopeCurrent()) {
+            URL.revokeObjectURL(localUrl);
+            return;
+        }
         const store = useEditorStore.getState();
         const numericId = store.allocateId();
         const zIndex = store.allocateZIndex();
@@ -687,17 +656,7 @@ export function EditorSlate() {
             return;
         }
 
-        let uploadToken: string;
-        try {
-            const tokenResult = await $createUploadToken({ data: { projectId: currentProjectId } });
-            uploadToken = tokenResult.token;
-        } catch (err) {
-            console.error('Upload token creation failure', err);
-            useEditorStore.getState().removeLayer(numericId);
-            toast.error(err instanceof Error ? err.message : 'Upload failed to initialize');
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-        }
+        const uploadToken = tokenResult.token;
         scrubInsecureTusResumeEntries();
 
         const uppy = new Uppy().use(Tus, {
@@ -737,7 +696,19 @@ export function EditorSlate() {
             const stillImageFilename = isImage ? undefined : `${uploadId}.jpg`;
 
             // Grab freshest config from shadow state (user may have moved the preview)
-            const freshestLayer = layersRef.current.get(numericId) || optimisticLayer;
+            const freshestLayer = isUploadScopeCurrent()
+                ? useEditorStore.getState().layers.get(numericId)
+                : undefined;
+            if (
+                !freshestLayer ||
+                (freshestLayer.type !== 'image' && freshestLayer.type !== 'video') ||
+                !freshestLayer.isUploading ||
+                freshestLayer.url !== previewDataUrl
+            ) {
+                URL.revokeObjectURL(localUrl);
+                uppy.destroy();
+                return;
+            }
 
             // 4. Lock it in with preserved transformations
             const finalizedLayer = {
@@ -771,7 +742,16 @@ export function EditorSlate() {
 
         uppy.on('error', (err) => {
             console.error('Upload failure', err);
-            useEditorStore.getState().removeLayer(numericId);
+            const current = useEditorStore.getState().layers.get(numericId);
+            if (
+                isUploadScopeCurrent() &&
+                current &&
+                (current.type === 'image' || current.type === 'video') &&
+                current.url === previewDataUrl &&
+                current.isUploading
+            )
+                useEditorStore.getState().removeLayer(numericId);
+            URL.revokeObjectURL(localUrl);
             toast.error(err instanceof Error ? err.message : 'Upload failed');
             uppy.destroy();
         });
@@ -789,7 +769,7 @@ export function EditorSlate() {
         broadcastPointerPosition();
 
         const node = e.target as Konva.Shape;
-        const layer = layersRef.current.get(numericId);
+        const layer = useEditorStore.getState().layers.get(numericId);
         if (!node || !layer) return;
         if (layer.config.locked) {
             if (node.isDragging()) node.stopDrag();
@@ -934,6 +914,20 @@ export function EditorSlate() {
             }
         }
 
+        // Async preview/tile handoff must see an in-progress gesture too, before
+        // dragend/transformend commits it through the normal store path.
+        if (layer.isUploading) {
+            layer.config = {
+                ...layer.config,
+                cx: node.x(),
+                cy: node.y(),
+                width: node.width(),
+                height: node.height(),
+                scaleX: node.scaleX(),
+                scaleY: node.scaleY(),
+                rotation: node.rotation()
+            };
+        }
         engine?.broadcastBinaryMove(
             numericId,
             Math.round(node.x()),
@@ -956,8 +950,9 @@ export function EditorSlate() {
                 node.setAttr('preTransformConfig', undefined);
             };
 
-            // Must use layersRef — has binary-updated positions
-            const layerToUpdate = layersRef.current.get(numericId);
+            // Read the store at the event boundary: an async source handoff may
+            // have replaced the layer since React last refreshed layersRef.
+            const layerToUpdate = useEditorStore.getState().layers.get(numericId);
             if (!layerToUpdate) {
                 endInteraction();
                 return;
@@ -1110,6 +1105,16 @@ export function EditorSlate() {
         [engine, isSnapping, snapGrid]
     );
 
+    useImagePinch({
+        surfaceRef: stageSlot,
+        stageRef: stageInstance,
+        transformerRef: trRef,
+        engine,
+        onActive: setIsPinching,
+        onCommit: (node, numericId) =>
+            handleTransformEnd({ target: node, type: 'pinchend' }, numericId)
+    });
+
     const flushNodeState = (idToFlush: string) => {
         if (!trRef.current) return;
         const layer = useEditorStore.getState().layers.get(Number.parseInt(idToFlush, 10));
@@ -1183,6 +1188,7 @@ export function EditorSlate() {
             isTouchEvent(e.evt) &&
             e.evt.touches?.length === 2 &&
             currentSelectedIds.length > 0 &&
+            currentSelectedLayer?.type !== 'image' &&
             !currentSelectedLayer?.config.locked
         ) {
             flushNodeState(currentSelectedIds[0]);
@@ -1254,6 +1260,7 @@ export function EditorSlate() {
             isTouchEvent(e.evt) &&
             e.evt.touches.length === 2 &&
             currentSelectedIds.length > 0 &&
+            currentSelectedLayer?.type !== 'image' &&
             !currentSelectedLayer?.config.locked &&
             trRef.current
         ) {
@@ -1389,7 +1396,7 @@ export function EditorSlate() {
             trRef.current.nodes([]);
             trRef.current.getLayer()?.batchDraw();
         }
-    }, [isSingleSelectedLayerLocked, selectedLayerIds]);
+    }, [isSingleSelectedLayerLocked, selectedLayerIds, isSelectedTiledRenderer]);
 
     useEffect(() => {
         const transformer = hoverTrRef.current;
@@ -1416,6 +1423,14 @@ export function EditorSlate() {
                     id="slate"
                     onDragOver={handleStageDragOver}
                     onDrop={handleStageDrop}
+                    style={{
+                        touchAction:
+                            singleSelectedLayer?.type === 'image' &&
+                            !isSingleSelectedLayerLocked &&
+                            !isDrawing
+                                ? 'none'
+                                : undefined
+                    }}
                     className="min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
                 >
                     <Stage
