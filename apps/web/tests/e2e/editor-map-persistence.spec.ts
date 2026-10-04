@@ -8,7 +8,10 @@ import { actorStorageState, readHarnessManifest, waitForCanvasReady } from '../s
 
 type EditorRuntimeWindow = Window & {
     __EDITOR_STORE__?: StoreApi<EditorState>;
-    __EDITOR_ENGINE__?: Pick<EditorEngine, 'connectionStatus' | 'sendJSON'>;
+    __EDITOR_ENGINE__?: Pick<
+        EditorEngine,
+        'connectionStatus' | 'sendJSON' | 'subscribeToSaveResponse'
+    >;
 };
 
 const MAP: Extract<Layer, { type: 'map' }> = {
@@ -30,6 +33,40 @@ const MAP: Extract<Layer, { type: 'map' }> = {
 };
 
 test.use({ storageState: actorStorageState('user_editor') });
+
+test.afterEach(async ({ page }) => {
+    const { fixtures } = readHarnessManifest();
+    // A fresh editor also recovers from a failed gesture or reload. This slide is
+    // shared with other specs, so cleanup must finish before the page is closed.
+    await page.goto(
+        `/quarry/editor/${fixtures.interactionProjectId}/${fixtures.interactionCommitId}/${fixtures.interactionSlideId}`
+    );
+    await expect
+        .poll(() =>
+            page.evaluate(() => {
+                const state = (window as EditorRuntimeWindow).__EDITOR_STORE__?.getState();
+                return state && !state.loading ? state.activeSlideId : null;
+            })
+        )
+        .toBe(fixtures.interactionSlideId);
+
+    await page.evaluate(async (numericId) => {
+        const store = (window as EditorRuntimeWindow).__EDITOR_STORE__;
+        const engine = (window as EditorRuntimeWindow).__EDITOR_ENGINE__;
+        if (!store || !engine) throw new Error('Editor was not ready for map fixture cleanup');
+        if (!store.getState().layers.has(numericId)) return;
+
+        await new Promise<void>((resolve, reject) => {
+            const unsubscribe = engine.subscribeToSaveResponse((response) => {
+                unsubscribe();
+                if (response.success) resolve();
+                else reject(new Error(response.error ?? 'Map fixture cleanup failed'));
+            });
+            store.getState().removeLayer(numericId);
+            store.getState().saveProject('Remove map test fixture');
+        });
+    }, MAP.numericId);
+});
 
 async function readMap(page: Page) {
     return page.evaluate((id) => {
