@@ -138,6 +138,8 @@
         "deps:major": "bunx taze@latest major -Ilwr --peer",
         "dev": "turbo run dev",
         "dev:web": "turbo run dev --filter=@repo/web",
+        "image-worker:build": "bun tooling/scripts/prepare-image-worker.mjs",
+        "image-worker:dev": "bun run image-worker:build && cd apps/web && node --env-file-if-exists=.env .output/image-worker/queue.mjs",
         "martin:install": "node tooling/martin/local.mjs install",
         "martin:dev": "node tooling/martin/local.mjs dev",
         "faviconize": "turbo run faviconize",

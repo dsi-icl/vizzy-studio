@@ -14,7 +14,7 @@ import {
     SUPPORTED_VIDEO_EXTS
 } from '~/lib/assetMime';
 import { PUBLIC_ASSET_PROJECT_ID } from '~/lib/constants';
-import { readImageTileSettings } from '~/lib/jobs/imageTileRuntime';
+import { readImageTileUploadSettings } from '~/lib/jobs/imageTileRuntime';
 import { finalizeImageTileUpload, findAcceptedImageTileUpload, enqueueJob } from '~/lib/jobs/repo';
 import { jobSignalBus } from '~/lib/jobs/signalBus';
 import { readImageUploadPolicy, inspectNewImageUpload } from '~/lib/serverAssetUtils';
@@ -244,7 +244,7 @@ const tusServer = new Server({
                 const policy = readImageUploadPolicy(env);
                 const plan = await inspectNewImageUpload(tusFilePath, policy);
                 if (plan.kind === 'deep-zoom' && policy.enabled) {
-                    const settings = readImageTileSettings(env);
+                    const settings = readImageTileUploadSettings(env);
                     retainTusSource = true;
                     tiledAsset = await finalizeImageTileUpload({
                         uploadId: upload.id,

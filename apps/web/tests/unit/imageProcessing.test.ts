@@ -15,6 +15,7 @@ import {
     createConcurrentJobDrain,
     cleanImageTileScratch,
     readImageTileSettings,
+    readImageTileUploadSettings,
     runImageTileWorker
 } from '../../src/lib/jobs/imageTileRuntime';
 import { isImageTileInBounds, parseImageTilePath } from '../../src/lib/mediaUtils';
@@ -488,6 +489,76 @@ describe('Worker lifetime and queue admission', () => {
         IMAGE_TILE_WORKER_PATH: '/tmp/worker.mjs',
         IMAGE_MARTIN_URL: 'http://martin:3000/'
     };
+
+    test('web can accept tiled uploads without an installed slicing runtime', () => {
+        expect(
+            readImageTileUploadSettings({
+                IMAGE_DEEP_ZOOM_NODE_ID: 'shared-volume',
+                IMAGE_MARTIN_URL: 'http://martin-images:3000/'
+            })
+        ).toEqual({ nodeId: 'shared-volume', martinUrl: 'http://martin-images:3000' });
+        expect(() =>
+            readImageTileUploadSettings({
+                IMAGE_MARTIN_URL: 'http://martin-images:3000'
+            })
+        ).toThrow();
+    });
+
+    test('shutdown waits for an in-flight claim and never claims another job', async () => {
+        let finishClaim!: (job: number | null) => void;
+        let finishJob!: () => void;
+        let claims = 0;
+        let processed = false;
+        let stopped = false;
+        const drain = createConcurrentJobDrain({
+            concurrency: 1,
+            claim: () => {
+                claims++;
+                return new Promise<number | null>((resolve) => {
+                    finishClaim = resolve;
+                });
+            },
+            process: async () => {
+                processed = true;
+                await new Promise<void>((resolve) => {
+                    finishJob = resolve;
+                });
+            },
+            onError: (error) => {
+                throw error;
+            }
+        });
+        drain.wake();
+        const stopping = drain.stop().then(() => {
+            stopped = true;
+        });
+        drain.wake();
+        finishClaim(1);
+        await sleep(0);
+        expect(processed).toBe(true);
+        expect(stopped).toBe(false);
+        finishJob();
+        await stopping;
+        drain.wake();
+        expect(claims).toBe(1);
+        expect(stopped).toBe(true);
+    });
+
+    test('an idle queue can stop before its first wake', async () => {
+        let claims = 0;
+        const drain = createConcurrentJobDrain({
+            concurrency: 2,
+            claim: async () => {
+                claims++;
+                return null;
+            },
+            process: async () => {},
+            onError: () => {}
+        });
+        await drain.stop();
+        drain.wake();
+        expect(claims).toBe(0);
+    });
 
     test('server settings distinguish job concurrency from threads and require a stable node', () => {
         expect(readImageTileSettings(configuration)).toMatchObject({

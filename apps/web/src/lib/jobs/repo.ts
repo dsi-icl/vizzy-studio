@@ -11,7 +11,7 @@ import { dbCol, collections } from '~/server/collections';
 
 import { PUBLIC_ASSET_PROJECT_ID } from '../constants';
 import { ASSET_DIR } from '../serverVariables';
-import type { ImageTileSettings } from './imageTileRuntime';
+import type { ImageTileUploadSettings } from './imageTileRuntime';
 import type {
     JobDocument,
     JobPayload,
@@ -179,9 +179,14 @@ export async function failJob(jobId: ObjectId, workerId: string, error: string) 
     );
 }
 
-export async function markStalledRunningJobs(staleMs: number) {
+export async function markStalledRunningJobs(
+    staleMs: number,
+    scope: { nodeId?: string; types?: JobType[] } = {}
+) {
     const cutoff = new Date(Date.now() - staleMs);
     const cursor = collections.jobs.find({
+        ...(scope.nodeId ? { nodeId: scope.nodeId } : {}),
+        ...(scope.types ? { type: { $in: scope.types } } : {}),
         status: 'running',
         $or: [{ lastHeartbeatAt: { $lt: cutoff } }, { leaseUntil: { $lt: new Date() } }]
     });
@@ -334,11 +339,16 @@ export async function completeImageTileJob(
     );
 }
 
-export async function failImageTileJob(job: JobDocument, owner: string, error: string) {
+export async function failImageTileJob(
+    job: JobDocument,
+    owner: string,
+    error: string,
+    interrupted = false
+) {
     return db.client.withSession((session) =>
         session.withTransaction(async () => {
             await fenceLease(job, owner, session);
-            const retry = job.attempts < job.maxAttempts;
+            const retry = interrupted || job.attempts < job.maxAttempts;
             const payload = job.payload as ProcessImageTilesPayload;
             const dimensions = {
                 schemaVersion: 1 as const,
@@ -367,7 +377,9 @@ export async function failImageTileJob(job: JobDocument, owner: string, error: s
                         updatedAt: new Date(),
                         ...(!retry ? { completedAt: new Date() } : {})
                     },
-                    $unset: { leaseOwner: '', leaseUntil: '', startedAt: '' }
+                    $unset: { leaseOwner: '', leaseUntil: '', startedAt: '' },
+                    // A controlled deployment restart must not exhaust the retry budget.
+                    ...(interrupted ? { $inc: { attempts: -1 } } : {})
                 },
                 { session }
             );
@@ -431,7 +443,7 @@ export async function finalizeImageTileUpload(input: {
     width: number;
     height: number;
     maxPixels: number;
-    settings: ImageTileSettings;
+    settings: ImageTileUploadSettings;
 }) {
     const existing = await findAcceptedImageTileUpload(
         input.projectId,

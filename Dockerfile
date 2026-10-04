@@ -2,7 +2,7 @@
 
 FROM node:26.0.0-bookworm-slim AS image-worker-node
 
-FROM oven/bun:1.3.14 AS build
+FROM oven/bun:1.3.14 AS source
 ARG BUILD_SOURCEMAPS=false
 ARG VITE_GIT_SHA=
 ARG APP_COMMIT_SHA=
@@ -24,11 +24,42 @@ COPY tooling/tsconfig/package.json tooling/tsconfig/package.json
 
 RUN bun install --frozen-lockfile
 
-# Build the web app (Nitro output in apps/web/.output).
 COPY . .
+
+FROM source AS worker-build
+RUN bun tooling/scripts/prepare-image-worker.mjs
+
+# Build the web app (Nitro output in apps/web/.output).
+FROM source AS build
 RUN NITRO_PRESET=bun bun run faviconize --filter=@repo/web
 RUN NITRO_PRESET=bun bun run build --filter=@repo/web
-RUN bun tooling/scripts/prepare-image-worker.mjs
+
+# The queue consumer and native slicer run together with their own resource limits.
+FROM image-worker-node AS image-worker
+ENV NODE_ENV=production \
+    APP_DATA_DIR=/app/data \
+    ASSET_DIR=/app/data/assets \
+    IMAGE_TILE_WORKER_NODE=/usr/local/bin/node \
+    IMAGE_TILE_WORKER_PATH=/app/image-worker/worker.mjs
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tini gosu ca-certificates libatomic1 && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system --gid 10001 app && \
+    useradd --system --uid 10001 --gid 10001 --home /app --shell /usr/sbin/nologin app
+WORKDIR /app/image-worker
+COPY --from=worker-build --chown=app:app /workspace/apps/web/.output/image-worker ./
+HEALTHCHECK --interval=10s --timeout=5s --start-period=45s --retries=3 \
+    CMD ["node", "/app/image-worker/queue.mjs", "--healthcheck"]
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["tini", "--", "sh", "-ec", \
+    "data_dir=\"${APP_DATA_DIR:-/app/data}\"; \
+    asset_dir=\"${ASSET_DIR:-$data_dir/assets}\"; \
+    mkdir -p \"$data_dir\" \"$asset_dir\" \"$data_dir/image-tiles\" \"$data_dir/previews\" \"$data_dir/image-tile-work\"; \
+    if [ \"$(id -u)\" = \"0\" ]; then \
+        chown app:app \"$data_dir\" \"$asset_dir\" \"$data_dir/image-tiles\" \"$data_dir/previews\" \"$data_dir/image-tile-work\"; \
+        exec gosu app node /app/image-worker/queue.mjs; \
+    fi; \
+    exec node /app/image-worker/queue.mjs"]
 
 FROM oven/bun:1 AS runtime
 ARG KEEP_SOURCE_MAPS=false
@@ -65,11 +96,6 @@ ENV NODE_ENV=production \
 WORKDIR /app/apps/web
 COPY package.json /app/package.json
 
-# Keep the app on Bun. Only the isolated image worker uses this Node binary.
-COPY --from=image-worker-node --chmod=755 /usr/local/bin/node /usr/local/bin/image-worker-node
-ENV IMAGE_TILE_WORKER_NODE=/usr/local/bin/image-worker-node \
-    IMAGE_TILE_WORKER_PATH=/app/image-worker/worker.mjs
-
 # Runtime system packages:
 # - tini: proper signal handling / zombie reaping
 # - ca-certificates: TLS trust store
@@ -91,9 +117,6 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends tini ca-certificates curl xz-utils iputils-ping netcat-openbsd gosu libatomic1; \
     rm -rf /var/lib/apt/lists/*
 
-# Verify the dedicated binary and its shared libraries before exporting an image.
-RUN /usr/local/bin/image-worker-node --version
-
 # Layer browser shared-library dependencies used by Playwright Chromium.
 RUN set -eux; \
     PW_VERSION="$(cat /app/.playwright-version)"; \
@@ -108,7 +131,6 @@ RUN groupadd --system --gid 10001 app && \
 COPY --from=build --chown=app:app /workspace/apps/web/.output/server ./.output/server
 COPY --from=build --chown=app:app /workspace/apps/web/.output/public ./.output/public
 COPY --from=build --chown=app:app /workspace/apps/web/.output/nitro.json ./.output/nitro.json
-COPY --from=build --chown=app:app /workspace/apps/web/.output/image-worker /app/image-worker
 
 RUN set -eux; \
     PW_VERSION="$(cat /app/.playwright-version)"; \

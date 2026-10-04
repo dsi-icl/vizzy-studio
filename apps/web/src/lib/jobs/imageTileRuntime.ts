@@ -5,16 +5,30 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { z } from '../zod';
 import type { ProcessImageTilesPayload } from './types';
 
-const Settings = z.object({
+const UploadSettings = z.object({
     IMAGE_DEEP_ZOOM_NODE_ID: z.string().trim().min(1).max(120),
+    IMAGE_MARTIN_URL: z
+        .url()
+        .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol))
+});
+
+/** The web process only needs the destination, not the worker's executable paths. */
+export function readImageTileUploadSettings(settings: Record<string, unknown>) {
+    const parsed = UploadSettings.parse(settings);
+    return {
+        nodeId: parsed.IMAGE_DEEP_ZOOM_NODE_ID,
+        martinUrl: parsed.IMAGE_MARTIN_URL.replace(/\/$/, '')
+    };
+}
+
+export type ImageTileUploadSettings = ReturnType<typeof readImageTileUploadSettings>;
+
+const Settings = UploadSettings.extend({
     IMAGE_DEEP_ZOOM_WORKERS: z.coerce.number().int().min(1).max(8).default(1),
     IMAGE_DEEP_ZOOM_THREADS: z.coerce.number().int().min(1).max(16).default(2),
     IMAGE_DEEP_ZOOM_TIMEOUT_MS: z.coerce.number().int().positive().default(3_600_000),
     IMAGE_TILE_WORKER_NODE: z.string().refine(isAbsolute, 'Use an explicit absolute Node path.'),
-    IMAGE_TILE_WORKER_PATH: z.string().refine(isAbsolute, 'Use an absolute worker entry path.'),
-    IMAGE_MARTIN_URL: z
-        .url()
-        .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol))
+    IMAGE_TILE_WORKER_PATH: z.string().refine(isAbsolute, 'Use an absolute worker entry path.')
 });
 
 export function readImageTileSettings(settings: Record<string, unknown>) {
@@ -43,8 +57,13 @@ export function createConcurrentJobDrain<T>(options: {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1)
         throw new RangeError('Job concurrency must be a positive integer.');
     let active = 0;
+    let stopped = false;
+    let resolveStopped: (() => void) | undefined;
+    const idle = new Promise<void>((resolveIdle) => {
+        resolveStopped = resolveIdle;
+    });
     const wake = () => {
-        while (active < options.concurrency) {
+        while (!stopped && active < options.concurrency) {
             active++;
             void (async () => {
                 let claimed = false;
@@ -58,11 +77,20 @@ export function createConcurrentJobDrain<T>(options: {
                 } finally {
                     active--;
                     if (claimed) wake();
+                    if (stopped && active === 0) resolveStopped?.();
                 }
             })();
         }
     };
-    return { wake };
+    return {
+        wake,
+        stop() {
+            stopped = true;
+            if (active === 0) resolveStopped?.();
+            // Includes claims already in flight; their jobs must be processed/released.
+            return idle;
+        }
+    };
 }
 
 const Manifest = z.object({
