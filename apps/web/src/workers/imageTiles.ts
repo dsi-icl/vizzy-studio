@@ -39,6 +39,7 @@ import {
     completeImageTileJob,
     failImageTileJob,
     ImageTileLeaseLost,
+    startImageTileJob,
     updateImageTileAsset,
     reconcileStalledImageTiles,
     ensureJobIndexes
@@ -361,7 +362,7 @@ async function processImageTileJob(
     try {
         signal.throwIfAborted();
         console.log(`[ImageTiles] Claimed job ${String(job._id)} (attempt ${job.attempts})`);
-        await updateImageTileAsset(job, owner, { ...dimensions, status: 'processing' });
+        await startImageTileJob(job, owner);
         const previewFilename = `${payload.sourceId}.webp`;
         const manifest = await runImageTileWorker({
             payload,

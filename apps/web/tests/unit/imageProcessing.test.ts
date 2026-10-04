@@ -1,12 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { rejects } from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, mkdir, readdir, symlink, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import type { AuthContext } from '@repo/db/documents';
 import type { ImageDeepZoomAsset } from '@repo/db/schema';
+import { ObjectId } from 'mongodb';
 import sharp from 'sharp';
 
 import { evaluateAssetReadAccess } from '../../src/lib/authz';
@@ -18,6 +19,7 @@ import {
     readImageTileUploadSettings,
     runImageTileWorker
 } from '../../src/lib/jobs/imageTileRuntime';
+import type { JobDocument, ProcessImageTilesPayload } from '../../src/lib/jobs/types';
 import { isImageTileInBounds, parseImageTilePath } from '../../src/lib/mediaUtils';
 import {
     classifyNewImageUpload,
@@ -26,6 +28,7 @@ import {
     inspectNewImageUpload,
     fetchImageTile
 } from '../../src/lib/serverAssetUtils';
+import type { AuditLogInput } from '../../src/server/audit';
 
 describe('New image upload policy', () => {
     const enabled = readImageUploadPolicy({
@@ -479,6 +482,314 @@ describe('Media access and tile responses', () => {
         await rejects(fetchImageTile(url, signal, fetcher('<html/>', 200, 'text/html')));
         await rejects(fetchImageTile(url, signal, fetcher('bad webp')));
         await rejects(fetchImageTile(url, signal, fetcher(new Uint8Array(2 * 1024 * 1024 + 1))));
+    });
+});
+
+describe('Image processing lifecycle audits', () => {
+    const projectId = 'a'.repeat(24);
+    const assetId = 'b'.repeat(24);
+    const createdBy = 'uploader@example.test';
+    const audits: AuditLogInput[] = [];
+    const order: string[] = [];
+    let job: JobDocument;
+    let abortCommit = false;
+    let transactionAttempts = 1;
+    let directory: string;
+    let repo: typeof import('../../src/lib/jobs/repo');
+    const matched = { matchedCount: 1 };
+    const store = {
+        db: {
+            client: {
+                withSession: async (operation: (session: unknown) => Promise<unknown>) =>
+                    operation({
+                        withTransaction: async (transaction: () => Promise<unknown>) => {
+                            let result: unknown;
+                            for (let attempt = 0; attempt < transactionAttempts; attempt++)
+                                result = await transaction();
+                            if (abortCommit) throw new Error('Commit failed');
+                            order.push('committed');
+                            return result;
+                        }
+                    })
+            }
+        },
+        dbCol: {
+            assets: {
+                findDeepZoomUpload: mock(async () => ({ projectId, createdBy })),
+                updateDeepZoomJob: mock(async () => true)
+            },
+            audits: {
+                insertLog: mock(async (event: AuditLogInput) => {
+                    order.push('audited');
+                    audits.push(event);
+                })
+            }
+        },
+        collections: {
+            jobs: {
+                updateOne: mock(async (..._args: unknown[]) => matched),
+                find: mock((_filter: unknown) => ({
+                    async *[Symbol.asyncIterator]() {
+                        yield job;
+                    }
+                }))
+            }
+        }
+    };
+
+    beforeAll(async () => {
+        // Bundle an isolated copy with fake DB boundaries; retain the real audit writer
+        // without replacing shared modules for the rest of the unit suite.
+        directory = await mkdtemp(join(tmpdir(), 'vizzy-image-audit-'));
+        const key = Symbol.for(directory);
+        const build = await Bun.build({
+            entrypoints: [resolve(import.meta.dir, '../../src/lib/jobs/repo.ts')],
+            outdir: directory,
+            naming: 'repo.mjs',
+            target: 'bun',
+            format: 'esm',
+            tsconfig: resolve(import.meta.dir, '../../tsconfig.json'),
+            plugins: [
+                {
+                    name: 'image-audit-test-store',
+                    setup(builder) {
+                        builder.onResolve(
+                            { filter: /^(?:@repo\/db|~\/server\/collections)$/ },
+                            () => ({ path: 'store', namespace: 'image-audit-test' })
+                        );
+                        builder.onLoad({ filter: /.*/, namespace: 'image-audit-test' }, () => ({
+                            contents: `export const { db, dbCol, collections } = globalThis[Symbol.for(${JSON.stringify(directory)})];`,
+                            loader: 'js'
+                        }));
+                    }
+                }
+            ]
+        });
+        if (!build.success) throw new AggregateError(build.logs, 'Audit test bundle failed');
+        Reflect.set(globalThis, key, store);
+        try {
+            repo = await import(join(directory, 'repo.mjs'));
+        } finally {
+            Reflect.deleteProperty(globalThis, key);
+        }
+    });
+
+    afterAll(async () => {
+        await rm(directory, { recursive: true, force: true });
+    });
+
+    beforeEach(() => {
+        audits.length = 0;
+        order.length = 0;
+        abortCommit = false;
+        transactionAttempts = 1;
+        store.collections.jobs.updateOne.mockReset();
+        store.collections.jobs.updateOne.mockResolvedValue(matched);
+        store.dbCol.assets.findDeepZoomUpload.mockReset();
+        store.dbCol.assets.findDeepZoomUpload.mockResolvedValue({ projectId, createdBy });
+        job = {
+            _id: new ObjectId(assetId),
+            nodeId: 'shared-volume',
+            type: 'process_image_tiles',
+            status: 'running',
+            payload: {
+                assetId,
+                projectId,
+                createdBy,
+                sourceId: `img_${assetId}_v1`,
+                sourceFilename: 'original.tiff',
+                width: 12000,
+                height: 8000,
+                maxPixels: 100_000_000
+            },
+            attempts: 1,
+            maxAttempts: 3,
+            leaseOwner: 'worker-attempt',
+            startedAt: new Date(Date.now() - 2000),
+            runAfter: new Date(0),
+            createdAt: new Date(0),
+            updatedAt: new Date(0)
+        };
+    });
+
+    const ready = {
+        schemaVersion: 1,
+        width: 12000,
+        height: 8000,
+        status: 'ready',
+        tiles: { sourceId: `img_${assetId}_v1`, tileSize: 512, maxZoom: 5, format: 'webp' }
+    } as const;
+    const result = {
+        sourceId: ready.tiles.sourceId,
+        previewFilename: `${ready.tiles.sourceId}.webp`,
+        reused: true
+    };
+
+    test('start and completion link the uploader, job and asset, with attempt duration and result', async () => {
+        await repo.startImageTileJob(job, 'worker-attempt');
+        expect(audits[0]).toMatchObject({
+            action: 'IMAGE_TILE_PROCESSING_STARTED',
+            actorId: 'system:image-worker',
+            projectId,
+            resourceType: 'asset',
+            resourceId: assetId,
+            outcome: 'success',
+            changes: { status: 'running', width: 12000, height: 8000, durationMs: 0 },
+            executionContext: {
+                surface: 'job',
+                operation: 'process_image_tiles',
+                details: {
+                    jobId: assetId,
+                    nodeId: job.nodeId,
+                    workerId: job.leaseOwner,
+                    createdBy,
+                    attempt: 1,
+                    maxAttempts: 3
+                }
+            }
+        });
+        await repo.completeImageTileJob(job, 'worker-attempt', ready, result);
+        expect(audits).toHaveLength(2);
+        expect(audits[1]).toMatchObject({
+            action: 'IMAGE_TILE_PROCESSING_COMPLETED',
+            outcome: 'success',
+            error: null,
+            changes: { status: 'completed', result: { ...result, ...ready.tiles } }
+        });
+        expect(Number(audits[1].changes?.durationMs)).toBeGreaterThanOrEqual(2000);
+        expect(order).toEqual(['committed', 'audited', 'committed', 'audited']);
+        expect(store.dbCol.assets.findDeepZoomUpload).not.toHaveBeenCalled();
+    });
+
+    test.each([1, 3])(
+        'attempt %i records either scheduled retry or terminal failure',
+        async (attempt) => {
+            job.attempts = attempt;
+            await repo.failImageTileJob(job, 'worker-attempt', 'Image tile worker timed out.');
+            expect(audits).toHaveLength(1);
+            expect(audits[0]).toMatchObject({
+                action:
+                    attempt < 3
+                        ? 'IMAGE_TILE_PROCESSING_RETRY_SCHEDULED'
+                        : 'IMAGE_TILE_PROCESSING_FAILED',
+                outcome: 'failure',
+                reasonCode: 'IMAGE_PROCESSING_FAILED',
+                error: 'Image tile worker timed out.'
+            });
+            expect(Number(audits[0].changes?.durationMs)).toBeGreaterThanOrEqual(2000);
+            const update = store.collections.jobs.updateOne.mock.calls.at(-1)?.[1] as {
+                $set: { status: string; runAfter: Date };
+            };
+            expect(update.$set.status).toBe(attempt < 3 ? 'queued' : 'failed');
+            expect(audits[0].changes?.nextRetryAt).toBe(
+                attempt < 3 ? update.$set.runAfter.getTime() : undefined
+            );
+        }
+    );
+
+    test('shutdown at the retry limit schedules a retry and records the preserved budget', async () => {
+        job.attempts = job.maxAttempts;
+        await repo.failImageTileJob(job, 'worker-attempt', 'Image tile worker cancelled.', true);
+        expect(audits).toHaveLength(1);
+        expect(audits[0]).toMatchObject({
+            action: 'IMAGE_TILE_PROCESSING_RETRY_SCHEDULED',
+            reasonCode: 'WORKER_SHUTDOWN',
+            changes: { status: 'queued', retryBudgetPreserved: true }
+        });
+        expect(store.collections.jobs.updateOne.mock.calls.at(-1)?.[1]).toMatchObject({
+            $inc: { attempts: -1 }
+        });
+    });
+
+    test.each([1, 3])(
+        'heartbeat recovery audits the winning transition for attempt %i',
+        async (attempt) => {
+            job.attempts = attempt;
+            await repo.markStalledRunningJobs(120_000, { types: ['process_image_tiles'] });
+            expect(audits).toHaveLength(1);
+            expect(audits[0]).toMatchObject({
+                action:
+                    attempt < 3
+                        ? 'IMAGE_TILE_PROCESSING_RETRY_SCHEDULED'
+                        : 'IMAGE_TILE_PROCESSING_FAILED',
+                reasonCode: 'WORKER_HEARTBEAT_STALLED',
+                error: 'Job heartbeat stalled'
+            });
+            // Another consumer already renewed or recovered the job: no duplicate audit.
+            store.collections.jobs.updateOne.mockResolvedValue({ matchedCount: 0 });
+            await repo.markStalledRunningJobs(120_000);
+            expect(audits).toHaveLength(1);
+        }
+    );
+
+    test('transaction retries audit once, while commit failures and lost leases audit nothing', async () => {
+        transactionAttempts = 2;
+        await repo.completeImageTileJob(job, 'worker-attempt', ready, result);
+        expect(audits).toHaveLength(1);
+        expect(order).toEqual(['committed', 'audited']);
+        audits.length = 0;
+        abortCommit = true;
+        await rejects(
+            repo.completeImageTileJob(job, 'worker-attempt', ready, result),
+            /Commit failed/
+        );
+        expect(audits).toHaveLength(0);
+        abortCommit = false;
+        store.collections.jobs.updateOne.mockResolvedValue({ matchedCount: 0 });
+        await rejects(repo.startImageTileJob(job, 'stale-owner'), /lease was lost/);
+        await rejects(repo.failImageTileJob(job, 'stale-owner', 'cancelled'), /lease was lost/);
+        expect(audits).toHaveLength(0);
+    });
+
+    test('older queued jobs recover project and uploader attribution from the asset', async () => {
+        const payload = job.payload as ProcessImageTilesPayload;
+        delete payload.projectId;
+        delete payload.createdBy;
+        await repo.startImageTileJob(job, 'worker-attempt');
+        expect(store.dbCol.assets.findDeepZoomUpload).toHaveBeenCalledWith(assetId);
+        expect(audits[0]).toMatchObject({
+            projectId,
+            resourceId: assetId,
+            executionContext: { details: { createdBy } }
+        });
+    });
+
+    test('audit write and context lookup failures do not turn completed work into a failure', async () => {
+        const errors = spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            store.dbCol.audits.insertLog.mockRejectedValueOnce(
+                new Error('Audit storage unavailable')
+            );
+            await repo.completeImageTileJob(job, 'worker-attempt', ready, result);
+            expect(audits).toHaveLength(0);
+            delete (job.payload as ProcessImageTilesPayload).projectId;
+            store.dbCol.assets.findDeepZoomUpload.mockRejectedValueOnce(
+                new Error('Asset lookup unavailable')
+            );
+            await repo.completeImageTileJob(job, 'worker-attempt', ready, result);
+            expect(audits).toHaveLength(0);
+            expect(errors).toHaveBeenCalledTimes(2);
+        } finally {
+            errors.mockRestore();
+        }
+    });
+
+    test('preview updates, heartbeats and ordinary media recovery do not emit lifecycle audits', async () => {
+        await repo.updateImageTileAsset(
+            job,
+            'worker-attempt',
+            {
+                schemaVersion: 1,
+                width: 12000,
+                height: 8000,
+                status: 'processing'
+            },
+            { previewUrl: result.previewFilename }
+        );
+        await repo.heartbeatJob(job._id, 'worker-attempt');
+        job.type = 'process_image_asset';
+        await repo.markStalledRunningJobs(120_000);
+        expect(audits).toHaveLength(0);
     });
 });
 

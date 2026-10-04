@@ -5,6 +5,10 @@ export type JobType = 'process_image_asset' | 'process_video_asset' | 'process_i
 
 export interface ProcessImageTilesPayload {
     assetId: string;
+    // Snapshot upload attribution so audits remain linked even if the asset is removed.
+    // Optional for jobs accepted before this context was stored.
+    projectId?: string;
+    createdBy?: string;
     sourceFilename: string;
     sourceId: string;
     width: number;

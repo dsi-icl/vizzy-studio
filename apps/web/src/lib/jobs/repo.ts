@@ -7,6 +7,7 @@ import type { AssetDocument } from '@repo/db/documents';
 import type { ImageDeepZoomAsset } from '@repo/db/schema';
 import { ObjectId, type ClientSession } from 'mongodb';
 
+import { logAudit, type AuditLogInput } from '~/server/audit';
 import { dbCol, collections } from '~/server/collections';
 
 import { PUBLIC_ASSET_PROJECT_ID } from '../constants';
@@ -23,6 +24,67 @@ import type {
 
 const LEASE_MS = 30_000;
 const RETRY_BACKOFF_MS = 5_000;
+
+async function auditImageTileJob(
+    job: JobDocument,
+    event: 'STARTED' | 'COMPLETED' | 'FAILED' | 'RETRY_SCHEDULED',
+    at: Date,
+    details: {
+        error?: string;
+        reasonCode?: string;
+        changes?: AuditLogInput['changes'];
+    } = {}
+) {
+    try {
+        const payload = job.payload as ProcessImageTilesPayload;
+        const asset =
+            payload.projectId && payload.createdBy
+                ? null
+                : await dbCol.assets.findDeepZoomUpload(payload.assetId);
+        await logAudit({
+            action: `IMAGE_TILE_PROCESSING_${event}`,
+            actorId: 'system:image-worker',
+            projectId: payload.projectId ?? asset?.projectId ?? null,
+            resourceType: 'asset',
+            resourceId: payload.assetId,
+            outcome: event === 'FAILED' || event === 'RETRY_SCHEDULED' ? 'failure' : 'success',
+            reasonCode: details.reasonCode,
+            error: details.error,
+            changes: {
+                status: {
+                    STARTED: 'running',
+                    COMPLETED: 'completed',
+                    FAILED: 'failed',
+                    RETRY_SCHEDULED: 'queued'
+                }[event],
+                sourceId: payload.sourceId,
+                width: payload.width,
+                height: payload.height,
+                startedAt: job.startedAt?.getTime() ?? null,
+                // Recovery measures time until detection, including the missed heartbeat window.
+                durationMs: job.startedAt
+                    ? Math.max(0, at.getTime() - job.startedAt.getTime())
+                    : null,
+                ...details.changes
+            },
+            executionContext: {
+                surface: 'job',
+                operation: 'process_image_tiles',
+                details: {
+                    jobId: String(job._id),
+                    nodeId: job.nodeId,
+                    workerId: job.leaseOwner ?? null,
+                    createdBy: payload.createdBy ?? asset?.createdBy ?? null,
+                    attempt: job.attempts,
+                    maxAttempts: job.maxAttempts
+                }
+            }
+        });
+    } catch (error) {
+        // Context lookup failures, like audit writes, must not change job outcomes.
+        console.error('[ImageTiles] Failed to write job audit:', error);
+    }
+}
 
 let indexesReady = false;
 
@@ -193,7 +255,7 @@ export async function markStalledRunningJobs(
     for await (const job of cursor) {
         const shouldRetry = job.attempts < job.maxAttempts;
         const now = new Date();
-        await collections.jobs.updateOne(
+        const result = await collections.jobs.updateOne(
             {
                 _id: job._id,
                 status: 'running',
@@ -221,6 +283,13 @@ export async function markStalledRunningJobs(
                       $unset: { leaseOwner: '', leaseUntil: '' }
                   }
         );
+        if (result.matchedCount && job.type === 'process_image_tiles') {
+            await auditImageTileJob(job, shouldRetry ? 'RETRY_SCHEDULED' : 'FAILED', now, {
+                reasonCode: 'WORKER_HEARTBEAT_STALLED',
+                error: 'Job heartbeat stalled',
+                changes: shouldRetry ? { nextRetryAt: now.getTime() + RETRY_BACKOFF_MS } : undefined
+            });
+        }
     }
 }
 
@@ -261,7 +330,11 @@ export async function acceptImageTileUpload(input: {
                 id: new ObjectId(input.id),
                 nodeId: input.nodeId,
                 type: 'process_image_tiles',
-                payload: input.payload,
+                payload: {
+                    ...input.payload,
+                    projectId: input.asset.projectId,
+                    createdBy: input.asset.createdBy
+                },
                 session
             });
             return asset;
@@ -302,13 +375,25 @@ export async function updateImageTileAsset(
     );
 }
 
+export async function startImageTileJob(job: JobDocument, owner: string) {
+    const payload = job.payload as ProcessImageTilesPayload;
+    await updateImageTileAsset(job, owner, {
+        schemaVersion: 1,
+        width: payload.width,
+        height: payload.height,
+        status: 'processing'
+    });
+    await auditImageTileJob(job, 'STARTED', job.startedAt ?? new Date());
+}
+
 export async function completeImageTileJob(
     job: JobDocument,
     owner: string,
     state: ImageDeepZoomAsset,
     result: ProcessImageTilesResult
 ) {
-    return db.client.withSession((session) =>
+    const now = new Date();
+    await db.client.withSession((session) =>
         session.withTransaction(async () => {
             await fenceLease(job, owner, session);
             const payload = job.payload as ProcessImageTilesPayload;
@@ -328,8 +413,8 @@ export async function completeImageTileJob(
                     $set: {
                         status: 'completed',
                         result,
-                        completedAt: new Date(),
-                        updatedAt: new Date()
+                        completedAt: now,
+                        updatedAt: now
                     },
                     $unset: { leaseOwner: '', leaseUntil: '', error: '' }
                 },
@@ -337,6 +422,14 @@ export async function completeImageTileJob(
             );
         })
     );
+    await auditImageTileJob(job, 'COMPLETED', now, {
+        changes: {
+            result: {
+                ...result,
+                ...(state.status === 'ready' ? state.tiles : {})
+            }
+        }
+    });
 }
 
 export async function failImageTileJob(
@@ -345,10 +438,12 @@ export async function failImageTileJob(
     error: string,
     interrupted = false
 ) {
-    return db.client.withSession((session) =>
+    const now = new Date();
+    const retry = interrupted || job.attempts < job.maxAttempts;
+    const runAfter = new Date(now.getTime() + RETRY_BACKOFF_MS * job.attempts);
+    await db.client.withSession((session) =>
         session.withTransaction(async () => {
             await fenceLease(job, owner, session);
-            const retry = interrupted || job.attempts < job.maxAttempts;
             const payload = job.payload as ProcessImageTilesPayload;
             const dimensions = {
                 schemaVersion: 1 as const,
@@ -373,9 +468,9 @@ export async function failImageTileJob(
                     $set: {
                         status: retry ? 'queued' : 'failed',
                         error,
-                        runAfter: new Date(Date.now() + 5000 * job.attempts),
-                        updatedAt: new Date(),
-                        ...(!retry ? { completedAt: new Date() } : {})
+                        runAfter,
+                        updatedAt: now,
+                        ...(!retry ? { completedAt: now } : {})
                     },
                     $unset: { leaseOwner: '', leaseUntil: '', startedAt: '' },
                     // A controlled deployment restart must not exhaust the retry budget.
@@ -385,6 +480,13 @@ export async function failImageTileJob(
             );
         })
     );
+    await auditImageTileJob(job, retry ? 'RETRY_SCHEDULED' : 'FAILED', now, {
+        error,
+        reasonCode: interrupted ? 'WORKER_SHUTDOWN' : 'IMAGE_PROCESSING_FAILED',
+        changes: retry
+            ? { nextRetryAt: runAfter.getTime(), retryBudgetPreserved: interrupted }
+            : undefined
+    });
 }
 
 /** A reaped final attempt must not leave the library permanently "processing". */
