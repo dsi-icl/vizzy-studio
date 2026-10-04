@@ -34,9 +34,6 @@ export default defineConfig(({ mode }) => {
                 external: ['playwright', 'playwright-core', 'chromium-bidi']
             }
         },
-        optimizeDeps: {
-            exclude: ['fsevents']
-        },
         resolve: {
             tsconfigPaths: true
         },
