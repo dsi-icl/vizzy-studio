@@ -177,17 +177,6 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     );
 };
 
-// MapLibre has no public off-axis viewport API. Keep its Mercator-specific
-// adaptation here: ordinary padding clamps the vanishing point to the canvas,
-// whereas an outer wall screen needs that point to remain outside its canvas.
-type WallMapTransform = MapLibreMap['transform'] & {
-    _helper: {
-        readonly centerPoint: MapLibreMap['transform']['centerPoint'];
-        readonly fovInRadians: number;
-        readonly fov: number;
-    };
-};
-
 function WallMapCanvas({
     layer,
     wall: { viewport, renderers },
@@ -202,17 +191,22 @@ function WallMapCanvas({
     transformRequest: NonNullable<MapProps['transformRequest']>;
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const mapRef = useRef<MapLibreMap | null>(null);
+    const retainedCanvasRef = useRef<HTMLCanvasElement>(null);
+    const rendererRef = useRef<ReturnType<typeof createWallMapRenderer> | null>(null);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
-        if (!container) return;
+        const retainedCanvas = retainedCanvasRef.current;
+        if (!container || !retainedCanvas) return;
         const map = new MapLibreMap({
             container,
             style: { version: 8, sources: {}, layers: [] },
             interactive: false,
             attributionControl: false,
             trackResize: false,
+            // Wall crops should settle immediately instead of restarting label
+            // fades every time movement reveals another part of the same map.
+            fadeDuration: 0,
             maxPitch: 90,
             transformRequest
         });
@@ -231,172 +225,380 @@ function WallMapCanvas({
                 Math.min(textureLimit, viewportLimit[1])
             ];
         }
-        mapRef.current = map;
+        const renderer = createWallMapRenderer(map, container, retainedCanvas);
+        rendererRef.current = renderer;
         return () => {
-            mapRef.current = null;
+            rendererRef.current = null;
+            renderer.dispose();
             map.remove();
         };
     }, [transformRequest]);
 
     useLayoutEffect(() => {
-        mapRef.current?.setStyle(mapStyle);
-    }, [mapStyle]);
+        rendererRef.current?.update({ layer, viewport, mapStyle, pixelRatio });
+    }, [layer, viewport, mapStyle, pixelRatio, transformRequest]);
 
     useLayoutEffect(() => {
-        const map = mapRef.current;
-        const container = containerRef.current;
-        if (!map || !container) return;
-        const viewportScale = layer.viewportScale ?? 1;
-        let transform = map.transform as WallMapTransform;
-        // This is only camera math. Never allocate a full-wall WebGL canvas.
-        const full = transform.clone();
-        full.setFov(10);
-        full.clearNearFarZOverride();
-        let crop = { x: 0, y: 0, width: 1, height: 1 };
-        const restoreTransform = () => {
-            for (const property of ['centerPoint', 'fovInRadians', 'fov']) {
-                Reflect.deleteProperty(transform._helper, property);
-            }
-        };
-        const configureTransform = () =>
-            Object.defineProperties(transform._helper, {
-                centerPoint: {
-                    configurable: true,
-                    get: () => {
-                        const point = full.centerPoint;
-                        point.x -= crop.x;
-                        point.y -= crop.y;
-                        return point;
-                    }
-                },
-                fovInRadians: {
-                    configurable: true,
-                    get: () =>
-                        2 * Math.atan((crop.height / full.height) * Math.tan(full.fovInRadians / 2))
-                },
-                fov: {
-                    configurable: true,
-                    get: () => (transform._helper.fovInRadians * 180) / Math.PI
-                }
-            });
-        configureTransform();
-        let previous: number[] = [];
-        let lastConfig = layer.config;
-        const render: WallMapRenderer = (config) => {
-            lastConfig = config;
-            // Style loading can replace MapLibre's transform, including on the
-            // first load and after WebGL context restoration.
-            if (transform !== map.transform) {
-                restoreTransform();
-                transform = map.transform as WallMapTransform;
-                configureTransform();
-                previous = [];
-            }
-            const { cx, cy, width, height, scaleX, scaleY, rotation } = config;
-            const next = [cx, cy, width, height, scaleX, scaleY, rotation];
-            if (next.every((value, index) => value === previous[index])) return;
-            previous = next;
-            if (!width || !height || !scaleX || !scaleY) {
-                container.style.visibility = 'hidden';
-                return;
-            }
-
-            // Invert the layer's CSS transform to find this screen in map space.
-            // A small gutter keeps labels and antialiasing across screen edges.
-            const angle = (rotation * Math.PI) / 180;
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
-            const corners = [
-                [viewport.x, viewport.y],
-                [viewport.x + viewport.w, viewport.y],
-                [viewport.x, viewport.y + viewport.h],
-                [viewport.x + viewport.w, viewport.y + viewport.h]
-            ].map(([x, y]) => ({
-                x: ((x - cx) * cos + (y - cy) * sin) / scaleX + width / 2,
-                y: (-(x - cx) * sin + (y - cy) * cos) / scaleY + height / 2
-            }));
-            const gutter = 128 / Math.min(Math.abs(scaleX), Math.abs(scaleY));
-            const left = Math.max(0, Math.min(...corners.map((point) => point.x)) - gutter);
-            const top = Math.max(0, Math.min(...corners.map((point) => point.y)) - gutter);
-            const right = Math.min(width, Math.max(...corners.map((point) => point.x)) + gutter);
-            const bottom = Math.min(height, Math.max(...corners.map((point) => point.y)) + gutter);
-            if (right <= left || bottom <= top) {
-                container.style.visibility = 'hidden';
-                return;
-            }
-
-            const fullWidth = Math.max(1, Math.round(width * viewportScale));
-            const fullHeight = Math.max(1, Math.round(height * viewportScale));
-            const x = Math.floor(left * viewportScale);
-            const y = Math.floor(top * viewportScale);
-            crop = {
-                x,
-                y,
-                width: Math.max(1, Math.min(fullWidth, Math.ceil(right * viewportScale)) - x),
-                height: Math.max(1, Math.min(fullHeight, Math.ceil(bottom * viewportScale)) - y)
-            };
-            container.style.visibility = 'visible';
-            container.style.left = `${x / viewportScale}px`;
-            container.style.top = `${y / viewportScale}px`;
-            container.style.width = `${crop.width}px`;
-            container.style.height = `${crop.height}px`;
-            container.style.transform = `scale(${1 / viewportScale})`;
-
-            full.resize(fullWidth, fullHeight, false);
-            full.setZoom(layer.view.zoom);
-            full.setCenter(new LngLat(layer.view.longitude, layer.view.latitude));
-            full.setPitch(layer.view.pitch);
-            full.setBearing(layer.view.bearing);
-
-            const density = pixelRatio * Math.max(Math.abs(scaleX), Math.abs(scaleY));
-            const canvas = map.getCanvas();
-            if (map.getPixelRatio() !== density) {
-                // setPixelRatio already resizes the canvas to the new container.
-                map.setPixelRatio(density);
-            } else if (
-                canvas.style.width !== `${crop.width}px` ||
-                canvas.style.height !== `${crop.height}px`
-            ) {
-                map.resize(undefined, false);
-            }
-            // jumpTo invalidates zoom-dependent style and source state. Applying
-            // the full camera afterward keeps all screens on the same camera.
-            // Its move events also load newly visible tiles on position-only updates.
-            map.jumpTo({
-                center: full.center,
-                zoom: full.zoom,
-                pitch: full.pitch,
-                bearing: full.bearing
-            });
-            transform.apply(full, false);
-            transform.overrideNearFarZ(full.nearZ, full.farZ);
-            // Update projection math without reallocating the WebGL drawing buffer.
-            transform.resize(crop.width, crop.height, false);
-        };
-        const refresh = () => {
-            previous = [];
-            render(lastConfig);
-        };
-        map.on('projectiontransition', refresh);
-        map.on('style.load', refresh);
-        map.on('webglcontextrestored', refresh);
+        const render: WallMapRenderer = (config) => rendererRef.current?.render(config);
         renderers.set(layer.numericId, render);
-        render(layer.config);
         return () => {
             if (renderers.get(layer.numericId) === render) renderers.delete(layer.numericId);
+        };
+    }, [layer.numericId, renderers]);
+
+    return (
+        <>
+            <div
+                ref={containerRef}
+                style={{ position: 'absolute', width: 1, height: 1, transformOrigin: 'top left' }}
+            />
+            <canvas
+                ref={retainedCanvasRef}
+                width={1}
+                height={1}
+                aria-hidden="true"
+                style={{
+                    position: 'absolute',
+                    visibility: 'hidden',
+                    pointerEvents: 'none',
+                    zIndex: 1
+                }}
+            />
+        </>
+    );
+}
+
+type WallMapCrop = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+};
+
+/**
+ * Convert one wall unit's world viewport into map-local pixel crops.
+ *
+ * `required` reserves half the gutter for loading: start preparing another
+ * crop before the current one runs out.
+ * `buffered` is the larger region actually rendered into the WebGL canvas.
+ */
+function getWallMapCropPlan(
+    placement: MapLayer['config'],
+    viewport: Viewport,
+    viewportScale: number
+) {
+    const { cx, cy, width, height, scaleX, scaleY, rotation } = placement;
+    if (
+        !Number.isFinite(viewportScale) ||
+        viewportScale <= 0 ||
+        ![cx, cy, width, height, scaleX, scaleY, rotation].every(Number.isFinite) ||
+        width <= 0 ||
+        height <= 0 ||
+        !scaleX ||
+        !scaleY
+    ) {
+        return null;
+    }
+
+    const angle = (rotation * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const corners = [
+        [viewport.x, viewport.y],
+        [viewport.x + viewport.w, viewport.y],
+        [viewport.x, viewport.y + viewport.h],
+        [viewport.x + viewport.w, viewport.y + viewport.h]
+    ].map(([x, y]) => ({
+        x: ((x - cx) * cos + (y - cy) * sin) / scaleX + width / 2,
+        y: (-(x - cx) * sin + (y - cy) * cos) / scaleY + height / 2
+    }));
+
+    const visibleLeft = Math.max(0, Math.min(...corners.map((point) => point.x)));
+    const visibleTop = Math.max(0, Math.min(...corners.map((point) => point.y)));
+    const visibleRight = Math.min(width, Math.max(...corners.map((point) => point.x)));
+    const visibleBottom = Math.min(height, Math.max(...corners.map((point) => point.y)));
+    if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return null;
+
+    const fullWidth = Math.max(1, Math.round(width * viewportScale));
+    const fullHeight = Math.max(1, Math.round(height * viewportScale));
+    const gutter = 128 / Math.min(Math.abs(scaleX), Math.abs(scaleY));
+    const toCrop = (margin: number): WallMapCrop => {
+        const x = Math.max(0, Math.floor((visibleLeft - margin) * viewportScale));
+        const y = Math.max(0, Math.floor((visibleTop - margin) * viewportScale));
+        const right = Math.min(fullWidth, Math.ceil((visibleRight + margin) * viewportScale));
+        const bottom = Math.min(fullHeight, Math.ceil((visibleBottom + margin) * viewportScale));
+        return { x, y, width: Math.max(1, right - x), height: Math.max(1, bottom - y) };
+    };
+
+    return {
+        fullWidth,
+        fullHeight,
+        required: toCrop(gutter / 2),
+        buffered: toCrop(gutter)
+    };
+}
+
+function wallMapCropContains(container: WallMapCrop, content: WallMapCrop): boolean {
+    return (
+        content.x >= container.x &&
+        content.y >= container.y &&
+        content.x + content.width <= container.x + container.width &&
+        content.y + content.height <= container.y + container.height
+    );
+}
+
+type WallMapInput = {
+    layer: MapLayer;
+    viewport: Viewport;
+    mapStyle: StyleSpecification;
+    pixelRatio: number;
+};
+type RetainedFrame = {
+    crop: WallMapCrop;
+    viewportScale: number;
+    width: number;
+    height: number;
+};
+
+// MapLibre has no public off-axis viewport API. Ordinary padding clamps the
+// vanishing point to the canvas; outer wall units need it outside their canvas.
+type WallMapTransform = MapLibreMap['transform'] & {
+    _helper: {
+        readonly centerPoint: MapLibreMap['transform']['centerPoint'];
+        readonly fovInRadians: number;
+        readonly fov: number;
+    };
+};
+
+/** Keep the render cache alive for the map's lifetime, including JSON position updates. */
+function createWallMapRenderer(
+    map: MapLibreMap,
+    container: HTMLDivElement,
+    retainedCanvas: HTMLCanvasElement
+) {
+    const context = retainedCanvas.getContext('2d');
+    let input: WallMapInput | null = null;
+    let lastConfig: MapLayer['config'] | null = null;
+    let transform = map.transform as WallMapTransform;
+    // Camera math only: never allocate a full-wall WebGL canvas.
+    const full = transform.clone();
+    full.setFov(10);
+    full.clearNearFarZOverride();
+    let crop: WallMapCrop = { x: 0, y: 0, width: 1, height: 1 };
+    let requestedFrame: RetainedFrame | null = null;
+    let retainedFrame: RetainedFrame | null = null;
+    let renderedCamera: number[] = [];
+    let previous: number[] = [];
+    let invalidated = true;
+    let updating = false;
+    let visible = false;
+
+    const restoreTransform = () => {
+        for (const property of ['centerPoint', 'fovInRadians', 'fov']) {
+            Reflect.deleteProperty(transform._helper, property);
+        }
+    };
+    const configureTransform = () =>
+        Object.defineProperties(transform._helper, {
+            centerPoint: {
+                configurable: true,
+                get: () => {
+                    const point = full.centerPoint;
+                    point.x -= crop.x;
+                    point.y -= crop.y;
+                    return point;
+                }
+            },
+            fovInRadians: {
+                configurable: true,
+                get: () =>
+                    2 * Math.atan((crop.height / full.height) * Math.tan(full.fovInRadians / 2))
+            },
+            fov: {
+                configurable: true,
+                get: () => (transform._helper.fovInRadians * 180) / Math.PI
+            }
+        });
+    configureTransform();
+
+    const positionRetainedFrame = () => {
+        if (!retainedFrame || !lastConfig || !visible) return;
+        const { crop: retained, viewportScale, width, height } = retainedFrame;
+        // During a layer resize, stretch the old complete frame with the layer
+        // until the newly framed map is ready. Translation/rotation/scale are
+        // already applied to both canvases by the wall's parent DOM element.
+        const xScale = lastConfig.width / width / viewportScale;
+        const yScale = lastConfig.height / height / viewportScale;
+        retainedCanvas.style.left = `${retained.x * xScale}px`;
+        retainedCanvas.style.top = `${retained.y * yScale}px`;
+        retainedCanvas.style.width = `${retained.width * xScale}px`;
+        retainedCanvas.style.height = `${retained.height * yScale}px`;
+        retainedCanvas.style.visibility = 'visible';
+    };
+
+    const render: WallMapRenderer = (config) => {
+        lastConfig = config;
+        if (!input || updating) return;
+        // Style loading and WebGL restoration may replace the transform.
+        if (transform !== map.transform) {
+            restoreTransform();
+            transform = map.transform as WallMapTransform;
+            configureTransform();
+            invalidated = true;
+        }
+        const { layer, viewport, pixelRatio } = input;
+        const viewportScale = layer.viewportScale ?? 1;
+        const { width, height, scaleX, scaleY, cx, cy, rotation } = config;
+        const density = pixelRatio * Math.max(Math.abs(scaleX), Math.abs(scaleY));
+        const camera = [
+            width,
+            height,
+            viewportScale,
+            density,
+            layer.view.longitude,
+            layer.view.latitude,
+            layer.view.zoom,
+            layer.view.pitch,
+            layer.view.bearing
+        ];
+        const next = [
+            ...camera,
+            cx,
+            cy,
+            scaleX,
+            scaleY,
+            rotation,
+            viewport.x,
+            viewport.y,
+            viewport.w,
+            viewport.h
+        ];
+        if (!invalidated && next.every((value, index) => value === previous[index])) return;
+        previous = next;
+
+        const plan = getWallMapCropPlan(config, viewport, viewportScale);
+        visible = plan !== null;
+        if (!plan) {
+            container.style.visibility = 'hidden';
+            retainedCanvas.style.visibility = 'hidden';
+            return;
+        }
+        container.style.visibility = 'visible';
+        positionRetainedFrame();
+
+        // Compare camera values, not the layer object or its position. Keep the
+        // rendered buffer while it covers this screen plus a small loading margin.
+        if (
+            !invalidated &&
+            requestedFrame &&
+            camera.every((value, index) => value === renderedCamera[index]) &&
+            wallMapCropContains(requestedFrame.crop, plan.required)
+        ) {
+            return;
+        }
+
+        invalidated = false;
+        renderedCamera = camera;
+        crop = plan.buffered;
+        requestedFrame = { crop, viewportScale, width, height };
+        // The retained 2D canvas stays at its old source coordinates above this
+        // live canvas. Resizing/retiling cannot erase the last complete image;
+        // only newly exposed areas show MapLibre's in-progress render underneath.
+        container.style.left = `${crop.x / viewportScale}px`;
+        container.style.top = `${crop.y / viewportScale}px`;
+        container.style.width = `${crop.width}px`;
+        container.style.height = `${crop.height}px`;
+        container.style.transform = `scale(${1 / viewportScale})`;
+
+        full.resize(plan.fullWidth, plan.fullHeight, false);
+        full.setZoom(layer.view.zoom);
+        full.setCenter(new LngLat(layer.view.longitude, layer.view.latitude));
+        full.setPitch(layer.view.pitch);
+        full.setBearing(layer.view.bearing);
+
+        const canvas = map.getCanvas();
+        if (map.getPixelRatio() !== density) {
+            map.setPixelRatio(density);
+        } else if (
+            canvas.style.width !== `${crop.width}px` ||
+            canvas.style.height !== `${crop.height}px`
+        ) {
+            map.resize(undefined, false);
+        }
+        // Run this only for an actual crop/camera change. Its move events make
+        // MapLibre update source coverage, including a new off-axis crop.
+        map.jumpTo({
+            center: full.center,
+            zoom: full.zoom,
+            pitch: full.pitch,
+            bearing: full.bearing
+        });
+        transform.apply(full, false);
+        transform.overrideNearFarZ(full.nearZ, full.farZ);
+        transform.resize(crop.width, crop.height, false);
+    };
+
+    const refresh = () => {
+        invalidated = true;
+        if (lastConfig) render(lastConfig);
+    };
+    const onIdle = () => {
+        if (
+            !context ||
+            !requestedFrame ||
+            updating ||
+            invalidated ||
+            requestedFrame === retainedFrame ||
+            !map.loaded()
+        ) {
+            return;
+        }
+        const canvas = map.getCanvas();
+        if (!canvas.width || !canvas.height) return;
+        // idle fires synchronously after the final render, before the browser
+        // discards the WebGL drawing buffer. No preserveDrawingBuffer is needed.
+        // Resize + copy + reposition happen together before the next browser paint.
+        if (retainedCanvas.width !== canvas.width) retainedCanvas.width = canvas.width;
+        if (retainedCanvas.height !== canvas.height) retainedCanvas.height = canvas.height;
+        context.clearRect(0, 0, retainedCanvas.width, retainedCanvas.height);
+        context.drawImage(canvas, 0, 0);
+        retainedFrame = requestedFrame;
+        positionRetainedFrame();
+    };
+    map.on('projectiontransition', refresh);
+    map.on('style.load', refresh);
+    map.on('webglcontextrestored', refresh);
+    map.on('idle', onIdle);
+
+    return {
+        render,
+        update(next: WallMapInput) {
+            const styleChanged = input?.mapStyle !== next.mapStyle;
+            input = next;
+            lastConfig = next.layer.config;
+            if (styleChanged) {
+                // setStyle can synchronously replace the projection. Defer the
+                // refresh handler until the entire new input is installed.
+                invalidated = true;
+                updating = true;
+                try {
+                    map.setStyle(next.mapStyle);
+                } finally {
+                    updating = false;
+                }
+            }
+            render(lastConfig);
+        },
+        dispose() {
             map.off('projectiontransition', refresh);
             map.off('style.load', refresh);
             map.off('webglcontextrestored', refresh);
+            map.off('idle', onIdle);
             restoreTransform();
-        };
-    }, [layer, viewport, renderers, pixelRatio]);
-
-    return (
-        <div
-            ref={containerRef}
-            style={{ position: 'absolute', width: 1, height: 1, transformOrigin: 'top left' }}
-        />
-    );
+            retainedCanvas.style.visibility = 'hidden';
+            retainedCanvas.width = retainedCanvas.height = 1;
+        }
+    };
 }
 
 export default MapWrapper;
