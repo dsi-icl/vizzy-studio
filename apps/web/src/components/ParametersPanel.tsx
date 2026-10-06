@@ -283,19 +283,6 @@ export function ParametersPanel({
                                     <Label className="text-xs font-semibold">Map View</Label>
                                     <div className="grid grid-cols-2 gap-2">
                                         <SideButtonNumberField
-                                            label="Longitude"
-                                            allowWheelScrub={true}
-                                            disabled={isSelectedLayerLocked}
-                                            step={0.1}
-                                            smallStep={0.01}
-                                            min={-180}
-                                            max={180}
-                                            value={selectedLayer.view.longitude}
-                                            onValueChange={(v) => {
-                                                if (v !== null) updateMapView('longitude', v);
-                                            }}
-                                        />
-                                        <SideButtonNumberField
                                             label="Latitude"
                                             allowWheelScrub={true}
                                             disabled={isSelectedLayerLocked}
@@ -306,6 +293,19 @@ export function ParametersPanel({
                                             value={selectedLayer.view.latitude}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('latitude', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Longitude"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={0.1}
+                                            smallStep={0.01}
+                                            min={-180}
+                                            max={180}
+                                            value={selectedLayer.view.longitude}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('longitude', v);
                                             }}
                                         />
                                         <SideButtonNumberField
