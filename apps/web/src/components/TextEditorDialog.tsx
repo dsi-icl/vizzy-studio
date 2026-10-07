@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/
 import { useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import { resizeHeightFromTopEdge } from '~/lib/textLayerGeometry';
 
@@ -43,6 +44,10 @@ export function TextEditorDialog({ layerId, open, onOpenChange }: TextEditorDial
             ...liveLayer,
             config: resizeHeightFromTopEdge(liveLayer.config, nextHeight)
         };
+        useEditorStore.getState().recordLayerChange({
+            patches: [makeLayerPatch(liveLayer.numericId, liveLayer, updatedLayer)],
+            mergeKey: `text_autoheight:${liveLayer.numericId}`
+        });
         useEditorStore.getState().updateLayerConfig(liveLayer.numericId, updatedLayer.config);
         const engine = EditorEngine.getInstance();
         engine.sendJSON({

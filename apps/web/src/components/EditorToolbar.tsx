@@ -10,6 +10,8 @@ import {
     ArrowsClockwiseIcon,
     ArrowsInLineHorizontalIcon,
     ArrowsOutLineHorizontalIcon,
+    ArrowUUpLeftIcon,
+    ArrowUUpRightIcon,
     CircleNotchIcon,
     CheckCircleIcon,
     EraserIcon,
@@ -104,6 +106,11 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
         }
         return null;
     });
+
+    const canUndo = useEditorStore((s) => s.undoStack.length > 0);
+    const canRedo = useEditorStore((s) => s.redoStack.length > 0);
+    const undo = useEditorStore((s) => s.undo);
+    const redo = useEditorStore((s) => s.redo);
 
     // Actions — stable references, never trigger re-renders
     const { toggleSnapping, toggleDrawing, toggleGrid, startTextEditing } = useEditorStore(
@@ -200,6 +207,17 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                     </>
                 )}
+
+                {/* ── Undo / Redo ── */}
+                <div className="flex items-center gap-0.5">
+                    <TipButton tip="Undo" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+                        <ArrowUUpLeftIcon />
+                    </TipButton>
+                    <TipButton tip="Redo" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+                        <ArrowUUpRightIcon />
+                    </TipButton>
+                </div>
+                <Separator orientation="vertical" className="mx-1 my-1 h-6" />
 
                 {/* ── Add Content ── */}
                 <div className="flex items-center gap-0.5">

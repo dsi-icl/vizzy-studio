@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { ColorPickerPopover } from '~/components/ColourPicker';
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -29,6 +30,16 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
         () =>
             debounce(
                 (nextLayer: BackgroundLayer) => {
+                    useEditorStore.getState().recordLayerChange({
+                        patches: [
+                            makeLayerPatch(
+                                nextLayer.numericId,
+                                useEditorStore.getState().layers.get(nextLayer.numericId) ?? null,
+                                nextLayer
+                            )
+                        ],
+                        mergeKey: `background:${nextLayer.numericId}`
+                    });
                     useEditorStore.setState((s) => {
                         const newLayers = new Map(s.layers);
                         newLayers.set(nextLayer.numericId, nextLayer);

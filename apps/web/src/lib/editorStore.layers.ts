@@ -1,5 +1,6 @@
 import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
+import { makeLayerPatch } from './editorLayerChange';
 import {
     computeBackgroundFloorUpdates,
     computeBringToFrontUpdates,
@@ -26,6 +27,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
      */
     const applyLayerUpdates = (updatedLayers: LayerWithEditorState[], origin: string) => {
         if (!updatedLayers.length) return;
+
+        const currentLayers = get().layers;
+        get().recordLayerChange({
+            patches: updatedLayers.map((layer) =>
+                makeLayerPatch(layer.numericId, currentLayers.get(layer.numericId) ?? null, layer)
+            )
+        });
 
         set((s) => {
             const newLayers = new Map(s.layers);
@@ -99,6 +107,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             }),
 
         removeLayer: (numericId: number) => {
+            const removed = get().layers.get(numericId);
+            if (removed) {
+                get().recordLayerChange({
+                    patches: [makeLayerPatch(numericId, removed, null)],
+                    select: get().selectedLayerIds.filter((id) => id !== numericId.toString())
+                });
+            }
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.delete(numericId);
@@ -143,6 +158,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 ...layer,
                 config: { ...layer.config, visible: !layer.config.visible }
             };
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, layer, updatedLayer)]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, updatedLayer);
@@ -165,6 +183,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 ...layer,
                 config: { ...layer.config, locked }
             };
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, layer, updatedLayer)]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, updatedLayer);
@@ -304,6 +325,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             if (pastedLayers.length === 0) return [];
 
             const selectedLayerIds = pastedLayers.map((layer) => layer.numericId.toString());
+            get().recordLayerChange({
+                patches: pastedLayers.map((layer) => makeLayerPatch(layer.numericId, null, layer)),
+                select: selectedLayerIds
+            });
             set((current) => {
                 const layers = new Map(current.layers);
                 for (const layer of pastedLayers) layers.set(layer.numericId, layer);
@@ -328,7 +353,12 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const { layers, selectedLayerIds } = get();
             if (!selectedLayerIds.length) return;
             const numericId = parseInt(selectedLayerIds[0]);
-            if (layers.get(numericId)?.config.locked) return;
+            const deleted = layers.get(numericId);
+            if (!deleted || deleted.config.locked) return;
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, deleted, null)],
+                select: []
+            });
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'delete_layer', numericId });
             set((s) => {
@@ -443,6 +473,15 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
             if (updatedLayers.length === 0) return;
 
+            get().recordLayerChange({
+                patches: updatedLayers.map((updatedLayer) =>
+                    makeLayerPatch(
+                        updatedLayer.numericId,
+                        s.layers.get(updatedLayer.numericId) ?? null,
+                        updatedLayer
+                    )
+                )
+            });
             set({ layers: newLayers });
             for (const updatedLayer of updatedLayers) {
                 engine.sendJSON({
@@ -482,6 +521,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 textHtml: '<p>New Text</p>'
             };
 
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, newLayer)],
+                select: [numericId.toString()]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, newLayer);
@@ -526,6 +569,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 }
             };
 
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, newLayer)],
+                select: [numericId.toString()]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, newLayer);
@@ -566,6 +613,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 scale: 1
             };
 
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, newLayer)],
+                select: [numericId.toString()]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, newLayer);
@@ -617,6 +668,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 cornerRadius: shape === 'rectangle' ? get().rectangleCornerRadius : 0
             };
 
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, newLayer)],
+                select: [numericId.toString()]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, newLayer);
@@ -719,6 +774,10 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 strokeWidth,
                 strokeDash
             };
+            get().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, newLayer)],
+                select: [numericId.toString()]
+            });
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(numericId, newLayer);
@@ -731,6 +790,12 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
         clearStage: () => {
             const engine = EditorEngine.getInstance();
+            get().recordLayerChange({
+                patches: Array.from(get().layers.values(), (layer) =>
+                    makeLayerPatch(layer.numericId, layer, null)
+                ),
+                select: []
+            });
             engine.sendJSON({ type: 'clear_stage' });
             set({ layers: new Map(), selectedLayerIds: [], hoveredLayerId: null });
             get().markDirty();
@@ -749,6 +814,16 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 config: { ...layer.config, zIndex: index }
             }));
 
+            const currentLayers = get().layers;
+            get().recordLayerChange({
+                patches: updatedLayers.map((layer) =>
+                    makeLayerPatch(
+                        layer.numericId,
+                        currentLayers.get(layer.numericId) ?? null,
+                        layer
+                    )
+                )
+            });
             set({ layers: new Map(updatedLayers.map((l) => [l.numericId, l])) });
 
             updatedLayers.forEach((layer) => {

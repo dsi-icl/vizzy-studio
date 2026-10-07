@@ -7,6 +7,7 @@ import { throttle } from '@tanstack/pacer';
 import { useCallback, useMemo, useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import { FILTER_PRESETS, normalizeLayerFilters, toCssFilterString } from '~/lib/layerFilters';
 import type { LayerFilterState, LayerWithEditorState } from '~/lib/types';
@@ -51,6 +52,10 @@ export function FilterPanel({ activeLayer }: FilterPanelProps) {
                 ...activeLayer,
                 config: { ...activeLayer.config, filters: next }
             };
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(activeLayer.numericId, activeLayer, updatedLayer)],
+                mergeKey: `filters:${activeLayer.numericId}`
+            });
             useEditorStore.getState().upsertLayer(updatedLayer);
             throttledFilterBroadcast.current(updatedLayer);
         },

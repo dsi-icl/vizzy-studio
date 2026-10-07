@@ -2,6 +2,7 @@ import { CaretDownIcon, ImageIcon } from '@phosphor-icons/react';
 import { useCallback } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport } from '~/lib/fitSizeToViewport';
 import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
@@ -136,6 +137,10 @@ export function AssetLibraryPanel({
             };
         }
 
+        store.recordLayerChange({
+            patches: [makeLayerPatch(numericId, null, layer)],
+            select: [numericId.toString()]
+        });
         store.upsertLayer(layer);
         store.toggleLayerSelection(numericId.toString(), false, false);
 

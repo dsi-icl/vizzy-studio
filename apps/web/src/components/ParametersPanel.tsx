@@ -6,6 +6,7 @@ import { throttle } from '@tanstack/pacer';
 import { useCallback, useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -70,6 +71,10 @@ export function ParametersPanel({
                 return;
             const updatedLayer = { ...selectedLayer, [field]: value };
 
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(selectedLayer.numericId, selectedLayer, updatedLayer)],
+                mergeKey: `parameters:${selectedLayer.numericId}:${field}`
+            });
             useEditorStore.setState((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(selectedLayer.numericId, updatedLayer);
@@ -87,6 +92,12 @@ export function ParametersPanel({
             const newConfig = { ...selectedLayer.config, [field]: value };
             const updatedLayer = { ...selectedLayer, config: newConfig };
 
+            // A number field fires per keystroke; the merge key folds the run
+            // into one undo step.
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(selectedLayer.numericId, selectedLayer, updatedLayer)],
+                mergeKey: `parameters:${selectedLayer.numericId}:${field}`
+            });
             useEditorStore.setState((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(selectedLayer.numericId, updatedLayer);

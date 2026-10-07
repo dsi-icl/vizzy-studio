@@ -4,6 +4,7 @@ import { create } from 'zustand';
 
 import { EditorEngine } from './editorEngine';
 import { wireEngineSubscriptions } from './editorStore.engine';
+import { createHistorySlice } from './editorStore.history';
 import { createLayerSlice } from './editorStore.layers';
 import { createProjectSlice } from './editorStore.project';
 import { createSlideSlice } from './editorStore.slides';
@@ -107,6 +108,7 @@ export const useEditorStore =
                   },
 
                   // ── Slices ──
+                  ...createHistorySlice(set, get, helpers),
                   ...createProjectSlice(set, get, helpers),
                   ...createLayerSlice(set, get, helpers),
                   ...createSlideSlice(set, get, helpers),

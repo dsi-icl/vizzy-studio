@@ -37,6 +37,7 @@ import {
     broadcastKeyboardLayerTransform,
     isEditorArrowKey
 } from '~/lib/editorKeyboardMovement';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
@@ -315,6 +316,10 @@ export function EditorSlate() {
                       ...layerBase
                   };
 
+            store.recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, layer)],
+                select: [numericId.toString()]
+            });
             store.upsertLayer(layer);
             store.toggleLayerSelection(numericId.toString(), false, false);
 
@@ -538,6 +543,17 @@ export function EditorSlate() {
                 if (store.pasteLayers().length > 0) e.preventDefault();
                 return;
             }
+            if (isClipboardShortcut && shortcutKey === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) store.redo();
+                else store.undo();
+                return;
+            }
+            if (isClipboardShortcut && shortcutKey === 'y' && !e.shiftKey) {
+                e.preventDefault();
+                store.redo();
+                return;
+            }
 
             if (!store.selectedLayerIds.length) return;
 
@@ -561,6 +577,11 @@ export function EditorSlate() {
                 e.shiftKey,
                 isSnapping ? snapGrid : 10
             );
+            store.recordLayerChange({
+                patches: [makeLayerPatch(currentSelected.numericId, currentSelected, updatedLayer)],
+                // A held arrow key collapses into one undo step.
+                mergeKey: `arrow:${currentSelected.numericId}:${e.shiftKey ? 'rotate' : 'move'}`
+            });
             store.updateLayerConfig(currentSelected.numericId, updatedLayer.config);
             if (engine) broadcastKeyboardLayerTransform(engine, updatedLayer);
         };
@@ -747,6 +768,9 @@ export function EditorSlate() {
                 ...(stillImageFilename ? { stillImage: stillImageFilename } : {})
             };
 
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(numericId, null, finalizedLayer)]
+            });
             useEditorStore.getState().upsertLayer(finalizedLayer);
             engine.setPlayback(numericId, defaultPlayback);
 
@@ -1092,6 +1116,19 @@ export function EditorSlate() {
                 updatedConfig.scaleY,
                 updatedConfig.rotation
             );
+
+            // Recorded before the shadow mutation below overwrites the config:
+            // `prevConfig` is the geometry from before the pointer went down, so
+            // the entry spans the whole gesture rather than its last frame.
+            useEditorStore.getState().recordLayerChange({
+                patches: [
+                    makeLayerPatch(
+                        numericId,
+                        { ...layerToUpdate, config: prevConfig },
+                        { ...layerToUpdate, config: updatedConfig }
+                    )
+                ]
+            });
 
             // Shadow mutation for binary fast-path
             layerToUpdate.config = updatedConfig;

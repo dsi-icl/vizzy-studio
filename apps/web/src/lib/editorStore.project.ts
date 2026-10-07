@@ -12,6 +12,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
     const set: SliceSet = _set;
     return {
         loadProject: async (projectId: string, commitId: string, slideId: string) => {
+            get().clearHistory();
             set({
                 loading: true,
                 projectId,
@@ -104,6 +105,7 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
             if (!projectId || !commitId || slideId === activeSlideId) return;
 
             const engine = EditorEngine.getInstance();
+            get().clearHistory();
             set({
                 loading: true,
                 layers: new Map(),
