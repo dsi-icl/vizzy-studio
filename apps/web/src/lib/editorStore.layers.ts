@@ -108,7 +108,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
         removeLayer: (numericId: number) => {
             const removed = get().layers.get(numericId);
-            if (removed) {
+            if (removed && !removed.isUploading) {
                 get().recordLayerChange({
                     patches: [makeLayerPatch(numericId, removed, null)],
                     select: get().selectedLayerIds.filter((id) => id !== numericId.toString())
@@ -355,10 +355,13 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const numericId = parseInt(selectedLayerIds[0]);
             const deleted = layers.get(numericId);
             if (!deleted || deleted.config.locked) return;
-            get().recordLayerChange({
-                patches: [makeLayerPatch(numericId, deleted, null)],
-                select: []
-            });
+            // See removeLayer: a placeholder mid-upload cannot be restored.
+            if (!deleted.isUploading) {
+                get().recordLayerChange({
+                    patches: [makeLayerPatch(numericId, deleted, null)],
+                    select: []
+                });
+            }
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'delete_layer', numericId });
             set((s) => {
