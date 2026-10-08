@@ -1,5 +1,5 @@
 import { DEFAULT_STAGE_LAYOUT } from '@repo/db/schema';
-import { throttle } from '@tanstack/pacer';
+import { Throttler, throttle } from '@tanstack/pacer';
 import { create } from 'zustand';
 
 import { EditorEngine } from './editorEngine';
@@ -34,6 +34,35 @@ export const useEditorStore =
                   { wait: 100 }
               );
 
+              // Map gestures update the editor every frame, but wall maps should
+              // only receive the latest complete camera at a bounded rate.
+              const sendMapViewUpdate = new Throttler(
+                  (numericId: number, scopeKey: string) => {
+                      const state = get();
+                      if (
+                          `${state.projectId}/${state.commitId}/${state.activeSlideId}` !== scopeKey
+                      )
+                          return;
+                      const layer = state.layers.get(numericId);
+                      if (layer?.type !== 'map') return;
+                      EditorEngine.getInstance().sendJSON({
+                          type: 'upsert_layer',
+                          origin: 'editor:map_view',
+                          layer
+                      });
+                  },
+                  { wait: 500 }
+              );
+              let queuedMapKey: string | null = null;
+              const queueMapLayerUpdate = (numericId: number) => {
+                  const state = get();
+                  const scopeKey = `${state.projectId}/${state.commitId}/${state.activeSlideId}`;
+                  const nextKey = `${scopeKey}/${numericId}`;
+                  if (queuedMapKey && queuedMapKey !== nextKey) sendMapViewUpdate.flush();
+                  queuedMapKey = nextKey;
+                  sendMapViewUpdate.maybeExecute(numericId, scopeKey);
+              };
+
               /** Broadcast slide metadata — needs get() for commitId */
               function broadcastSlides(slides: Parameters<SliceHelpers['broadcastSlides']>[0]) {
                   const engine = EditorEngine.getInstance();
@@ -48,6 +77,8 @@ export const useEditorStore =
 
               const helpers: SliceHelpers = {
                   sendLayerUpdate,
+                  queueMapLayerUpdate,
+                  flushMapViewUpdate: () => sendMapViewUpdate.flush(),
                   broadcastSlides,
                   allocateId: () => _nextId++,
                   allocateZIndex: () => _nextZIndex++,
@@ -105,6 +136,8 @@ export const useEditorStore =
                       width: DEFAULT_STAGE_LAYOUT.screenWidth,
                       height: DEFAULT_STAGE_LAYOUT.screenHeight
                   },
+                  flushMapViewUpdate: helpers.flushMapViewUpdate,
+                  queueMapLayerUpdate,
 
                   // ── Slices ──
                   ...createProjectSlice(set, get, helpers),

@@ -23,8 +23,10 @@ import {
 import { toast } from 'sonner';
 
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
+import { EditorMapOverlay } from '~/components/EditorMapOverlay';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaMapLayer } from '~/components/KonvaMapLayer';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -40,6 +42,16 @@ import {
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { getMapPreviewMap } from '~/lib/mapPreviewStore';
+import {
+    clampMapView,
+    classifyMapTouchGesture,
+    mapPinchZoomDelta,
+    mapPitchDelta,
+    mapScrollPitchDelta,
+    mapZoomCenterAtLocalPoint,
+    type MapTouchGestureKind
+} from '~/lib/mapViewGestures';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getSnapGridSize } from '~/lib/stageConstants';
@@ -62,6 +74,8 @@ const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const EDGE_SCROLL_ZONE_PX = 96;
 const EDGE_SCROLL_MAX_STEP_PX = 24;
 
+type EditorMapLayer = Extract<LayerWithEditorState, { type: 'map' }>;
+
 export function EditorSlate() {
     const engine = useMemo(
         () => (typeof window !== 'undefined' ? EditorEngine.getInstance() : null),
@@ -81,16 +95,17 @@ export function EditorSlate() {
     const showGrid = useEditorStore((s) => s.showGrid);
     const isDrawing = useEditorStore((s) => s.isDrawing);
     const isSnapping = useEditorStore((s) => s.isSnapping);
+    const projectId = useEditorStore((s) => s.projectId);
+    const loading = useEditorStore((s) => s.loading);
+    const connectionStatus = useEditorStore((s) => s.connectionStatus);
     const addLineLayer = useEditorStore((s) => s.addLineLayer);
     const strokeColor = useEditorStore((s) => s.strokeColor);
     const strokeDash = useEditorStore((s) => s.strokeDash);
     const strokeWidth = useEditorStore((s) => s.strokeWidth);
 
-    // Peer cursors are per-slide; remounting on scope change drops the previous
-    // slide's cursors instead of leaving them to age out.
-    const peerCursorScopeKey = useEditorStore(
-        (s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`
-    );
+    // Remount slide-scoped cursors and maps so reused layer IDs cannot retain
+    // the previous slide's cursors or preview images.
+    const slideScopeKey = useEditorStore((s) => `${s.projectId}/${s.commitId}/${s.activeSlideId}`);
 
     const [stageScaleFactor, setStageScaleFactor] = useState(DEFAULT_STAGE_SCALE_FACTOR);
     const [isPinching, setIsPinching] = useState(false);
@@ -107,6 +122,16 @@ export function EditorSlate() {
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
+    const mapTouchGesture = useRef<{
+        numericId: number;
+        kind: MapTouchGestureKind | null;
+        completed: boolean;
+        startDistance: number;
+        startCenterY: number;
+        lastDistance: number;
+        lastCenterY: number;
+    } | null>(null);
+    const safariMapGestureActive = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const sortedLayers = useMemo(
@@ -393,6 +418,51 @@ export function EditorSlate() {
 
         return () => observer.disconnect();
     }, [rows, screenHeight]);
+
+    useEffect(() => {
+        if (!engine || loading || connectionStatus !== 'connected') return;
+        if (
+            !Array.from(layers.values()).some(
+                (layer) => layer.type === 'map' && layer.viewportScale === undefined
+            )
+        )
+            return;
+
+        // Older maps did not save the editor viewport used by their camera.
+        // Capture the measured authoring scale once, before wall rendering, and
+        // persist it with the layer. Resizing the editor must not reframe the map.
+        const frameId = requestAnimationFrame(() => {
+            const availableHeight = stageSlot.current?.clientHeight ?? 0;
+            if (availableHeight <= 0) return;
+            const viewportScale = Math.max(0.01, availableHeight / (screenHeight * rows));
+            const store = useEditorStore.getState();
+            if (
+                store.loading ||
+                `${store.projectId}/${store.commitId}/${store.activeSlideId}` !== slideScopeKey
+            )
+                return;
+            const updatedLayers = new Map(store.layers);
+            const mapsToUpdate: EditorMapLayer[] = [];
+            for (const layer of store.layers.values()) {
+                if (layer.type !== 'map' || layer.viewportScale !== undefined) continue;
+                const updatedLayer = { ...layer, viewportScale };
+                updatedLayers.set(layer.numericId, updatedLayer);
+                mapsToUpdate.push(updatedLayer);
+            }
+            if (mapsToUpdate.length === 0) return;
+
+            useEditorStore.setState({ layers: updatedLayers });
+            for (const layer of mapsToUpdate) {
+                engine.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'editor:map_viewport',
+                    layer
+                });
+            }
+            store.markDirty();
+        });
+        return () => cancelAnimationFrame(frameId);
+    }, [engine, loading, connectionStatus, layers, slideScopeKey, rows, screenHeight]);
 
     useEffect(() => {
         const slot = stageSlot.current;
@@ -934,6 +1004,34 @@ export function EditorSlate() {
             }
         }
 
+        if (layer.type === 'map') {
+            // MapWrapper is DOM, so drag/resize needs React state updates while Konva moves.
+            // Keep the original geometry before mirroring it. Otherwise transform
+            // end compares the final node against this same live config and skips
+            // the upsert that makes the change persist beyond the binary preview.
+            if (!node.getAttr('preTransformConfig')) {
+                node.setAttr('preTransformConfig', { ...layer.config });
+            }
+            const mirroredConfig: Layer['config'] = {
+                ...layer.config,
+                cx: Math.round(node.x()),
+                cy: Math.round(node.y()),
+                width: Math.max(MIN_LAYER_DIMENSION, Math.round(node.width())),
+                height: Math.max(MIN_LAYER_DIMENSION, Math.round(node.height())),
+                scaleX: Math.round(node.scaleX() * 1000) / 1000,
+                scaleY: Math.round(node.scaleY() * 1000) / 1000,
+                rotation: Math.round(node.rotation())
+            };
+            layer.config = mirroredConfig;
+            useEditorStore.setState((s) => {
+                const current = s.layers.get(numericId);
+                if (!current || current.type !== 'map') return s;
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, { ...current, config: mirroredConfig });
+                return { layers: newLayers };
+            });
+        }
+
         engine?.broadcastBinaryMove(
             numericId,
             Math.round(node.x()),
@@ -1061,7 +1159,7 @@ export function EditorSlate() {
                 node.scaleY(updatedConfig.scaleY);
             }
 
-            // A text reflow has already mirrored the live geometry onto the stored
+            // Text reflow and map transforms mirror the live geometry onto the stored
             // config, so that copy is no baseline; fall back to it only when no
             // mirror ran, where it is still the pre-interaction geometry.
             const prevConfig =
@@ -1100,11 +1198,13 @@ export function EditorSlate() {
             const store = useEditorStore.getState();
             store.updateLayerConfig(numericId, updatedConfig);
 
-            // Sync to server
+            // A map gesture can update the camera before this dragend runs. Send
+            // the freshly merged store layer so geometry cannot rewind its view.
+            const updatedLayer = useEditorStore.getState().layers.get(numericId);
             engine.sendJSON({
                 type: 'upsert_layer',
                 origin: 'editor:handle_transform_end',
-                layer: { ...layerToUpdate, config: updatedConfig }
+                layer: updatedLayer ?? { ...layerToUpdate, config: updatedConfig }
             });
         },
         [engine, isSnapping, snapGrid]
@@ -1140,6 +1240,74 @@ export function EditorSlate() {
         }
         return null;
     };
+
+    const mapLocalPointAtClient = useCallback(
+        (numericId: number, clientX: number, clientY: number) => {
+            const stage = stageInstance.current;
+            const node = stage?.findOne<Konva.Image>(`#${numericId}`);
+            if (!stage || !node) return null;
+            const rect = stage.container().getBoundingClientRect();
+            const point = node
+                .getAbsoluteTransform()
+                .copy()
+                .invert()
+                .point({
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                });
+            return { point, width: node.width(), height: node.height() };
+        },
+        []
+    );
+
+    const selectedMapAtPoint = useCallback(
+        (clientX: number, clientY: number) => {
+            const store = useEditorStore.getState();
+            if (store.isDrawing || store.selectedLayerIds.length !== 1) return null;
+            const numericId = Number.parseInt(store.selectedLayerIds[0], 10);
+            const layer = store.layers.get(numericId);
+            if (layer?.type !== 'map' || layer.config.locked || !layer.config.visible) return null;
+            const hit = mapLocalPointAtClient(numericId, clientX, clientY);
+            if (!hit) return null;
+            return hit.point.x >= 0 &&
+                hit.point.x <= hit.width &&
+                hit.point.y >= 0 &&
+                hit.point.y <= hit.height
+                ? numericId
+                : null;
+        },
+        [mapLocalPointAtClient]
+    );
+
+    const updateMapViewByGesture = useCallback(
+        (
+            numericId: number,
+            zoomDelta: number,
+            pitchDelta: number,
+            anchor?: { clientX: number; clientY: number }
+        ) => {
+            if (!zoomDelta && !pitchDelta) return;
+            const store = useEditorStore.getState();
+            const layer = store.layers.get(numericId);
+            if (layer?.type !== 'map' || layer.config.locked) return;
+            const view = clampMapView(layer.view.zoom + zoomDelta, layer.view.pitch + pitchDelta);
+            if (anchor && view.zoom !== layer.view.zoom) {
+                const previewKey = `${store.projectId}/${store.commitId}/${store.activeSlideId}/${numericId}`;
+                const map = getMapPreviewMap(previewKey);
+                const local = mapLocalPointAtClient(numericId, anchor.clientX, anchor.clientY);
+                const center =
+                    map && local
+                        ? mapZoomCenterAtLocalPoint(map, layer.view, view.zoom, local.point, local)
+                        : null;
+                if (center) {
+                    store.updateMapView(numericId, { ...view, ...center });
+                    return;
+                }
+            }
+            store.updateMapView(numericId, view);
+        },
+        [mapLocalPointAtClient]
+    );
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
@@ -1178,6 +1346,41 @@ export function EditorSlate() {
                 }
             }
             if (!isDrawing) return;
+        }
+        if (
+            isTouchEvent(e.evt) &&
+            e.evt.touches.length === 2 &&
+            currentSelectedLayer?.type === 'map' &&
+            !currentSelectedLayer.config.locked &&
+            !trRef.current?.isTransforming()
+        ) {
+            const [first, second] = Array.from(e.evt.touches);
+            const numericId = currentSelectedLayer.numericId;
+            if (
+                selectedMapAtPoint(first.clientX, first.clientY) === numericId &&
+                selectedMapAtPoint(second.clientX, second.clientY) === numericId
+            ) {
+                // End a one-finger layer drag before the second touch takes over.
+                // Konva's dragend commits that geometry through the existing handler.
+                const node = stageInstance.current?.findOne<Konva.Image>(`#${numericId}`);
+                if (node?.isDragging()) node.stopDrag();
+                const distance = Math.hypot(
+                    second.clientX - first.clientX,
+                    second.clientY - first.clientY
+                );
+                const centerY = (first.clientY + second.clientY) / 2;
+                mapTouchGesture.current = {
+                    numericId,
+                    kind: null,
+                    completed: false,
+                    startDistance: distance,
+                    startCenterY: centerY,
+                    lastDistance: distance,
+                    lastCenterY: centerY
+                };
+                setIsPinching(true);
+                return;
+            }
         }
         if (
             isTouchEvent(e.evt) &&
@@ -1249,6 +1452,45 @@ export function EditorSlate() {
             } else {
                 setCurrentLine([]);
             }
+        }
+        const gesture = mapTouchGesture.current;
+        if (isTouchEvent(e.evt) && gesture?.completed) return;
+        if (isTouchEvent(e.evt) && e.evt.touches.length === 2 && gesture) {
+            const stage = e.target.getStage();
+            const node = stage?.findOne<Konva.Shape>(`#${gesture.numericId}`);
+            if (node?.isDragging()) node.stopDrag();
+            const [first, second] = Array.from(e.evt.touches);
+            const distance = Math.hypot(
+                second.clientX - first.clientX,
+                second.clientY - first.clientY
+            );
+            const centerY = (first.clientY + second.clientY) / 2;
+            const centerX = (first.clientX + second.clientX) / 2;
+            gesture.kind ??= classifyMapTouchGesture(
+                gesture.startDistance,
+                distance,
+                gesture.startCenterY,
+                centerY
+            );
+            if (gesture.kind === 'zoom') {
+                updateMapViewByGesture(
+                    gesture.numericId,
+                    mapPinchZoomDelta(gesture.lastDistance, distance),
+                    0,
+                    { clientX: centerX, clientY: centerY }
+                );
+            } else if (gesture.kind === 'pitch') {
+                updateMapViewByGesture(
+                    gesture.numericId,
+                    0,
+                    mapPitchDelta(gesture.lastCenterY, centerY)
+                );
+            }
+            if (gesture.kind) {
+                gesture.lastDistance = distance;
+                gesture.lastCenterY = centerY;
+            }
+            return;
         }
         if (
             isTouchEvent(e.evt) &&
@@ -1325,6 +1567,20 @@ export function EditorSlate() {
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (isTouchEvent(e.evt) && mapTouchGesture.current && e.evt.touches.length < 2) {
+            if (!mapTouchGesture.current.completed) {
+                mapTouchGesture.current.completed = true;
+                useEditorStore.getState().flushMapViewUpdate();
+            }
+            if (e.evt.touches.length === 0) {
+                mapTouchGesture.current = null;
+                setIsPinching(false);
+            }
+            lastDist.current = null;
+            lastAngle.current = null;
+            lastCenter.current = null;
+            return;
+        }
         if (isTouchEvent(e.evt) && e.evt.touches.length < 2) setIsPinching(false);
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const shouldFinalizeFromStage = isTouchEvent(e.evt) && isPinching;
@@ -1358,14 +1614,81 @@ export function EditorSlate() {
         handleTouchEnd(e);
     };
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const { clientX, clientY, deltaX, deltaY, deltaMode, ctrlKey } = e.evt;
+            const numericId = selectedMapAtPoint(clientX, clientY);
+            if (numericId !== null && deltaY !== 0) {
+                e.evt.preventDefault();
+                if (safariMapGestureActive.current) return;
+                const pixels =
+                    deltaY *
+                    (deltaMode === WheelEvent.DOM_DELTA_LINE
+                        ? 16
+                        : deltaMode === WheelEvent.DOM_DELTA_PAGE
+                          ? slot.clientHeight
+                          : 1);
+                const boundedPixels = Math.max(-120, Math.min(120, pixels));
+                if (ctrlKey)
+                    updateMapViewByGesture(numericId, -boundedPixels * 0.01, 0, {
+                        clientX,
+                        clientY
+                    });
+                else updateMapViewByGesture(numericId, 0, mapScrollPitchDelta(boundedPixels));
+                return;
+            }
+            const delta = deltaX + deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            slot.scrollLeft += delta;
+        },
+        [selectedMapAtPoint, updateMapViewByGesture]
+    );
+
+    useEffect(() => {
         const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+        if (!slot || navigator.maxTouchPoints > 0) return;
+        type SafariGestureEvent = Event & { clientX: number; clientY: number; scale: number };
+        let activeMapId: number | null = null;
+        let lastScale = 1;
+        const onStart = (event: Event) => {
+            const gesture = event as SafariGestureEvent;
+            activeMapId = selectedMapAtPoint(gesture.clientX, gesture.clientY);
+            if (activeMapId === null) return;
+            lastScale = gesture.scale || 1;
+            safariMapGestureActive.current = true;
+            event.preventDefault();
+        };
+        const onChange = (event: Event) => {
+            if (activeMapId === null) return;
+            const gesture = event as SafariGestureEvent;
+            event.preventDefault();
+            const scale = gesture.scale || 1;
+            updateMapViewByGesture(activeMapId, mapPinchZoomDelta(lastScale, scale), 0, {
+                clientX: gesture.clientX,
+                clientY: gesture.clientY
+            });
+            lastScale = scale;
+        };
+        const onEnd = (event: Event) => {
+            if (activeMapId === null) return;
+            event.preventDefault();
+            activeMapId = null;
+            safariMapGestureActive.current = false;
+            useEditorStore.getState().flushMapViewUpdate();
+        };
+        slot.addEventListener('gesturestart', onStart, { passive: false });
+        slot.addEventListener('gesturechange', onChange, { passive: false });
+        slot.addEventListener('gestureend', onEnd, { passive: false });
+        return () => {
+            slot.removeEventListener('gesturestart', onStart);
+            slot.removeEventListener('gesturechange', onChange);
+            slot.removeEventListener('gestureend', onEnd);
+            safariMapGestureActive.current = false;
+        };
+    }, [selectedMapAtPoint, updateMapViewByGesture]);
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
@@ -1402,6 +1725,16 @@ export function EditorSlate() {
         transformer.getLayer()?.batchDraw();
     }, [hoverHintLayerId, layers]);
 
+    const stagePixelWidth = columns * screenWidth * stageScaleFactor;
+    const stagePixelHeight = rows * screenHeight * stageScaleFactor;
+    const visibleMapLayers = foregroundLayers
+        .filter(
+            (layer): layer is EditorMapLayer =>
+                layer.type === 'map' &&
+                (layer.config.visible || selectedLayerIdSet.has(layer.numericId.toString()))
+        )
+        .sort((a, b) => a.numericId - b.numericId);
+
     return (
         <>
             <EditorToolbar
@@ -1409,325 +1742,350 @@ export function EditorSlate() {
                 onUpload={handleUpload}
                 // onEditText={setEditingTextLayerId}
             />
-            <SlatePreview stageSlot={stageSlot} stageScaleFactor={stageScaleFactor} />
+            <SlatePreview
+                stageSlot={stageSlot}
+                stageScaleFactor={stageScaleFactor}
+                previewScopeKey={slideScopeKey}
+            />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
                     ref={stageSlot}
                     id="slate"
                     onDragOver={handleStageDragOver}
                     onDrop={handleStageDrop}
-                    className="min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
+                    className="relative min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
                 >
-                    <Stage
-                        ref={stageInstance}
-                        width={columns * screenWidth * stageScaleFactor}
-                        height={rows * screenHeight * stageScaleFactor}
-                        onMouseDown={handleStageInteractionStart}
-                        onMouseMove={handleTouchMove}
-                        onMouseUp={handleTouchEnd}
-                        onMouseLeave={handleStageMouseLeave}
-                        onWheel={handleStageWheel}
-                        onTouchStart={handleStageInteractionStart}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={handleTouchEnd}
-                        scaleX={stageScaleFactor}
-                        scaleY={stageScaleFactor}
+                    <div
+                        style={{
+                            position: 'relative',
+                            width: stagePixelWidth,
+                            height: stagePixelHeight
+                        }}
                     >
-                        <FastLayer listening={false}>
-                            {backgroundLayer ? (
-                                <KonvaBackgroundLayer
-                                    key={`bg_${backgroundLayer.numericId}`}
-                                    layer={backgroundLayer}
-                                    previewScale={stageScaleFactor}
-                                    layout={stageLayout}
-                                />
-                            ) : null}
-                        </FastLayer>
-                        <KonvaLayer>
-                            {/* oxlint-disable-next-line react-hooks-js/refs */}
-                            {foregroundLayers.map((layer) => {
-                                const isHidden = !layer.config.visible;
-                                const isSelected = selectedLayerIdSet.has(
-                                    layer.numericId.toString()
-                                );
-                                const isLocked = Boolean(layer.config.locked);
-                                if (isHidden && !isSelected) return null;
-
-                                const hiddenOpacity = isHidden ? 0.3 : 1;
-
-                                const props = {
-                                    listening: !isDrawing,
-                                    isDrawing,
-                                    isPinching,
-                                    isLocked,
-                                    opacity: hiddenOpacity,
-                                    onSelect: (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
-                                        if (e.evt instanceof MouseEvent && e.evt.button !== 0)
-                                            return;
-                                        const selectionModifiers = getCanvasSelectionModifiers(
-                                            e.evt,
-                                            isLocked
-                                        );
-                                        if (!selectionModifiers) return;
-                                        toggleLayerSelection(
-                                            layer.numericId.toString(),
-                                            selectionModifiers.isShiftClick,
-                                            selectionModifiers.isCtrlClick
-                                        );
-                                    },
-                                    onTransform: (e: KonvaEventObject<Event>) =>
-                                        handleTransform(e, layer.numericId),
-                                    onTransformEnd: (e: KonvaEventObject<Event>) =>
-                                        handleTransformEnd(e, layer.numericId)
-                                };
-
-                                if (layer.type === 'image') {
-                                    return (
-                                        <KonvaStaticImage
-                                            key={`spi_${layer.numericId}`}
-                                            layer={layer}
-                                            {...props}
-                                        />
-                                    );
-                                }
-                                if (layer.type === 'video')
-                                    return (
-                                        <KonvaVideo
-                                            key={`vid_${layer.numericId}`}
-                                            layer={layer}
-                                            {...props}
-                                        />
-                                    );
-                                if (layer.type === 'text') {
-                                    return (
-                                        <KonvaTextLayer
-                                            key={`txt_${layer.numericId}`}
-                                            layer={layer}
-                                            isDrawing={props.isDrawing}
-                                            isPinching={props.isPinching}
-                                            isLocked={props.isLocked}
-                                            opacity={hiddenOpacity}
-                                            onSelect={props.onSelect}
-                                            onDblClick={() => {
-                                                if (!props.isLocked)
-                                                    startTextEditing(layer.numericId);
-                                            }}
-                                            onTransform={props.onTransform}
-                                            onTransformEnd={props.onTransformEnd}
-                                        />
-                                    );
-                                }
-                                if (layer.type === 'map') {
-                                    return (
-                                        <Rect
-                                            key={`map_${layer.numericId}`}
-                                            layer={layer}
-                                            fill={'#f00'}
-                                            id={layer.numericId.toString()}
-                                            x={layer.config.cx}
-                                            y={layer.config.cy}
-                                            width={layer.config.width}
-                                            height={layer.config.height}
-                                            scaleX={layer.config.scaleX}
-                                            scaleY={layer.config.scaleY}
-                                            offsetX={layer.config.width / 2}
-                                            offsetY={layer.config.height / 2}
-                                            rotation={layer.config.rotation}
-                                            opacity={hiddenOpacity}
-                                            listening={props.listening}
-                                            draggable={
-                                                !props.isDrawing &&
-                                                !props.isPinching &&
-                                                !props.isLocked
-                                            }
-                                            onClick={props.onSelect}
-                                            onTap={props.onSelect}
-                                            onDragMove={props.onTransform}
-                                            onTransform={props.onTransform}
-                                            onDragEnd={props.onTransformEnd}
-                                            onTransformEnd={props.onTransformEnd}
-                                        />
-                                    );
-                                }
-                                if (layer.type === 'web') {
-                                    return (
-                                        <KonvaWebLayer
-                                            key={`web_${layer.numericId}`}
-                                            layer={layer}
-                                            {...props}
-                                        />
-                                    );
-                                }
-                                if (layer.type === 'shape') {
-                                    const commonProps = {
-                                        id: layer.numericId.toString(),
-                                        x: layer.config.cx,
-                                        y: layer.config.cy,
-                                        rotation: layer.config.rotation,
-                                        scaleX: layer.config.scaleX,
-                                        scaleY: layer.config.scaleY,
-                                        opacity: hiddenOpacity,
-                                        listening: props.listening,
-                                        draggable:
-                                            !props.isDrawing &&
-                                            !props.isPinching &&
-                                            !props.isLocked,
-                                        onClick: props.onSelect,
-                                        onTap: props.onSelect,
-                                        onDragMove: props.onTransform,
-                                        onTransform: props.onTransform,
-                                        onDragEnd: props.onTransformEnd,
-                                        onTransformEnd: props.onTransformEnd,
-                                        fill: layer.fill,
-                                        stroke: layer.strokeColor,
-                                        strokeWidth: layer.strokeWidth
-                                    };
-
-                                    if (layer.shape === 'rectangle') {
-                                        return (
-                                            <Rect
-                                                key={`shape_${layer.numericId}`}
-                                                {...commonProps}
-                                                width={layer.config.width}
-                                                height={layer.config.height}
-                                                offsetX={layer.config.width / 2}
-                                                offsetY={layer.config.height / 2}
-                                                cornerRadius={layer.cornerRadius}
-                                                dash={layer.strokeDash}
-                                                dashOffset={(layer.strokeDash[0] ?? 0) / 2}
-                                                lineCap="round"
-                                                lineJoin="round"
-                                            />
-                                        );
-                                    }
-                                    if (layer.shape === 'circle') {
-                                        return (
-                                            <Circle
-                                                key={`shape_${layer.numericId}`}
-                                                {...commonProps}
-                                                offsetX={layer.config.width / 2}
-                                                offsetY={layer.config.height / 2}
-                                                radius={layer.config.width / 2}
-                                                dash={layer.strokeDash}
-                                                lineCap="round"
-                                                lineJoin="round"
-                                            />
-                                        );
-                                    }
-                                }
-                                if (layer.type === 'line') {
-                                    return (
-                                        <Line
-                                            key={`lin_${layer.numericId}`}
-                                            id={layer.numericId.toString()}
-                                            listening={props.listening}
-                                            opacity={hiddenOpacity}
-                                            onClick={props.onSelect}
-                                            onTap={props.onSelect}
-                                            points={layer.line}
-                                            stroke={layer.strokeColor}
-                                            strokeWidth={layer.strokeWidth}
-                                            dash={layer.strokeDash}
-                                            dashEnabled={true}
-                                            tension={0.4}
-                                            shadowForStrokeEnabled={
-                                                selectedLayerIds[0] ===
-                                                    layer.numericId.toString() &&
-                                                !layer.config.locked
-                                            }
-                                            shadowColor="#00a1ff"
-                                            shadowBlur={10}
-                                            shadowOffsetY={20}
-                                            shadowOffsetX={20}
-                                            shadowOpacity={1}
-                                            lineCap="round"
-                                            lineJoin="round"
-                                        />
-                                    );
-                                }
-                                return null;
-                            })}
-                            {currentLine.length > 3 && (
-                                <Line
-                                    key="new-line"
-                                    points={currentLine}
-                                    stroke={strokeColor}
-                                    strokeWidth={strokeWidth}
-                                    dash={strokeDash}
-                                    dashEnabled={true}
-                                    tension={0.5}
-                                    lineCap="round"
-                                    lineJoin="round"
-                                />
-                            )}
-                            <Transformer
-                                ref={hoverTrRef}
-                                listening={false}
-                                resizeEnabled={false}
-                                rotateEnabled={false}
-                                enabledAnchors={[]}
-                                borderStroke="rgba(148, 163, 184, 0.65)"
-                                borderStrokeWidth={1}
-                                borderDash={isHoveredLayerLocked ? [20, 12] : []}
-                                padding={0}
-                            />
-                            {selectedOutlineLayers.length > 1
-                                ? selectedOutlineLayers.map((layer) => (
-                                      <Rect
-                                          key={`selbox_${layer.numericId}`}
-                                          x={layer.config.cx}
-                                          y={layer.config.cy}
-                                          width={layer.config.width}
-                                          height={layer.config.height}
-                                          offsetX={layer.config.width / 2}
-                                          offsetY={layer.config.height / 2}
-                                          rotation={layer.config.rotation}
-                                          scaleX={layer.config.scaleX}
-                                          scaleY={layer.config.scaleY}
-                                          stroke="#00a1ff"
-                                          strokeWidth={6}
-                                          dash={layer.config.locked ? [20, 12] : []}
-                                          opacity={1}
-                                          listening={false}
+                        {/* Large invisible map previews must not expand the slate's scroll area. */}
+                        <div
+                            aria-hidden="true"
+                            style={{
+                                position: 'absolute',
+                                inset: 0,
+                                pointerEvents: 'none',
+                                overflow: 'hidden',
+                                zIndex: 1
+                            }}
+                        >
+                            {projectId
+                                ? visibleMapLayers.map((layer) => (
+                                      <EditorMapOverlay
+                                          key={`map_overlay_${slideScopeKey}/${layer.numericId}`}
+                                          layer={layer}
+                                          projectId={projectId}
+                                          previewKey={`${slideScopeKey}/${layer.numericId}`}
+                                          stageScaleFactor={stageScaleFactor}
                                       />
                                   ))
                                 : null}
-                            {showGrid && getStageGridLines(stageLayout, 2)}
-                            <Transformer
-                                ref={trRef}
-                                flipEnabled={false}
-                                listening={!isSingleSelectedLayerLocked}
-                                resizeEnabled={!isSingleSelectedLayerLocked}
-                                rotateEnabled={!isSingleSelectedLayerLocked}
-                                anchorCornerRadius={10}
-                                anchorSize={20}
-                                borderDash={isSingleSelectedLayerLocked ? [20, 12] : []}
-                                enabledAnchors={(() => {
-                                    if (isSingleSelectedLayerLocked) return [];
-                                    const selectedId = selectedLayerIds[0];
-                                    if (!selectedId) return undefined;
-                                    const selected = layers.get(parseInt(selectedId, 10));
-                                    if (selected?.type !== 'text') return undefined;
-                                    return [
-                                        'top-left',
-                                        'top-center',
-                                        'top-right',
-                                        'middle-left',
-                                        'middle-right',
-                                        'bottom-left',
-                                        'bottom-center',
-                                        'bottom-right'
-                                    ] as const;
-                                })()}
-                                boundBoxFunc={(oldBox, newBox) => {
-                                    if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5)
-                                        return oldBox;
-                                    return newBox;
-                                }}
-                            />
-                        </KonvaLayer>
-                        <PeerCursors key={peerCursorScopeKey} stageScaleFactor={stageScaleFactor} />
-                    </Stage>
+                        </div>
+                        <Stage
+                            ref={stageInstance}
+                            width={stagePixelWidth}
+                            height={stagePixelHeight}
+                            onMouseDown={handleStageInteractionStart}
+                            onMouseMove={handleTouchMove}
+                            onMouseUp={handleTouchEnd}
+                            onMouseLeave={handleStageMouseLeave}
+                            onWheel={handleStageWheel}
+                            onTouchStart={handleStageInteractionStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                            onTouchCancel={handleTouchEnd}
+                            scaleX={stageScaleFactor}
+                            scaleY={stageScaleFactor}
+                            style={{
+                                position: 'absolute',
+                                inset: 0,
+                                zIndex: 2
+                            }}
+                        >
+                            <FastLayer listening={false}>
+                                {backgroundLayer ? (
+                                    <KonvaBackgroundLayer
+                                        key={`bg_${backgroundLayer.numericId}`}
+                                        layer={backgroundLayer}
+                                        previewScale={stageScaleFactor}
+                                        layout={stageLayout}
+                                    />
+                                ) : null}
+                            </FastLayer>
+                            <KonvaLayer>
+                                {/* oxlint-disable-next-line react-hooks-js/refs */}
+                                {foregroundLayers.map((layer) => {
+                                    const isHidden = !layer.config.visible;
+                                    const isSelected = selectedLayerIdSet.has(
+                                        layer.numericId.toString()
+                                    );
+                                    const isLocked = Boolean(layer.config.locked);
+                                    if (isHidden && !isSelected) return null;
+
+                                    const hiddenOpacity = isHidden ? 0.3 : 1;
+
+                                    const props = {
+                                        listening: !isDrawing,
+                                        isDrawing,
+                                        isPinching,
+                                        isLocked,
+                                        opacity: hiddenOpacity,
+                                        onSelect: (
+                                            e: KonvaEventObject<MouseEvent | TouchEvent>
+                                        ) => {
+                                            if (e.evt instanceof MouseEvent && e.evt.button !== 0)
+                                                return;
+                                            const selectionModifiers = getCanvasSelectionModifiers(
+                                                e.evt,
+                                                isLocked
+                                            );
+                                            if (!selectionModifiers) return;
+                                            toggleLayerSelection(
+                                                layer.numericId.toString(),
+                                                selectionModifiers.isShiftClick,
+                                                selectionModifiers.isCtrlClick
+                                            );
+                                        },
+                                        onTransform: (e: KonvaEventObject<Event>) =>
+                                            handleTransform(e, layer.numericId),
+                                        onTransformEnd: (e: KonvaEventObject<Event>) =>
+                                            handleTransformEnd(e, layer.numericId)
+                                    };
+
+                                    if (layer.type === 'image') {
+                                        return (
+                                            <KonvaStaticImage
+                                                key={`spi_${layer.numericId}`}
+                                                layer={layer}
+                                                {...props}
+                                            />
+                                        );
+                                    }
+                                    if (layer.type === 'video')
+                                        return (
+                                            <KonvaVideo
+                                                key={`vid_${layer.numericId}`}
+                                                layer={layer}
+                                                {...props}
+                                            />
+                                        );
+                                    if (layer.type === 'text') {
+                                        return (
+                                            <KonvaTextLayer
+                                                key={`txt_${layer.numericId}`}
+                                                layer={layer}
+                                                isDrawing={props.isDrawing}
+                                                isPinching={props.isPinching}
+                                                isLocked={props.isLocked}
+                                                opacity={hiddenOpacity}
+                                                onSelect={props.onSelect}
+                                                onDblClick={() => {
+                                                    if (!props.isLocked)
+                                                        startTextEditing(layer.numericId);
+                                                }}
+                                                onTransform={props.onTransform}
+                                                onTransformEnd={props.onTransformEnd}
+                                            />
+                                        );
+                                    }
+                                    if (layer.type === 'map') {
+                                        return (
+                                            <KonvaMapLayer
+                                                key={`map_${layer.numericId}`}
+                                                layer={layer}
+                                                previewKey={`${slideScopeKey}/${layer.numericId}`}
+                                                selected={isSelected}
+                                                {...props}
+                                            />
+                                        );
+                                    }
+                                    if (layer.type === 'web') {
+                                        return (
+                                            <KonvaWebLayer
+                                                key={`web_${layer.numericId}`}
+                                                layer={layer}
+                                                {...props}
+                                            />
+                                        );
+                                    }
+                                    if (layer.type === 'shape') {
+                                        const commonProps = {
+                                            id: layer.numericId.toString(),
+                                            x: layer.config.cx,
+                                            y: layer.config.cy,
+                                            rotation: layer.config.rotation,
+                                            scaleX: layer.config.scaleX,
+                                            scaleY: layer.config.scaleY,
+                                            opacity: hiddenOpacity,
+                                            listening: props.listening,
+                                            draggable:
+                                                !props.isDrawing &&
+                                                !props.isPinching &&
+                                                !props.isLocked,
+                                            onClick: props.onSelect,
+                                            onTap: props.onSelect,
+                                            onDragMove: props.onTransform,
+                                            onTransform: props.onTransform,
+                                            onDragEnd: props.onTransformEnd,
+                                            onTransformEnd: props.onTransformEnd,
+                                            fill: layer.fill,
+                                            stroke: layer.strokeColor,
+                                            strokeWidth: layer.strokeWidth
+                                        };
+
+                                        if (layer.shape === 'rectangle') {
+                                            return (
+                                                <Rect
+                                                    key={`shape_${layer.numericId}`}
+                                                    {...commonProps}
+                                                    width={layer.config.width}
+                                                    height={layer.config.height}
+                                                    offsetX={layer.config.width / 2}
+                                                    offsetY={layer.config.height / 2}
+                                                    cornerRadius={layer.cornerRadius}
+                                                    dash={layer.strokeDash}
+                                                    dashOffset={(layer.strokeDash[0] ?? 0) / 2}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                />
+                                            );
+                                        }
+                                        if (layer.shape === 'circle') {
+                                            return (
+                                                <Circle
+                                                    key={`shape_${layer.numericId}`}
+                                                    {...commonProps}
+                                                    offsetX={layer.config.width / 2}
+                                                    offsetY={layer.config.height / 2}
+                                                    radius={layer.config.width / 2}
+                                                    dash={layer.strokeDash}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                />
+                                            );
+                                        }
+                                    }
+                                    if (layer.type === 'line') {
+                                        return (
+                                            <Line
+                                                key={`lin_${layer.numericId}`}
+                                                id={layer.numericId.toString()}
+                                                listening={props.listening}
+                                                opacity={hiddenOpacity}
+                                                onClick={props.onSelect}
+                                                onTap={props.onSelect}
+                                                points={layer.line}
+                                                stroke={layer.strokeColor}
+                                                strokeWidth={layer.strokeWidth}
+                                                dash={layer.strokeDash}
+                                                dashEnabled={true}
+                                                tension={0.4}
+                                                shadowForStrokeEnabled={
+                                                    selectedLayerIds[0] ===
+                                                        layer.numericId.toString() &&
+                                                    !layer.config.locked
+                                                }
+                                                shadowColor="#00a1ff"
+                                                shadowBlur={10}
+                                                shadowOffsetY={20}
+                                                shadowOffsetX={20}
+                                                shadowOpacity={1}
+                                                lineCap="round"
+                                                lineJoin="round"
+                                            />
+                                        );
+                                    }
+                                    return null;
+                                })}
+                                {currentLine.length > 3 && (
+                                    <Line
+                                        key="new-line"
+                                        points={currentLine}
+                                        stroke={strokeColor}
+                                        strokeWidth={strokeWidth}
+                                        dash={strokeDash}
+                                        dashEnabled={true}
+                                        tension={0.5}
+                                        lineCap="round"
+                                        lineJoin="round"
+                                    />
+                                )}
+                                <Transformer
+                                    ref={hoverTrRef}
+                                    listening={false}
+                                    resizeEnabled={false}
+                                    rotateEnabled={false}
+                                    enabledAnchors={[]}
+                                    borderStroke="rgba(148, 163, 184, 0.65)"
+                                    borderStrokeWidth={1}
+                                    borderDash={isHoveredLayerLocked ? [20, 12] : []}
+                                    padding={0}
+                                />
+                                {selectedOutlineLayers.length > 1
+                                    ? selectedOutlineLayers.map((layer) => (
+                                          <Rect
+                                              key={`selbox_${layer.numericId}`}
+                                              x={layer.config.cx}
+                                              y={layer.config.cy}
+                                              width={layer.config.width}
+                                              height={layer.config.height}
+                                              offsetX={layer.config.width / 2}
+                                              offsetY={layer.config.height / 2}
+                                              rotation={layer.config.rotation}
+                                              scaleX={layer.config.scaleX}
+                                              scaleY={layer.config.scaleY}
+                                              stroke="#00a1ff"
+                                              strokeWidth={6}
+                                              dash={layer.config.locked ? [20, 12] : []}
+                                              opacity={1}
+                                              listening={false}
+                                          />
+                                      ))
+                                    : null}
+                                {showGrid && getStageGridLines(stageLayout, 2)}
+                                <Transformer
+                                    ref={trRef}
+                                    flipEnabled={false}
+                                    listening={!isSingleSelectedLayerLocked}
+                                    resizeEnabled={!isSingleSelectedLayerLocked}
+                                    rotateEnabled={!isSingleSelectedLayerLocked}
+                                    anchorCornerRadius={10}
+                                    anchorSize={20}
+                                    borderDash={isSingleSelectedLayerLocked ? [20, 12] : []}
+                                    enabledAnchors={(() => {
+                                        if (isSingleSelectedLayerLocked) return [];
+                                        const selectedId = selectedLayerIds[0];
+                                        if (!selectedId) return undefined;
+                                        const selected = layers.get(parseInt(selectedId, 10));
+                                        if (selected?.type !== 'text') return undefined;
+                                        return [
+                                            'top-left',
+                                            'top-center',
+                                            'top-right',
+                                            'middle-left',
+                                            'middle-right',
+                                            'bottom-left',
+                                            'bottom-center',
+                                            'bottom-right'
+                                        ] as const;
+                                    })()}
+                                    boundBoxFunc={(oldBox, newBox) => {
+                                        if (
+                                            Math.abs(newBox.width) < 5 ||
+                                            Math.abs(newBox.height) < 5
+                                        )
+                                            return oldBox;
+                                        return newBox;
+                                    }}
+                                />
+                            </KonvaLayer>
+                            <PeerCursors key={slideScopeKey} stageScaleFactor={stageScaleFactor} />
+                        </Stage>
+                    </div>
                 </div>
             </div>
         </>

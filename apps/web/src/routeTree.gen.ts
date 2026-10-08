@@ -9,103 +9,76 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthRouteRouteImport } from './routes/_auth/route'
-import { Route as GuestRouteRouteImport } from './routes/_guest/route'
-import { Route as AdminRouteRouteImport } from './routes/admin/route'
-import { Route as BusRouteImport } from './routes/bus'
-import { Route as OgRouteImport } from './routes/og'
-import { Route as WebCorsissueRouteImport } from './routes/web-corsissue'
-import { Route as WebNonetRouteImport } from './routes/web-nonet'
 import { Route as WebPlaceholderRouteImport } from './routes/web-placeholder'
-import { Route as GuestBootstrapRouteImport } from './routes/_guest/bootstrap'
-import { Route as GuestLoginRouteImport } from './routes/_guest/login'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AdminAssetsRouteImport } from './routes/admin/assets'
-import { Route as AdminAuditsRouteImport } from './routes/admin/audits'
-import { Route as AdminConfigRouteImport } from './routes/admin/config'
-import { Route as AdminDevicesRouteImport } from './routes/admin/devices'
-import { Route as AdminProjectsRouteImport } from './routes/admin/projects'
-import { Route as AdminSignageRouteRouteImport } from './routes/admin/signage/route'
-import { Route as AdminStatsRouteImport } from './routes/admin/stats'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as ApiProxyRouteImport } from './routes/api/proxy'
-import { Route as ApiReportCspRouteImport } from './routes/api/report-csp'
-import { Route as ApiVersionRouteImport } from './routes/api/version'
-import { Route as ApiWebScreenshotRouteImport } from './routes/api/web-screenshot'
-import { Route as ControllerIndexRouteImport } from './routes/controller/index'
-import { Route as GalleryIndexRouteImport } from './routes/gallery/index'
-import { Route as LegalNoticesRouteImport } from './routes/legal/notices'
-import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
-import { Route as PlaygroundIndexRouteImport } from './routes/playground/index'
-import { Route as PlaygroundAnimaRouteImport } from './routes/playground/anima'
-import { Route as PlaygroundBgRouteImport } from './routes/playground/bg'
-import { Route as PlaygroundNoopRouteImport } from './routes/playground/noop'
-import { Route as UploadProjectIdRouteImport } from './routes/upload/$projectId'
+import { Route as WebNonetRouteImport } from './routes/web-nonet'
+import { Route as WebCorsissueRouteImport } from './routes/web-corsissue'
+import { Route as OgRouteImport } from './routes/og'
+import { Route as BusRouteImport } from './routes/bus'
+import { Route as AdminRouteRouteImport } from './routes/admin/route'
+import { Route as GuestRouteRouteImport } from './routes/_guest/route'
+import { Route as AuthRouteRouteImport } from './routes/_auth/route'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as WallIndexRouteImport } from './routes/wall/index'
+import { Route as PlaygroundIndexRouteImport } from './routes/playground/index'
+import { Route as GalleryIndexRouteImport } from './routes/gallery/index'
+import { Route as ControllerIndexRouteImport } from './routes/controller/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as YjsSplatRouteImport } from './routes/yjs.$'
-import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index'
-import { Route as AuthQuarryEditorRouteRouteImport } from './routes/_auth/quarry/editor/route'
-import { Route as AuthQuarryProjectsRouteRouteImport } from './routes/_auth/quarry/projects/route'
-import { Route as AdminSignageIndexRouteImport } from './routes/admin/signage/index'
-import { Route as AdminSignageSlideshowIdRouteImport } from './routes/admin/signage/$slideshowId'
+import { Route as UploadProjectIdRouteImport } from './routes/upload/$projectId'
+import { Route as PlaygroundNoopRouteImport } from './routes/playground/noop'
+import { Route as PlaygroundBgRouteImport } from './routes/playground/bg'
+import { Route as PlaygroundAnimaRouteImport } from './routes/playground/anima'
+import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
+import { Route as LegalNoticesRouteImport } from './routes/legal/notices'
+import { Route as ApiWebScreenshotRouteImport } from './routes/api/web-screenshot'
+import { Route as ApiVersionRouteImport } from './routes/api/version'
+import { Route as ApiReportCspRouteImport } from './routes/api/report-csp'
+import { Route as ApiProxyRouteImport } from './routes/api/proxy'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminStatsRouteImport } from './routes/admin/stats'
+import { Route as AdminProjectsRouteImport } from './routes/admin/projects'
+import { Route as AdminDevicesRouteImport } from './routes/admin/devices'
+import { Route as AdminConfigRouteImport } from './routes/admin/config'
+import { Route as AdminAuditsRouteImport } from './routes/admin/audits'
+import { Route as AdminAssetsRouteImport } from './routes/admin/assets'
+import { Route as GuestLoginRouteImport } from './routes/_guest/login'
+import { Route as GuestBootstrapRouteImport } from './routes/_guest/bootstrap'
+import { Route as AdminSignageRouteRouteImport } from './routes/admin/signage/route'
 import { Route as AdminWallsIndexRouteImport } from './routes/admin/walls/index'
-import { Route as AdminWallsWallIdRouteRouteImport } from './routes/admin/walls/$wallId/route'
-import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
+import { Route as AdminSignageIndexRouteImport } from './routes/admin/signage/index'
+import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
-import { Route as AuthQuarryProjectsProjectIdRouteRouteImport } from './routes/_auth/quarry/projects/$projectId/route'
-import { Route as AuthQuarryProjectsNewRouteImport } from './routes/_auth/quarry/projects/new'
+import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
+import { Route as AdminSignageSlideshowIdRouteImport } from './routes/admin/signage/$slideshowId'
+import { Route as AdminWallsWallIdRouteRouteImport } from './routes/admin/walls/$wallId/route'
+import { Route as AuthQuarryProjectsRouteRouteImport } from './routes/_auth/quarry/projects/route'
+import { Route as AuthQuarryEditorRouteRouteImport } from './routes/_auth/quarry/editor/route'
 import { Route as AdminWallsWallIdIndexRouteImport } from './routes/admin/walls/$wallId/index'
-import { Route as AdminWallsWallIdDevicesRouteImport } from './routes/admin/walls/$wallId/devices'
-import { Route as ApiPortalV1BindRouteImport } from './routes/api/portal/v1/bind'
-import { Route as ApiPortalV1RebootRouteImport } from './routes/api/portal/v1/reboot'
 import { Route as ApiPortalV1SlidesRouteImport } from './routes/api/portal/v1/slides'
-import { Route as AuthQuarryEditorProjectIdIndexRouteImport } from './routes/_auth/quarry/editor/$projectId/index'
-import { Route as AuthQuarryEditorProjectIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$slideId'
+import { Route as ApiPortalV1RebootRouteImport } from './routes/api/portal/v1/reboot'
+import { Route as ApiPortalV1BindRouteImport } from './routes/api/portal/v1/bind'
+import { Route as AdminWallsWallIdDevicesRouteImport } from './routes/admin/walls/$wallId/devices'
+import { Route as AuthQuarryProjectsNewRouteImport } from './routes/_auth/quarry/projects/new'
+import { Route as AuthQuarryProjectsProjectIdRouteRouteImport } from './routes/_auth/quarry/projects/$projectId/route'
 import { Route as AuthQuarryProjectsProjectIdIndexRouteImport } from './routes/_auth/quarry/projects/$projectId/index'
-import { Route as AuthQuarryProjectsProjectIdAssetsRouteImport } from './routes/_auth/quarry/projects/$projectId/assets'
-import { Route as AuthQuarryProjectsProjectIdAuditsRouteImport } from './routes/_auth/quarry/projects/$projectId/audits'
-import { Route as AuthQuarryProjectsProjectIdCommitsRouteImport } from './routes/_auth/quarry/projects/$projectId/commits'
-import { Route as AuthQuarryProjectsProjectIdController_editorRouteImport } from './routes/_auth/quarry/projects/$projectId/controller_editor'
-import { Route as AuthQuarryProjectsProjectIdPermissionsRouteImport } from './routes/_auth/quarry/projects/$projectId/permissions'
-import { Route as AuthQuarryViewProjectIdCommitIdRouteImport } from './routes/_auth/quarry/view/$projectId/$commitId'
+import { Route as AuthQuarryEditorProjectIdIndexRouteImport } from './routes/_auth/quarry/editor/$projectId/index'
 import { Route as ApiPortalV1ControllersProjectIdRouteImport } from './routes/api/portal/v1/controllers/$projectId'
+import { Route as AuthQuarryViewProjectIdCommitIdRouteImport } from './routes/_auth/quarry/view/$projectId/$commitId'
+import { Route as AuthQuarryProjectsProjectIdPermissionsRouteImport } from './routes/_auth/quarry/projects/$projectId/permissions'
+import { Route as AuthQuarryProjectsProjectIdController_editorRouteImport } from './routes/_auth/quarry/projects/$projectId/controller_editor'
+import { Route as AuthQuarryProjectsProjectIdCommitsRouteImport } from './routes/_auth/quarry/projects/$projectId/commits'
+import { Route as AuthQuarryProjectsProjectIdAuditsRouteImport } from './routes/_auth/quarry/projects/$projectId/audits'
+import { Route as AuthQuarryProjectsProjectIdAssetsRouteImport } from './routes/_auth/quarry/projects/$projectId/assets'
+import { Route as AuthQuarryEditorProjectIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$slideId'
 import { Route as AuthQuarryEditorProjectIdCommitIdSlideIdRouteImport } from './routes/_auth/quarry/editor/$projectId/$commitId/$slideId'
+import { Route as ApiProjectsProjectIdTilesLayerZXYRouteImport } from './routes/api/projects/$projectId/tiles/$layer/$z/$x/$y'
 import { Route as ApiPortalV1SlidesSlideIdImagesLayerIdZoomRouteImport } from './routes/api/portal/v1/slides/$slideId/images/$layerId/zoom'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRouteRoute = AuthRouteRouteImport.update({
-  id: '/_auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GuestRouteRoute = GuestRouteRouteImport.update({
-  id: '/_guest',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRouteRoute = AdminRouteRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BusRoute = BusRouteImport.update({
-  id: '/bus',
-  path: '/bus',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OgRoute = OgRouteImport.update({
-  id: '/og',
-  path: '/og',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WebCorsissueRoute = WebCorsissueRouteImport.update({
-  id: '/web-corsissue',
-  path: '/web-corsissue',
+const WebPlaceholderRoute = WebPlaceholderRouteImport.update({
+  id: '/web-placeholder',
+  path: '/web-placeholder',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WebNonetRoute = WebNonetRouteImport.update({
@@ -113,129 +86,37 @@ const WebNonetRoute = WebNonetRouteImport.update({
   path: '/web-nonet',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebPlaceholderRoute = WebPlaceholderRouteImport.update({
-  id: '/web-placeholder',
-  path: '/web-placeholder',
+const WebCorsissueRoute = WebCorsissueRouteImport.update({
+  id: '/web-corsissue',
+  path: '/web-corsissue',
   getParentRoute: () => rootRouteImport,
 } as any)
-const GuestBootstrapRoute = GuestBootstrapRouteImport.update({
-  id: '/bootstrap',
-  path: '/bootstrap',
-  getParentRoute: () => GuestRouteRoute,
+const OgRoute = OgRouteImport.update({
+  id: '/og',
+  path: '/og',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const GuestLoginRoute = GuestLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => GuestRouteRoute,
+const BusRoute = BusRouteImport.update({
+  id: '/bus',
+  path: '/bus',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
+const AdminRouteRoute = AdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuestRouteRoute = GuestRouteRouteImport.update({
+  id: '/_guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRouteRoute = AuthRouteRouteImport.update({
+  id: '/_auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminAssetsRoute = AdminAssetsRouteImport.update({
-  id: '/assets',
-  path: '/assets',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminAuditsRoute = AdminAuditsRouteImport.update({
-  id: '/audits',
-  path: '/audits',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminConfigRoute = AdminConfigRouteImport.update({
-  id: '/config',
-  path: '/config',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminDevicesRoute = AdminDevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminProjectsRoute = AdminProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminSignageRouteRoute = AdminSignageRouteRouteImport.update({
-  id: '/signage',
-  path: '/signage',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminStatsRoute = AdminStatsRouteImport.update({
-  id: '/stats',
-  path: '/stats',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AdminRouteRoute,
-} as any)
-const ApiProxyRoute = ApiProxyRouteImport.update({
-  id: '/api/proxy',
-  path: '/api/proxy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiReportCspRoute = ApiReportCspRouteImport.update({
-  id: '/api/report-csp',
-  path: '/api/report-csp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiVersionRoute = ApiVersionRouteImport.update({
-  id: '/api/version',
-  path: '/api/version',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiWebScreenshotRoute = ApiWebScreenshotRouteImport.update({
-  id: '/api/web-screenshot',
-  path: '/api/web-screenshot',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ControllerIndexRoute = ControllerIndexRouteImport.update({
-  id: '/controller/',
-  path: '/controller/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GalleryIndexRoute = GalleryIndexRouteImport.update({
-  id: '/gallery/',
-  path: '/gallery/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LegalNoticesRoute = LegalNoticesRouteImport.update({
-  id: '/legal/notices',
-  path: '/legal/notices',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
-  id: '/legal/privacy',
-  path: '/legal/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlaygroundIndexRoute = PlaygroundIndexRouteImport.update({
-  id: '/playground/',
-  path: '/playground/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlaygroundAnimaRoute = PlaygroundAnimaRouteImport.update({
-  id: '/playground/anima',
-  path: '/playground/anima',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlaygroundBgRoute = PlaygroundBgRouteImport.update({
-  id: '/playground/bg',
-  path: '/playground/bg',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlaygroundNoopRoute = PlaygroundNoopRouteImport.update({
-  id: '/playground/noop',
-  path: '/playground/noop',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UploadProjectIdRoute = UploadProjectIdRouteImport.update({
-  id: '/upload/$projectId',
-  path: '/upload/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WallIndexRoute = WallIndexRouteImport.update({
@@ -243,54 +124,149 @@ const WallIndexRoute = WallIndexRouteImport.update({
   path: '/wall/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlaygroundIndexRoute = PlaygroundIndexRouteImport.update({
+  id: '/playground/',
+  path: '/playground/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GalleryIndexRoute = GalleryIndexRouteImport.update({
+  id: '/gallery/',
+  path: '/gallery/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ControllerIndexRoute = ControllerIndexRouteImport.update({
+  id: '/controller/',
+  path: '/controller/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const YjsSplatRoute = YjsSplatRouteImport.update({
   id: '/yjs/$',
   path: '/yjs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthQuarryIndexRoute = AuthQuarryIndexRouteImport.update({
-  id: '/quarry/',
-  path: '/quarry/',
-  getParentRoute: () => AuthRouteRoute,
+const UploadProjectIdRoute = UploadProjectIdRouteImport.update({
+  id: '/upload/$projectId',
+  path: '/upload/$projectId',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthQuarryEditorRouteRoute = AuthQuarryEditorRouteRouteImport.update({
-  id: '/quarry/editor',
-  path: '/quarry/editor',
-  getParentRoute: () => AuthRouteRoute,
+const PlaygroundNoopRoute = PlaygroundNoopRouteImport.update({
+  id: '/playground/noop',
+  path: '/playground/noop',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthQuarryProjectsRouteRoute = AuthQuarryProjectsRouteRouteImport.update({
-  id: '/quarry/projects',
-  path: '/quarry/projects',
-  getParentRoute: () => AuthRouteRoute,
+const PlaygroundBgRoute = PlaygroundBgRouteImport.update({
+  id: '/playground/bg',
+  path: '/playground/bg',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AdminSignageIndexRoute = AdminSignageIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AdminSignageRouteRoute,
+const PlaygroundAnimaRoute = PlaygroundAnimaRouteImport.update({
+  id: '/playground/anima',
+  path: '/playground/anima',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AdminSignageSlideshowIdRoute = AdminSignageSlideshowIdRouteImport.update({
-  id: '/$slideshowId',
-  path: '/$slideshowId',
-  getParentRoute: () => AdminSignageRouteRoute,
+const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
+  id: '/legal/privacy',
+  path: '/legal/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalNoticesRoute = LegalNoticesRouteImport.update({
+  id: '/legal/notices',
+  path: '/legal/notices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWebScreenshotRoute = ApiWebScreenshotRouteImport.update({
+  id: '/api/web-screenshot',
+  path: '/api/web-screenshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiVersionRoute = ApiVersionRouteImport.update({
+  id: '/api/version',
+  path: '/api/version',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiReportCspRoute = ApiReportCspRouteImport.update({
+  id: '/api/report-csp',
+  path: '/api/report-csp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiProxyRoute = ApiProxyRouteImport.update({
+  id: '/api/proxy',
+  path: '/api/proxy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminStatsRoute = AdminStatsRouteImport.update({
+  id: '/stats',
+  path: '/stats',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminProjectsRoute = AdminProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminDevicesRoute = AdminDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminConfigRoute = AdminConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAuditsRoute = AdminAuditsRouteImport.update({
+  id: '/audits',
+  path: '/audits',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminAssetsRoute = AdminAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const GuestLoginRoute = GuestLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => GuestRouteRoute,
+} as any)
+const GuestBootstrapRoute = GuestBootstrapRouteImport.update({
+  id: '/bootstrap',
+  path: '/bootstrap',
+  getParentRoute: () => GuestRouteRoute,
+} as any)
+const AdminSignageRouteRoute = AdminSignageRouteRouteImport.update({
+  id: '/signage',
+  path: '/signage',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminWallsIndexRoute = AdminWallsIndexRouteImport.update({
   id: '/walls/',
   path: '/walls/',
   getParentRoute: () => AdminRouteRoute,
 } as any)
-const AdminWallsWallIdRouteRoute = AdminWallsWallIdRouteRouteImport.update({
-  id: '/walls/$wallId',
-  path: '/walls/$wallId',
-  getParentRoute: () => AdminRouteRoute,
+const AdminSignageIndexRoute = AdminSignageIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminSignageRouteRoute,
 } as any)
-const ApiAssetsUriRoute = ApiAssetsUriRouteImport.update({
-  id: '/api/assets/$uri',
-  path: '/api/assets/$uri',
-  getParentRoute: () => rootRouteImport,
+const AuthQuarryIndexRoute = AuthQuarryIndexRouteImport.update({
+  id: '/quarry/',
+  path: '/quarry/',
+  getParentRoute: () => AuthRouteRoute,
 } as any)
-const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
+  id: '/api/wall/media-cookie',
+  path: '/api/wall/media-cookie',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
@@ -298,35 +274,44 @@ const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   path: '/api/uploads/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
-  id: '/api/wall/media-cookie',
-  path: '/api/wall/media-cookie',
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthQuarryProjectsProjectIdRouteRoute =
-  AuthQuarryProjectsProjectIdRouteRouteImport.update({
-    id: '/$projectId',
-    path: '/$projectId',
-    getParentRoute: () => AuthQuarryProjectsRouteRoute,
-  } as any)
-const AuthQuarryProjectsNewRoute = AuthQuarryProjectsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AuthQuarryProjectsRouteRoute,
+const ApiAssetsUriRoute = ApiAssetsUriRouteImport.update({
+  id: '/api/assets/$uri',
+  path: '/api/assets/$uri',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSignageSlideshowIdRoute = AdminSignageSlideshowIdRouteImport.update({
+  id: '/$slideshowId',
+  path: '/$slideshowId',
+  getParentRoute: () => AdminSignageRouteRoute,
+} as any)
+const AdminWallsWallIdRouteRoute = AdminWallsWallIdRouteRouteImport.update({
+  id: '/walls/$wallId',
+  path: '/walls/$wallId',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AuthQuarryProjectsRouteRoute = AuthQuarryProjectsRouteRouteImport.update({
+  id: '/quarry/projects',
+  path: '/quarry/projects',
+  getParentRoute: () => AuthRouteRoute,
+} as any)
+const AuthQuarryEditorRouteRoute = AuthQuarryEditorRouteRouteImport.update({
+  id: '/quarry/editor',
+  path: '/quarry/editor',
+  getParentRoute: () => AuthRouteRoute,
 } as any)
 const AdminWallsWallIdIndexRoute = AdminWallsWallIdIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminWallsWallIdRouteRoute,
 } as any)
-const AdminWallsWallIdDevicesRoute = AdminWallsWallIdDevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
-  getParentRoute: () => AdminWallsWallIdRouteRoute,
-} as any)
-const ApiPortalV1BindRoute = ApiPortalV1BindRouteImport.update({
-  id: '/api/portal/v1/bind',
-  path: '/api/portal/v1/bind',
+const ApiPortalV1SlidesRoute = ApiPortalV1SlidesRouteImport.update({
+  id: '/api/portal/v1/slides',
+  path: '/api/portal/v1/slides',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPortalV1RebootRoute = ApiPortalV1RebootRouteImport.update({
@@ -334,22 +319,26 @@ const ApiPortalV1RebootRoute = ApiPortalV1RebootRouteImport.update({
   path: '/api/portal/v1/reboot',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPortalV1SlidesRoute = ApiPortalV1SlidesRouteImport.update({
-  id: '/api/portal/v1/slides',
-  path: '/api/portal/v1/slides',
+const ApiPortalV1BindRoute = ApiPortalV1BindRouteImport.update({
+  id: '/api/portal/v1/bind',
+  path: '/api/portal/v1/bind',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthQuarryEditorProjectIdIndexRoute =
-  AuthQuarryEditorProjectIdIndexRouteImport.update({
-    id: '/$projectId/',
-    path: '/$projectId/',
-    getParentRoute: () => AuthQuarryEditorRouteRoute,
-  } as any)
-const AuthQuarryEditorProjectIdSlideIdRoute =
-  AuthQuarryEditorProjectIdSlideIdRouteImport.update({
-    id: '/$projectId/$slideId',
-    path: '/$projectId/$slideId',
-    getParentRoute: () => AuthQuarryEditorRouteRoute,
+const AdminWallsWallIdDevicesRoute = AdminWallsWallIdDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AdminWallsWallIdRouteRoute,
+} as any)
+const AuthQuarryProjectsNewRoute = AuthQuarryProjectsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AuthQuarryProjectsRouteRoute,
+} as any)
+const AuthQuarryProjectsProjectIdRouteRoute =
+  AuthQuarryProjectsProjectIdRouteRouteImport.update({
+    id: '/$projectId',
+    path: '/$projectId',
+    getParentRoute: () => AuthQuarryProjectsRouteRoute,
   } as any)
 const AuthQuarryProjectsProjectIdIndexRoute =
   AuthQuarryProjectsProjectIdIndexRouteImport.update({
@@ -357,22 +346,28 @@ const AuthQuarryProjectsProjectIdIndexRoute =
     path: '/',
     getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
   } as any)
-const AuthQuarryProjectsProjectIdAssetsRoute =
-  AuthQuarryProjectsProjectIdAssetsRouteImport.update({
-    id: '/assets',
-    path: '/assets',
-    getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
+const AuthQuarryEditorProjectIdIndexRoute =
+  AuthQuarryEditorProjectIdIndexRouteImport.update({
+    id: '/$projectId/',
+    path: '/$projectId/',
+    getParentRoute: () => AuthQuarryEditorRouteRoute,
   } as any)
-const AuthQuarryProjectsProjectIdAuditsRoute =
-  AuthQuarryProjectsProjectIdAuditsRouteImport.update({
-    id: '/audits',
-    path: '/audits',
-    getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
+const ApiPortalV1ControllersProjectIdRoute =
+  ApiPortalV1ControllersProjectIdRouteImport.update({
+    id: '/api/portal/v1/controllers/$projectId',
+    path: '/api/portal/v1/controllers/$projectId',
+    getParentRoute: () => rootRouteImport,
   } as any)
-const AuthQuarryProjectsProjectIdCommitsRoute =
-  AuthQuarryProjectsProjectIdCommitsRouteImport.update({
-    id: '/commits',
-    path: '/commits',
+const AuthQuarryViewProjectIdCommitIdRoute =
+  AuthQuarryViewProjectIdCommitIdRouteImport.update({
+    id: '/quarry/view/$projectId/$commitId',
+    path: '/quarry/view/$projectId/$commitId',
+    getParentRoute: () => AuthRouteRoute,
+  } as any)
+const AuthQuarryProjectsProjectIdPermissionsRoute =
+  AuthQuarryProjectsProjectIdPermissionsRouteImport.update({
+    id: '/permissions',
+    path: '/permissions',
     getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
   } as any)
 const AuthQuarryProjectsProjectIdController_editorRoute =
@@ -381,29 +376,41 @@ const AuthQuarryProjectsProjectIdController_editorRoute =
     path: '/controller_editor',
     getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
   } as any)
-const AuthQuarryProjectsProjectIdPermissionsRoute =
-  AuthQuarryProjectsProjectIdPermissionsRouteImport.update({
-    id: '/permissions',
-    path: '/permissions',
+const AuthQuarryProjectsProjectIdCommitsRoute =
+  AuthQuarryProjectsProjectIdCommitsRouteImport.update({
+    id: '/commits',
+    path: '/commits',
     getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
   } as any)
-const AuthQuarryViewProjectIdCommitIdRoute =
-  AuthQuarryViewProjectIdCommitIdRouteImport.update({
-    id: '/quarry/view/$projectId/$commitId',
-    path: '/quarry/view/$projectId/$commitId',
-    getParentRoute: () => AuthRouteRoute,
+const AuthQuarryProjectsProjectIdAuditsRoute =
+  AuthQuarryProjectsProjectIdAuditsRouteImport.update({
+    id: '/audits',
+    path: '/audits',
+    getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
   } as any)
-const ApiPortalV1ControllersProjectIdRoute =
-  ApiPortalV1ControllersProjectIdRouteImport.update({
-    id: '/api/portal/v1/controllers/$projectId',
-    path: '/api/portal/v1/controllers/$projectId',
-    getParentRoute: () => rootRouteImport,
+const AuthQuarryProjectsProjectIdAssetsRoute =
+  AuthQuarryProjectsProjectIdAssetsRouteImport.update({
+    id: '/assets',
+    path: '/assets',
+    getParentRoute: () => AuthQuarryProjectsProjectIdRouteRoute,
+  } as any)
+const AuthQuarryEditorProjectIdSlideIdRoute =
+  AuthQuarryEditorProjectIdSlideIdRouteImport.update({
+    id: '/$projectId/$slideId',
+    path: '/$projectId/$slideId',
+    getParentRoute: () => AuthQuarryEditorRouteRoute,
   } as any)
 const AuthQuarryEditorProjectIdCommitIdSlideIdRoute =
   AuthQuarryEditorProjectIdCommitIdSlideIdRouteImport.update({
     id: '/$projectId/$commitId/$slideId',
     path: '/$projectId/$commitId/$slideId',
     getParentRoute: () => AuthQuarryEditorRouteRoute,
+  } as any)
+const ApiProjectsProjectIdTilesLayerZXYRoute =
+  ApiProjectsProjectIdTilesLayerZXYRouteImport.update({
+    id: '/api/projects/$projectId/tiles/$layer/$z/$x/$y',
+    path: '/api/projects/$projectId/tiles/$layer/$z/$x/$y',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute =
   ApiPortalV1SlidesSlideIdImagesLayerIdZoomRouteImport.update({
@@ -476,6 +483,7 @@ export interface FileRoutesByFullPath {
   '/quarry/projects/$projectId/': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
   '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
+  '/api/projects/$projectId/tiles/$layer/$z/$x/$y': typeof ApiProjectsProjectIdTilesLayerZXYRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -537,6 +545,7 @@ export interface FileRoutesByTo {
   '/quarry/projects/$projectId': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
   '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
+  '/api/projects/$projectId/tiles/$layer/$z/$x/$y': typeof ApiProjectsProjectIdTilesLayerZXYRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -605,6 +614,7 @@ export interface FileRoutesById {
   '/_auth/quarry/projects/$projectId/': typeof AuthQuarryProjectsProjectIdIndexRoute
   '/_auth/quarry/editor/$projectId/$commitId/$slideId': typeof AuthQuarryEditorProjectIdCommitIdSlideIdRoute
   '/api/portal/v1/slides/$slideId/images/$layerId/zoom': typeof ApiPortalV1SlidesSlideIdImagesLayerIdZoomRoute
+  '/api/projects/$projectId/tiles/$layer/$z/$x/$y': typeof ApiProjectsProjectIdTilesLayerZXYRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -672,6 +682,7 @@ export interface FileRouteTypes {
     | '/quarry/projects/$projectId/'
     | '/quarry/editor/$projectId/$commitId/$slideId'
     | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
+    | '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -733,6 +744,7 @@ export interface FileRouteTypes {
     | '/quarry/projects/$projectId'
     | '/quarry/editor/$projectId/$commitId/$slideId'
     | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
+    | '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
   id:
     | '__root__'
     | '/'
@@ -800,6 +812,7 @@ export interface FileRouteTypes {
     | '/_auth/quarry/projects/$projectId/'
     | '/_auth/quarry/editor/$projectId/$commitId/$slideId'
     | '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
+    | '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -835,57 +848,16 @@ export interface RootRouteChildren {
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
   ApiPortalV1SlidesRoute: typeof ApiPortalV1SlidesRouteWithChildren
   ApiPortalV1ControllersProjectIdRoute: typeof ApiPortalV1ControllersProjectIdRoute
+  ApiProjectsProjectIdTilesLayerZXYRoute: typeof ApiProjectsProjectIdTilesLayerZXYRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_auth': {
-      id: '/_auth'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_guest': {
-      id: '/_guest'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof GuestRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bus': {
-      id: '/bus'
-      path: '/bus'
-      fullPath: '/bus'
-      preLoaderRoute: typeof BusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/og': {
-      id: '/og'
-      path: '/og'
-      fullPath: '/og'
-      preLoaderRoute: typeof OgRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/web-corsissue': {
-      id: '/web-corsissue'
-      path: '/web-corsissue'
-      fullPath: '/web-corsissue'
-      preLoaderRoute: typeof WebCorsissueRouteImport
+    '/web-placeholder': {
+      id: '/web-placeholder'
+      path: '/web-placeholder'
+      fullPath: '/web-placeholder'
+      preLoaderRoute: typeof WebPlaceholderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/web-nonet': {
@@ -895,179 +867,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebNonetRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/web-placeholder': {
-      id: '/web-placeholder'
-      path: '/web-placeholder'
-      fullPath: '/web-placeholder'
-      preLoaderRoute: typeof WebPlaceholderRouteImport
+    '/web-corsissue': {
+      id: '/web-corsissue'
+      path: '/web-corsissue'
+      fullPath: '/web-corsissue'
+      preLoaderRoute: typeof WebCorsissueRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_guest/bootstrap': {
-      id: '/_guest/bootstrap'
-      path: '/bootstrap'
-      fullPath: '/bootstrap'
-      preLoaderRoute: typeof GuestBootstrapRouteImport
-      parentRoute: typeof GuestRouteRoute
+    '/og': {
+      id: '/og'
+      path: '/og'
+      fullPath: '/og'
+      preLoaderRoute: typeof OgRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_guest/login': {
-      id: '/_guest/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof GuestLoginRouteImport
-      parentRoute: typeof GuestRouteRoute
+    '/bus': {
+      id: '/bus'
+      path: '/bus'
+      fullPath: '/bus'
+      preLoaderRoute: typeof BusRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/admin/': {
-      id: '/admin/'
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_guest': {
+      id: '/_guest'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof GuestRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_auth': {
+      id: '/_auth'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
       path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/assets': {
-      id: '/admin/assets'
-      path: '/assets'
-      fullPath: '/admin/assets'
-      preLoaderRoute: typeof AdminAssetsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/audits': {
-      id: '/admin/audits'
-      path: '/audits'
-      fullPath: '/admin/audits'
-      preLoaderRoute: typeof AdminAuditsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/config': {
-      id: '/admin/config'
-      path: '/config'
-      fullPath: '/admin/config'
-      preLoaderRoute: typeof AdminConfigRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/devices': {
-      id: '/admin/devices'
-      path: '/devices'
-      fullPath: '/admin/devices'
-      preLoaderRoute: typeof AdminDevicesRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/projects': {
-      id: '/admin/projects'
-      path: '/projects'
-      fullPath: '/admin/projects'
-      preLoaderRoute: typeof AdminProjectsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/signage': {
-      id: '/admin/signage'
-      path: '/signage'
-      fullPath: '/admin/signage'
-      preLoaderRoute: typeof AdminSignageRouteRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/stats': {
-      id: '/admin/stats'
-      path: '/stats'
-      fullPath: '/admin/stats'
-      preLoaderRoute: typeof AdminStatsRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRouteRoute
-    }
-    '/api/proxy': {
-      id: '/api/proxy'
-      path: '/api/proxy'
-      fullPath: '/api/proxy'
-      preLoaderRoute: typeof ApiProxyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/report-csp': {
-      id: '/api/report-csp'
-      path: '/api/report-csp'
-      fullPath: '/api/report-csp'
-      preLoaderRoute: typeof ApiReportCspRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/version': {
-      id: '/api/version'
-      path: '/api/version'
-      fullPath: '/api/version'
-      preLoaderRoute: typeof ApiVersionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/web-screenshot': {
-      id: '/api/web-screenshot'
-      path: '/api/web-screenshot'
-      fullPath: '/api/web-screenshot'
-      preLoaderRoute: typeof ApiWebScreenshotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/controller/': {
-      id: '/controller/'
-      path: '/controller'
-      fullPath: '/controller/'
-      preLoaderRoute: typeof ControllerIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/gallery/': {
-      id: '/gallery/'
-      path: '/gallery'
-      fullPath: '/gallery/'
-      preLoaderRoute: typeof GalleryIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/legal/notices': {
-      id: '/legal/notices'
-      path: '/legal/notices'
-      fullPath: '/legal/notices'
-      preLoaderRoute: typeof LegalNoticesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/legal/privacy': {
-      id: '/legal/privacy'
-      path: '/legal/privacy'
-      fullPath: '/legal/privacy'
-      preLoaderRoute: typeof LegalPrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/playground/': {
-      id: '/playground/'
-      path: '/playground'
-      fullPath: '/playground/'
-      preLoaderRoute: typeof PlaygroundIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/playground/anima': {
-      id: '/playground/anima'
-      path: '/playground/anima'
-      fullPath: '/playground/anima'
-      preLoaderRoute: typeof PlaygroundAnimaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/playground/bg': {
-      id: '/playground/bg'
-      path: '/playground/bg'
-      fullPath: '/playground/bg'
-      preLoaderRoute: typeof PlaygroundBgRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/playground/noop': {
-      id: '/playground/noop'
-      path: '/playground/noop'
-      fullPath: '/playground/noop'
-      preLoaderRoute: typeof PlaygroundNoopRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/upload/$projectId': {
-      id: '/upload/$projectId'
-      path: '/upload/$projectId'
-      fullPath: '/upload/$projectId'
-      preLoaderRoute: typeof UploadProjectIdRouteImport
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/wall/': {
@@ -1077,6 +923,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WallIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/playground/': {
+      id: '/playground/'
+      path: '/playground'
+      fullPath: '/playground/'
+      preLoaderRoute: typeof PlaygroundIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gallery/': {
+      id: '/gallery/'
+      path: '/gallery'
+      fullPath: '/gallery/'
+      preLoaderRoute: typeof GalleryIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/controller/': {
+      id: '/controller/'
+      path: '/controller'
+      fullPath: '/controller/'
+      preLoaderRoute: typeof ControllerIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/yjs/$': {
       id: '/yjs/$'
       path: '/yjs/$'
@@ -1084,40 +958,145 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof YjsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/': {
-      id: '/_auth/quarry/'
-      path: '/quarry'
-      fullPath: '/quarry/'
-      preLoaderRoute: typeof AuthQuarryIndexRouteImport
-      parentRoute: typeof AuthRouteRoute
+    '/upload/$projectId': {
+      id: '/upload/$projectId'
+      path: '/upload/$projectId'
+      fullPath: '/upload/$projectId'
+      preLoaderRoute: typeof UploadProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/editor': {
-      id: '/_auth/quarry/editor'
-      path: '/quarry/editor'
-      fullPath: '/quarry/editor'
-      preLoaderRoute: typeof AuthQuarryEditorRouteRouteImport
-      parentRoute: typeof AuthRouteRoute
+    '/playground/noop': {
+      id: '/playground/noop'
+      path: '/playground/noop'
+      fullPath: '/playground/noop'
+      preLoaderRoute: typeof PlaygroundNoopRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/projects': {
-      id: '/_auth/quarry/projects'
-      path: '/quarry/projects'
-      fullPath: '/quarry/projects'
-      preLoaderRoute: typeof AuthQuarryProjectsRouteRouteImport
-      parentRoute: typeof AuthRouteRoute
+    '/playground/bg': {
+      id: '/playground/bg'
+      path: '/playground/bg'
+      fullPath: '/playground/bg'
+      preLoaderRoute: typeof PlaygroundBgRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/admin/signage/': {
-      id: '/admin/signage/'
-      path: '/'
-      fullPath: '/admin/signage/'
-      preLoaderRoute: typeof AdminSignageIndexRouteImport
-      parentRoute: typeof AdminSignageRouteRoute
+    '/playground/anima': {
+      id: '/playground/anima'
+      path: '/playground/anima'
+      fullPath: '/playground/anima'
+      preLoaderRoute: typeof PlaygroundAnimaRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/admin/signage/$slideshowId': {
-      id: '/admin/signage/$slideshowId'
-      path: '/$slideshowId'
-      fullPath: '/admin/signage/$slideshowId'
-      preLoaderRoute: typeof AdminSignageSlideshowIdRouteImport
-      parentRoute: typeof AdminSignageRouteRoute
+    '/legal/privacy': {
+      id: '/legal/privacy'
+      path: '/legal/privacy'
+      fullPath: '/legal/privacy'
+      preLoaderRoute: typeof LegalPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/notices': {
+      id: '/legal/notices'
+      path: '/legal/notices'
+      fullPath: '/legal/notices'
+      preLoaderRoute: typeof LegalNoticesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/web-screenshot': {
+      id: '/api/web-screenshot'
+      path: '/api/web-screenshot'
+      fullPath: '/api/web-screenshot'
+      preLoaderRoute: typeof ApiWebScreenshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/version': {
+      id: '/api/version'
+      path: '/api/version'
+      fullPath: '/api/version'
+      preLoaderRoute: typeof ApiVersionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/report-csp': {
+      id: '/api/report-csp'
+      path: '/api/report-csp'
+      fullPath: '/api/report-csp'
+      preLoaderRoute: typeof ApiReportCspRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/proxy': {
+      id: '/api/proxy'
+      path: '/api/proxy'
+      fullPath: '/api/proxy'
+      preLoaderRoute: typeof ApiProxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/stats': {
+      id: '/admin/stats'
+      path: '/stats'
+      fullPath: '/admin/stats'
+      preLoaderRoute: typeof AdminStatsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/projects': {
+      id: '/admin/projects'
+      path: '/projects'
+      fullPath: '/admin/projects'
+      preLoaderRoute: typeof AdminProjectsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/devices': {
+      id: '/admin/devices'
+      path: '/devices'
+      fullPath: '/admin/devices'
+      preLoaderRoute: typeof AdminDevicesRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/config': {
+      id: '/admin/config'
+      path: '/config'
+      fullPath: '/admin/config'
+      preLoaderRoute: typeof AdminConfigRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/audits': {
+      id: '/admin/audits'
+      path: '/audits'
+      fullPath: '/admin/audits'
+      preLoaderRoute: typeof AdminAuditsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/assets': {
+      id: '/admin/assets'
+      path: '/assets'
+      fullPath: '/admin/assets'
+      preLoaderRoute: typeof AdminAssetsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/_guest/login': {
+      id: '/_guest/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof GuestLoginRouteImport
+      parentRoute: typeof GuestRouteRoute
+    }
+    '/_guest/bootstrap': {
+      id: '/_guest/bootstrap'
+      path: '/bootstrap'
+      fullPath: '/bootstrap'
+      preLoaderRoute: typeof GuestBootstrapRouteImport
+      parentRoute: typeof GuestRouteRoute
+    }
+    '/admin/signage': {
+      id: '/admin/signage'
+      path: '/signage'
+      fullPath: '/admin/signage'
+      preLoaderRoute: typeof AdminSignageRouteRouteImport
+      parentRoute: typeof AdminRouteRoute
     }
     '/admin/walls/': {
       id: '/admin/walls/'
@@ -1126,25 +1105,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWallsIndexRouteImport
       parentRoute: typeof AdminRouteRoute
     }
-    '/admin/walls/$wallId': {
-      id: '/admin/walls/$wallId'
-      path: '/walls/$wallId'
-      fullPath: '/admin/walls/$wallId'
-      preLoaderRoute: typeof AdminWallsWallIdRouteRouteImport
-      parentRoute: typeof AdminRouteRoute
+    '/admin/signage/': {
+      id: '/admin/signage/'
+      path: '/'
+      fullPath: '/admin/signage/'
+      preLoaderRoute: typeof AdminSignageIndexRouteImport
+      parentRoute: typeof AdminSignageRouteRoute
     }
-    '/api/assets/$uri': {
-      id: '/api/assets/$uri'
-      path: '/api/assets/$uri'
-      fullPath: '/api/assets/$uri'
-      preLoaderRoute: typeof ApiAssetsUriRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_auth/quarry/': {
+      id: '/_auth/quarry/'
+      path: '/quarry'
+      fullPath: '/quarry/'
+      preLoaderRoute: typeof AuthQuarryIndexRouteImport
+      parentRoute: typeof AuthRouteRoute
     }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
+    '/api/wall/media-cookie': {
+      id: '/api/wall/media-cookie'
+      path: '/api/wall/media-cookie'
+      fullPath: '/api/wall/media-cookie'
+      preLoaderRoute: typeof ApiWallMediaCookieRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads/$': {
@@ -1154,26 +1133,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUploadsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/wall/media-cookie': {
-      id: '/api/wall/media-cookie'
-      path: '/api/wall/media-cookie'
-      fullPath: '/api/wall/media-cookie'
-      preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/projects/$projectId': {
-      id: '/_auth/quarry/projects/$projectId'
-      path: '/$projectId'
-      fullPath: '/quarry/projects/$projectId'
-      preLoaderRoute: typeof AuthQuarryProjectsProjectIdRouteRouteImport
-      parentRoute: typeof AuthQuarryProjectsRouteRoute
+    '/api/assets/$uri': {
+      id: '/api/assets/$uri'
+      path: '/api/assets/$uri'
+      fullPath: '/api/assets/$uri'
+      preLoaderRoute: typeof ApiAssetsUriRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/projects/new': {
-      id: '/_auth/quarry/projects/new'
-      path: '/new'
-      fullPath: '/quarry/projects/new'
-      preLoaderRoute: typeof AuthQuarryProjectsNewRouteImport
-      parentRoute: typeof AuthQuarryProjectsRouteRoute
+    '/admin/signage/$slideshowId': {
+      id: '/admin/signage/$slideshowId'
+      path: '/$slideshowId'
+      fullPath: '/admin/signage/$slideshowId'
+      preLoaderRoute: typeof AdminSignageSlideshowIdRouteImport
+      parentRoute: typeof AdminSignageRouteRoute
+    }
+    '/admin/walls/$wallId': {
+      id: '/admin/walls/$wallId'
+      path: '/walls/$wallId'
+      fullPath: '/admin/walls/$wallId'
+      preLoaderRoute: typeof AdminWallsWallIdRouteRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/_auth/quarry/projects': {
+      id: '/_auth/quarry/projects'
+      path: '/quarry/projects'
+      fullPath: '/quarry/projects'
+      preLoaderRoute: typeof AuthQuarryProjectsRouteRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
+    '/_auth/quarry/editor': {
+      id: '/_auth/quarry/editor'
+      path: '/quarry/editor'
+      fullPath: '/quarry/editor'
+      preLoaderRoute: typeof AuthQuarryEditorRouteRouteImport
+      parentRoute: typeof AuthRouteRoute
     }
     '/admin/walls/$wallId/': {
       id: '/admin/walls/$wallId/'
@@ -1182,18 +1182,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWallsWallIdIndexRouteImport
       parentRoute: typeof AdminWallsWallIdRouteRoute
     }
-    '/admin/walls/$wallId/devices': {
-      id: '/admin/walls/$wallId/devices'
-      path: '/devices'
-      fullPath: '/admin/walls/$wallId/devices'
-      preLoaderRoute: typeof AdminWallsWallIdDevicesRouteImport
-      parentRoute: typeof AdminWallsWallIdRouteRoute
-    }
-    '/api/portal/v1/bind': {
-      id: '/api/portal/v1/bind'
-      path: '/api/portal/v1/bind'
-      fullPath: '/api/portal/v1/bind'
-      preLoaderRoute: typeof ApiPortalV1BindRouteImport
+    '/api/portal/v1/slides': {
+      id: '/api/portal/v1/slides'
+      path: '/api/portal/v1/slides'
+      fullPath: '/api/portal/v1/slides'
+      preLoaderRoute: typeof ApiPortalV1SlidesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/portal/v1/reboot': {
@@ -1203,26 +1196,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPortalV1RebootRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/portal/v1/slides': {
-      id: '/api/portal/v1/slides'
-      path: '/api/portal/v1/slides'
-      fullPath: '/api/portal/v1/slides'
-      preLoaderRoute: typeof ApiPortalV1SlidesRouteImport
+    '/api/portal/v1/bind': {
+      id: '/api/portal/v1/bind'
+      path: '/api/portal/v1/bind'
+      fullPath: '/api/portal/v1/bind'
+      preLoaderRoute: typeof ApiPortalV1BindRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/editor/$projectId/': {
-      id: '/_auth/quarry/editor/$projectId/'
-      path: '/$projectId'
-      fullPath: '/quarry/editor/$projectId/'
-      preLoaderRoute: typeof AuthQuarryEditorProjectIdIndexRouteImport
-      parentRoute: typeof AuthQuarryEditorRouteRoute
+    '/admin/walls/$wallId/devices': {
+      id: '/admin/walls/$wallId/devices'
+      path: '/devices'
+      fullPath: '/admin/walls/$wallId/devices'
+      preLoaderRoute: typeof AdminWallsWallIdDevicesRouteImport
+      parentRoute: typeof AdminWallsWallIdRouteRoute
     }
-    '/_auth/quarry/editor/$projectId/$slideId': {
-      id: '/_auth/quarry/editor/$projectId/$slideId'
-      path: '/$projectId/$slideId'
-      fullPath: '/quarry/editor/$projectId/$slideId'
-      preLoaderRoute: typeof AuthQuarryEditorProjectIdSlideIdRouteImport
-      parentRoute: typeof AuthQuarryEditorRouteRoute
+    '/_auth/quarry/projects/new': {
+      id: '/_auth/quarry/projects/new'
+      path: '/new'
+      fullPath: '/quarry/projects/new'
+      preLoaderRoute: typeof AuthQuarryProjectsNewRouteImport
+      parentRoute: typeof AuthQuarryProjectsRouteRoute
+    }
+    '/_auth/quarry/projects/$projectId': {
+      id: '/_auth/quarry/projects/$projectId'
+      path: '/$projectId'
+      fullPath: '/quarry/projects/$projectId'
+      preLoaderRoute: typeof AuthQuarryProjectsProjectIdRouteRouteImport
+      parentRoute: typeof AuthQuarryProjectsRouteRoute
     }
     '/_auth/quarry/projects/$projectId/': {
       id: '/_auth/quarry/projects/$projectId/'
@@ -1231,25 +1231,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthQuarryProjectsProjectIdIndexRouteImport
       parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
     }
-    '/_auth/quarry/projects/$projectId/assets': {
-      id: '/_auth/quarry/projects/$projectId/assets'
-      path: '/assets'
-      fullPath: '/quarry/projects/$projectId/assets'
-      preLoaderRoute: typeof AuthQuarryProjectsProjectIdAssetsRouteImport
-      parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
+    '/_auth/quarry/editor/$projectId/': {
+      id: '/_auth/quarry/editor/$projectId/'
+      path: '/$projectId'
+      fullPath: '/quarry/editor/$projectId/'
+      preLoaderRoute: typeof AuthQuarryEditorProjectIdIndexRouteImport
+      parentRoute: typeof AuthQuarryEditorRouteRoute
     }
-    '/_auth/quarry/projects/$projectId/audits': {
-      id: '/_auth/quarry/projects/$projectId/audits'
-      path: '/audits'
-      fullPath: '/quarry/projects/$projectId/audits'
-      preLoaderRoute: typeof AuthQuarryProjectsProjectIdAuditsRouteImport
-      parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
+    '/api/portal/v1/controllers/$projectId': {
+      id: '/api/portal/v1/controllers/$projectId'
+      path: '/api/portal/v1/controllers/$projectId'
+      fullPath: '/api/portal/v1/controllers/$projectId'
+      preLoaderRoute: typeof ApiPortalV1ControllersProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_auth/quarry/projects/$projectId/commits': {
-      id: '/_auth/quarry/projects/$projectId/commits'
-      path: '/commits'
-      fullPath: '/quarry/projects/$projectId/commits'
-      preLoaderRoute: typeof AuthQuarryProjectsProjectIdCommitsRouteImport
+    '/_auth/quarry/view/$projectId/$commitId': {
+      id: '/_auth/quarry/view/$projectId/$commitId'
+      path: '/quarry/view/$projectId/$commitId'
+      fullPath: '/quarry/view/$projectId/$commitId'
+      preLoaderRoute: typeof AuthQuarryViewProjectIdCommitIdRouteImport
+      parentRoute: typeof AuthRouteRoute
+    }
+    '/_auth/quarry/projects/$projectId/permissions': {
+      id: '/_auth/quarry/projects/$projectId/permissions'
+      path: '/permissions'
+      fullPath: '/quarry/projects/$projectId/permissions'
+      preLoaderRoute: typeof AuthQuarryProjectsProjectIdPermissionsRouteImport
       parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
     }
     '/_auth/quarry/projects/$projectId/controller_editor': {
@@ -1259,26 +1266,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthQuarryProjectsProjectIdController_editorRouteImport
       parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
     }
-    '/_auth/quarry/projects/$projectId/permissions': {
-      id: '/_auth/quarry/projects/$projectId/permissions'
-      path: '/permissions'
-      fullPath: '/quarry/projects/$projectId/permissions'
-      preLoaderRoute: typeof AuthQuarryProjectsProjectIdPermissionsRouteImport
+    '/_auth/quarry/projects/$projectId/commits': {
+      id: '/_auth/quarry/projects/$projectId/commits'
+      path: '/commits'
+      fullPath: '/quarry/projects/$projectId/commits'
+      preLoaderRoute: typeof AuthQuarryProjectsProjectIdCommitsRouteImport
       parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
     }
-    '/_auth/quarry/view/$projectId/$commitId': {
-      id: '/_auth/quarry/view/$projectId/$commitId'
-      path: '/quarry/view/$projectId/$commitId'
-      fullPath: '/quarry/view/$projectId/$commitId'
-      preLoaderRoute: typeof AuthQuarryViewProjectIdCommitIdRouteImport
-      parentRoute: typeof AuthRouteRoute
+    '/_auth/quarry/projects/$projectId/audits': {
+      id: '/_auth/quarry/projects/$projectId/audits'
+      path: '/audits'
+      fullPath: '/quarry/projects/$projectId/audits'
+      preLoaderRoute: typeof AuthQuarryProjectsProjectIdAuditsRouteImport
+      parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
     }
-    '/api/portal/v1/controllers/$projectId': {
-      id: '/api/portal/v1/controllers/$projectId'
-      path: '/api/portal/v1/controllers/$projectId'
-      fullPath: '/api/portal/v1/controllers/$projectId'
-      preLoaderRoute: typeof ApiPortalV1ControllersProjectIdRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_auth/quarry/projects/$projectId/assets': {
+      id: '/_auth/quarry/projects/$projectId/assets'
+      path: '/assets'
+      fullPath: '/quarry/projects/$projectId/assets'
+      preLoaderRoute: typeof AuthQuarryProjectsProjectIdAssetsRouteImport
+      parentRoute: typeof AuthQuarryProjectsProjectIdRouteRoute
+    }
+    '/_auth/quarry/editor/$projectId/$slideId': {
+      id: '/_auth/quarry/editor/$projectId/$slideId'
+      path: '/$projectId/$slideId'
+      fullPath: '/quarry/editor/$projectId/$slideId'
+      preLoaderRoute: typeof AuthQuarryEditorProjectIdSlideIdRouteImport
+      parentRoute: typeof AuthQuarryEditorRouteRoute
     }
     '/_auth/quarry/editor/$projectId/$commitId/$slideId': {
       id: '/_auth/quarry/editor/$projectId/$commitId/$slideId'
@@ -1286,6 +1300,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/quarry/editor/$projectId/$commitId/$slideId'
       preLoaderRoute: typeof AuthQuarryEditorProjectIdCommitIdSlideIdRouteImport
       parentRoute: typeof AuthQuarryEditorRouteRoute
+    }
+    '/api/projects/$projectId/tiles/$layer/$z/$x/$y': {
+      id: '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
+      path: '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
+      fullPath: '/api/projects/$projectId/tiles/$layer/$z/$x/$y'
+      preLoaderRoute: typeof ApiProjectsProjectIdTilesLayerZXYRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/portal/v1/slides/$slideId/images/$layerId/zoom': {
       id: '/api/portal/v1/slides/$slideId/images/$layerId/zoom'
@@ -1499,6 +1520,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
   ApiPortalV1SlidesRoute: ApiPortalV1SlidesRouteWithChildren,
   ApiPortalV1ControllersProjectIdRoute: ApiPortalV1ControllersProjectIdRoute,
+  ApiProjectsProjectIdTilesLayerZXYRoute:
+    ApiProjectsProjectIdTilesLayerZXYRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -49,6 +49,8 @@ describe('stroke colour updates', () => {
             sendLayerUpdate: (layer: LayerWithEditorState) => {
                 sentLayers.push(layer);
             },
+            queueMapLayerUpdate: () => {},
+            flushMapViewUpdate: () => {},
             broadcastSlides: () => {},
             allocateId: () => 2,
             allocateZIndex: () => 2,

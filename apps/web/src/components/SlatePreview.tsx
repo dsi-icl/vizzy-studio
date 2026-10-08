@@ -3,18 +3,19 @@ import { useState, RefObject, useEffect } from 'react';
 import { Circle, KonvaNodeEvents, Layer, Line, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
-import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
+import { PreviewMapLayer, PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 
 type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
     stageScaleFactor: number;
+    previewScopeKey: string;
 };
 
 const PREVIEW_SCALE = 0.15;
 
-export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps) {
+export function SlatePreview({ stageSlot, stageScaleFactor, previewScopeKey }: SlatePreviewProps) {
     const [scrollLeft, setScrollLeft] = useState(0);
     const layers = useEditorStore((s) => s.layers);
     const showGrid = useEditorStore((s) => s.showGrid);
@@ -178,6 +179,15 @@ export function SlatePreview({ stageSlot, stageScaleFactor }: SlatePreviewProps)
                                         key={shape.numericId}
                                         shape={shape}
                                         stageScaleFactor={1}
+                                    />
+                                );
+                            }
+                            if (shape.type === 'map') {
+                                return (
+                                    <PreviewMapLayer
+                                        key={shape.numericId}
+                                        shape={shape}
+                                        previewKey={`${previewScopeKey}/${shape.numericId}`}
                                     />
                                 );
                             }

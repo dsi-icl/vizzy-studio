@@ -8,10 +8,11 @@ type SliceSet = (
 ) => void;
 type SliceGet = () => EditorState;
 
-export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: SliceHelpers) {
+export function createProjectSlice(_set: SliceSet, get: SliceGet, helpers: SliceHelpers) {
     const set: SliceSet = _set;
     return {
         loadProject: async (projectId: string, commitId: string, slideId: string) => {
+            helpers.flushMapViewUpdate();
             set({
                 loading: true,
                 projectId,
@@ -102,6 +103,8 @@ export function createProjectSlice(_set: SliceSet, get: SliceGet, _helpers: Slic
         switchSlide: async (slideId: string) => {
             const { projectId, commitId, activeSlideId } = get();
             if (!projectId || !commitId || slideId === activeSlideId) return;
+
+            helpers.flushMapViewUpdate();
 
             const engine = EditorEngine.getInstance();
             set({
