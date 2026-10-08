@@ -136,6 +136,32 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
+        updateMapView: (
+            numericId: number,
+            patch: Partial<Extract<LayerWithEditorState, { type: 'map' }>['view']>
+        ) => {
+            let changed = false;
+            set((s) => {
+                const layer = s.layers.get(numericId);
+                if (layer?.type !== 'map' || layer.config.locked) return s;
+                const view = { ...layer.view, ...patch };
+                if (
+                    Object.keys(patch).every(
+                        (key) =>
+                            view[key as keyof typeof view] === layer.view[key as keyof typeof view]
+                    )
+                )
+                    return s;
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, { ...layer, view });
+                changed = true;
+                return { layers: newLayers };
+            });
+            if (!changed) return;
+            helpers.queueMapLayerUpdate(numericId);
+            if (get().saveStatus !== 'dirty') get().markDirty();
+        },
+
         toggleLayerVisibility: (numericId: number) => {
             const layer = get().layers.get(numericId);
             if (!layer) return;
