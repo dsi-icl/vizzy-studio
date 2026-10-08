@@ -3,7 +3,7 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useLayoutEffect, useRef } from 'react';
 import { Image } from 'react-konva';
 
-import { useMapCanvasStore } from '~/lib/mapPreviewStore';
+import { subscribeMapCanvasFrame, useMapCanvasStore } from '~/lib/mapPreviewStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
 export function KonvaMapLayer({
@@ -33,10 +33,17 @@ export function KonvaMapLayer({
     const imageRef = useRef<Konva.Image>(null);
 
     useLayoutEffect(() => {
-        // The backing canvas is reused between frames, so its reference alone
-        // does not trigger a Konva redraw when the map finishes another frame.
+        // Attach the canvas when its first frame arrives.
         imageRef.current?.getLayer()?.batchDraw();
     }, [frame]);
+
+    useLayoutEffect(
+        () =>
+            subscribeMapCanvasFrame(previewKey, () => {
+                imageRef.current?.getLayer()?.batchDraw();
+            }),
+        [previewKey]
+    );
 
     return (
         <Image
