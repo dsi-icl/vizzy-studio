@@ -52,7 +52,7 @@ export const useEditorStore =
                           layer
                       });
                   },
-                  { wait: 500 }
+                  { wait: 100 }
               );
               let queuedMapKey: string | null = null;
               const queueMapLayerUpdate = (numericId: number) => {
