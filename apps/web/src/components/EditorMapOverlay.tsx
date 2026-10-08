@@ -1,8 +1,14 @@
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useCallback, useEffect } from 'react';
 import type { MapProps } from 'react-map-gl/maplibre';
 
 import { MapWrapper } from '~/components/MapWrapper';
-import { removeMapPreview, updateMapCanvas, updateMapPreview } from '~/lib/mapPreviewStore';
+import {
+    removeMapPreview,
+    setMapPreviewMap,
+    updateMapCanvas,
+    updateMapPreview
+} from '~/lib/mapPreviewStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
 interface EditorMapOverlayProps {
@@ -24,6 +30,10 @@ export function EditorMapOverlay({
     );
     const capturePreview = useCallback<NonNullable<MapProps['onIdle']>>(
         (event) => updateMapPreview(previewKey, event.target.getCanvas()),
+        [previewKey]
+    );
+    const registerMap = useCallback(
+        (map: MapLibreMap | null) => setMapPreviewMap(previewKey, map),
         [previewKey]
     );
     useEffect(() => () => removeMapPreview(previewKey), [previewKey]);
@@ -56,6 +66,7 @@ export function EditorMapOverlay({
                 projectId={projectId}
                 onIdle={capturePreview}
                 onRender={captureFrame}
+                onMapReady={registerMap}
                 pixelRatio={pixelRatio}
                 style={{
                     position: 'relative',

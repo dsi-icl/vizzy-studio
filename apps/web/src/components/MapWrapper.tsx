@@ -42,6 +42,7 @@ type MapWrapperProps = {
     projectId: string;
     onIdle?: MapProps['onIdle'];
     onRender?: MapProps['onRender'];
+    onMapReady?: (map: MapLibreMap | null) => void;
     pixelRatio?: number;
     wall?: WallMapViewport;
 } & RefAttributes<HTMLDivElement> &
@@ -59,6 +60,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     projectId,
     onIdle,
     onRender,
+    onMapReady,
     pixelRatio,
     wall,
     style,
@@ -71,6 +73,13 @@ export const MapWrapper: FC<MapWrapperProps> = ({
         (pixelRatio ?? (typeof window === 'undefined' ? 1 : window.devicePixelRatio)) /
         viewportScale;
     const mapRef = useRef<MapRef>(null);
+    const assignMapRef = useCallback(
+        (next: MapRef | null) => {
+            mapRef.current = next;
+            onMapReady?.(next?.getMap() ?? null);
+        },
+        [onMapReady]
+    );
     useEffect(() => {
         // react-map-gl only applies pixelRatio when the map is constructed.
         // Update the backing resolution when the editor preview is zoomed.
@@ -138,7 +147,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
                 />
             ) : (
                 <Map
-                    ref={mapRef}
+                    ref={assignMapRef}
                     key={`${styleId}:${tileUrl}`}
                     mapStyle={mapStyle}
                     pixelRatio={mapPixelRatio}

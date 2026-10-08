@@ -1,3 +1,4 @@
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import { create } from 'zustand';
 
 // Transient editor images: never persisted or sent over the collaboration bus.
@@ -11,6 +12,24 @@ export const useMapCanvasStore = create<Record<string, { canvas: HTMLCanvasEleme
 );
 
 const MAX_PREVIEW_SIZE = 256;
+
+// The live MapLibre refs must survive a module refresh alongside the editor.
+const previewMaps: Map<string, MapLibreMap> =
+    import.meta.hot?.data.previewMaps ?? new Map<string, MapLibreMap>();
+if (import.meta.hot) {
+    import.meta.hot.dispose((data) => {
+        data.previewMaps = previewMaps;
+    });
+}
+
+export function setMapPreviewMap(key: string, map: MapLibreMap | null) {
+    if (map) previewMaps.set(key, map);
+    else previewMaps.delete(key);
+}
+
+export function getMapPreviewMap(key: string) {
+    return previewMaps.get(key) ?? null;
+}
 
 export function updateMapCanvas(key: string, source: HTMLCanvasElement) {
     if (!source.width || !source.height) return;
@@ -45,6 +64,7 @@ export function updateMapPreview(key: string, source: HTMLCanvasElement) {
 }
 
 export function removeMapPreview(key: string) {
+    previewMaps.delete(key);
     useMapCanvasStore.setState((state) => {
         const next = { ...state };
         delete next[key];
