@@ -214,9 +214,9 @@ function WallMapCanvas({
             interactive: false,
             attributionControl: false,
             trackResize: false,
-            // Wall crops should settle immediately instead of restarting label
-            // fades every time movement reveals another part of the same map.
-            fadeDuration: 0,
+            // Zero forces full symbol placement on every render. A minimal
+            // nonzero duration lets MapLibre schedule it incrementally.
+            fadeDuration: 1,
             maxPitch: 90,
             transformRequest
         });
