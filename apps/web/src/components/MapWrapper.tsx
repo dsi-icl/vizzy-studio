@@ -17,6 +17,7 @@ import Map, { type MapProps, type MapRef, useControl } from 'react-map-gl/maplib
 import { setRefs } from '~/lib/setRefs';
 import { DEFAULT_MAP_STYLE_ID, type Layer, type MapStyleId } from '~/lib/types';
 import type { Viewport } from '~/lib/wallEngine';
+import { configureWallMapTransform, type WallMapTransform } from '~/lib/wallMapTransform';
 import protomapsDarkStyle from '~/map-styles/protomaps-dark.json';
 import protomapsDarkVizGrayStyle from '~/map-styles/protomaps-darkvizgray.json';
 import protomapsDarkVizWhiteStyle from '~/map-styles/protomaps-darkvizwhite.json';
@@ -360,16 +361,6 @@ type RetainedFrame = {
     height: number;
 };
 
-// MapLibre has no public off-axis viewport API. Ordinary padding clamps the
-// vanishing point to the canvas; outer wall units need it outside their canvas.
-type WallMapTransform = MapLibreMap['transform'] & {
-    _helper: {
-        readonly centerPoint: MapLibreMap['transform']['centerPoint'];
-        readonly fovInRadians: number;
-        readonly fov: number;
-    };
-};
-
 /** Keep the render cache alive for the map's lifetime, including JSON position updates. */
 function createWallMapRenderer(
     map: MapLibreMap,
@@ -392,34 +383,7 @@ function createWallMapRenderer(
     let invalidated = true;
     let updating = false;
     let visible = false;
-
-    const restoreTransform = () => {
-        for (const property of ['centerPoint', 'fovInRadians', 'fov']) {
-            Reflect.deleteProperty(transform._helper, property);
-        }
-    };
-    const configureTransform = () =>
-        Object.defineProperties(transform._helper, {
-            centerPoint: {
-                configurable: true,
-                get: () => {
-                    const point = full.centerPoint;
-                    point.x -= crop.x;
-                    point.y -= crop.y;
-                    return point;
-                }
-            },
-            fovInRadians: {
-                configurable: true,
-                get: () =>
-                    2 * Math.atan((crop.height / full.height) * Math.tan(full.fovInRadians / 2))
-            },
-            fov: {
-                configurable: true,
-                get: () => (transform._helper.fovInRadians * 180) / Math.PI
-            }
-        });
-    configureTransform();
+    let restoreTransform = configureWallMapTransform(transform, full, () => crop);
 
     const positionRetainedFrame = () => {
         if (!retainedFrame || !lastConfig || !visible) return;
@@ -443,7 +407,7 @@ function createWallMapRenderer(
         if (transform !== map.transform) {
             restoreTransform();
             transform = map.transform as WallMapTransform;
-            configureTransform();
+            restoreTransform = configureWallMapTransform(transform, full, () => crop);
             invalidated = true;
         }
         const { layer, viewport, pixelRatio } = input;
