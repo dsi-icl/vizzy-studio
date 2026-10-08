@@ -1517,12 +1517,14 @@ export function EditorSlate() {
                             height: stagePixelHeight
                         }}
                     >
+                        {/* Large invisible map previews must not expand the slate's scroll area. */}
                         <div
                             aria-hidden="true"
                             style={{
                                 position: 'absolute',
                                 inset: 0,
                                 pointerEvents: 'none',
+                                overflow: 'hidden',
                                 zIndex: 1
                             }}
                         >
