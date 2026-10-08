@@ -42,6 +42,16 @@ import {
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { getMapPreviewMap } from '~/lib/mapPreviewStore';
+import {
+    clampMapView,
+    classifyMapTouchGesture,
+    mapPinchZoomDelta,
+    mapPitchDelta,
+    mapScrollPitchDelta,
+    mapZoomCenterAtLocalPoint,
+    type MapTouchGestureKind
+} from '~/lib/mapViewGestures';
 import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getSnapGridSize } from '~/lib/stageConstants';
@@ -112,6 +122,16 @@ export function EditorSlate() {
     const lastCenter = useRef<{ x: number; y: number } | null>(null);
     const lastDist = useRef<number | null>(null);
     const lastAngle = useRef<number | null>(null);
+    const mapTouchGesture = useRef<{
+        numericId: number;
+        kind: MapTouchGestureKind | null;
+        completed: boolean;
+        startDistance: number;
+        startCenterY: number;
+        lastDistance: number;
+        lastCenterY: number;
+    } | null>(null);
+    const safariMapGestureActive = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const sortedLayers = useMemo(
@@ -1178,11 +1198,13 @@ export function EditorSlate() {
             const store = useEditorStore.getState();
             store.updateLayerConfig(numericId, updatedConfig);
 
-            // Sync to server
+            // A map gesture can update the camera before this dragend runs. Send
+            // the freshly merged store layer so geometry cannot rewind its view.
+            const updatedLayer = useEditorStore.getState().layers.get(numericId);
             engine.sendJSON({
                 type: 'upsert_layer',
                 origin: 'editor:handle_transform_end',
-                layer: { ...layerToUpdate, config: updatedConfig }
+                layer: updatedLayer ?? { ...layerToUpdate, config: updatedConfig }
             });
         },
         [engine, isSnapping, snapGrid]
@@ -1218,6 +1240,74 @@ export function EditorSlate() {
         }
         return null;
     };
+
+    const mapLocalPointAtClient = useCallback(
+        (numericId: number, clientX: number, clientY: number) => {
+            const stage = stageInstance.current;
+            const node = stage?.findOne<Konva.Image>(`#${numericId}`);
+            if (!stage || !node) return null;
+            const rect = stage.container().getBoundingClientRect();
+            const point = node
+                .getAbsoluteTransform()
+                .copy()
+                .invert()
+                .point({
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                });
+            return { point, width: node.width(), height: node.height() };
+        },
+        []
+    );
+
+    const selectedMapAtPoint = useCallback(
+        (clientX: number, clientY: number) => {
+            const store = useEditorStore.getState();
+            if (store.isDrawing || store.selectedLayerIds.length !== 1) return null;
+            const numericId = Number.parseInt(store.selectedLayerIds[0], 10);
+            const layer = store.layers.get(numericId);
+            if (layer?.type !== 'map' || layer.config.locked || !layer.config.visible) return null;
+            const hit = mapLocalPointAtClient(numericId, clientX, clientY);
+            if (!hit) return null;
+            return hit.point.x >= 0 &&
+                hit.point.x <= hit.width &&
+                hit.point.y >= 0 &&
+                hit.point.y <= hit.height
+                ? numericId
+                : null;
+        },
+        [mapLocalPointAtClient]
+    );
+
+    const updateMapViewByGesture = useCallback(
+        (
+            numericId: number,
+            zoomDelta: number,
+            pitchDelta: number,
+            anchor?: { clientX: number; clientY: number }
+        ) => {
+            if (!zoomDelta && !pitchDelta) return;
+            const store = useEditorStore.getState();
+            const layer = store.layers.get(numericId);
+            if (layer?.type !== 'map' || layer.config.locked) return;
+            const view = clampMapView(layer.view.zoom + zoomDelta, layer.view.pitch + pitchDelta);
+            if (anchor && view.zoom !== layer.view.zoom) {
+                const previewKey = `${store.projectId}/${store.commitId}/${store.activeSlideId}/${numericId}`;
+                const map = getMapPreviewMap(previewKey);
+                const local = mapLocalPointAtClient(numericId, anchor.clientX, anchor.clientY);
+                const center =
+                    map && local
+                        ? mapZoomCenterAtLocalPoint(map, layer.view, view.zoom, local.point, local)
+                        : null;
+                if (center) {
+                    store.updateMapView(numericId, { ...view, ...center });
+                    return;
+                }
+            }
+            store.updateMapView(numericId, view);
+        },
+        [mapLocalPointAtClient]
+    );
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
@@ -1256,6 +1346,41 @@ export function EditorSlate() {
                 }
             }
             if (!isDrawing) return;
+        }
+        if (
+            isTouchEvent(e.evt) &&
+            e.evt.touches.length === 2 &&
+            currentSelectedLayer?.type === 'map' &&
+            !currentSelectedLayer.config.locked &&
+            !trRef.current?.isTransforming()
+        ) {
+            const [first, second] = Array.from(e.evt.touches);
+            const numericId = currentSelectedLayer.numericId;
+            if (
+                selectedMapAtPoint(first.clientX, first.clientY) === numericId &&
+                selectedMapAtPoint(second.clientX, second.clientY) === numericId
+            ) {
+                // End a one-finger layer drag before the second touch takes over.
+                // Konva's dragend commits that geometry through the existing handler.
+                const node = stageInstance.current?.findOne<Konva.Image>(`#${numericId}`);
+                if (node?.isDragging()) node.stopDrag();
+                const distance = Math.hypot(
+                    second.clientX - first.clientX,
+                    second.clientY - first.clientY
+                );
+                const centerY = (first.clientY + second.clientY) / 2;
+                mapTouchGesture.current = {
+                    numericId,
+                    kind: null,
+                    completed: false,
+                    startDistance: distance,
+                    startCenterY: centerY,
+                    lastDistance: distance,
+                    lastCenterY: centerY
+                };
+                setIsPinching(true);
+                return;
+            }
         }
         if (
             isTouchEvent(e.evt) &&
@@ -1327,6 +1452,45 @@ export function EditorSlate() {
             } else {
                 setCurrentLine([]);
             }
+        }
+        const gesture = mapTouchGesture.current;
+        if (isTouchEvent(e.evt) && gesture?.completed) return;
+        if (isTouchEvent(e.evt) && e.evt.touches.length === 2 && gesture) {
+            const stage = e.target.getStage();
+            const node = stage?.findOne<Konva.Shape>(`#${gesture.numericId}`);
+            if (node?.isDragging()) node.stopDrag();
+            const [first, second] = Array.from(e.evt.touches);
+            const distance = Math.hypot(
+                second.clientX - first.clientX,
+                second.clientY - first.clientY
+            );
+            const centerY = (first.clientY + second.clientY) / 2;
+            const centerX = (first.clientX + second.clientX) / 2;
+            gesture.kind ??= classifyMapTouchGesture(
+                gesture.startDistance,
+                distance,
+                gesture.startCenterY,
+                centerY
+            );
+            if (gesture.kind === 'zoom') {
+                updateMapViewByGesture(
+                    gesture.numericId,
+                    mapPinchZoomDelta(gesture.lastDistance, distance),
+                    0,
+                    { clientX: centerX, clientY: centerY }
+                );
+            } else if (gesture.kind === 'pitch') {
+                updateMapViewByGesture(
+                    gesture.numericId,
+                    0,
+                    mapPitchDelta(gesture.lastCenterY, centerY)
+                );
+            }
+            if (gesture.kind) {
+                gesture.lastDistance = distance;
+                gesture.lastCenterY = centerY;
+            }
+            return;
         }
         if (
             isTouchEvent(e.evt) &&
@@ -1403,6 +1567,20 @@ export function EditorSlate() {
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (isTouchEvent(e.evt) && mapTouchGesture.current && e.evt.touches.length < 2) {
+            if (!mapTouchGesture.current.completed) {
+                mapTouchGesture.current.completed = true;
+                useEditorStore.getState().flushMapViewUpdate();
+            }
+            if (e.evt.touches.length === 0) {
+                mapTouchGesture.current = null;
+                setIsPinching(false);
+            }
+            lastDist.current = null;
+            lastAngle.current = null;
+            lastCenter.current = null;
+            return;
+        }
         if (isTouchEvent(e.evt) && e.evt.touches.length < 2) setIsPinching(false);
         const currentSelectedIds = useEditorStore.getState().selectedLayerIds;
         const shouldFinalizeFromStage = isTouchEvent(e.evt) && isPinching;
@@ -1436,14 +1614,81 @@ export function EditorSlate() {
         handleTouchEnd(e);
     };
 
-    const handleStageWheel = useCallback((e: KonvaEventObject<WheelEvent>) => {
+    const handleStageWheel = useCallback(
+        (e: KonvaEventObject<WheelEvent>) => {
+            const slot = stageSlot.current;
+            if (!slot) return;
+            const { clientX, clientY, deltaX, deltaY, deltaMode, ctrlKey } = e.evt;
+            const numericId = selectedMapAtPoint(clientX, clientY);
+            if (numericId !== null && deltaY !== 0) {
+                e.evt.preventDefault();
+                if (safariMapGestureActive.current) return;
+                const pixels =
+                    deltaY *
+                    (deltaMode === WheelEvent.DOM_DELTA_LINE
+                        ? 16
+                        : deltaMode === WheelEvent.DOM_DELTA_PAGE
+                          ? slot.clientHeight
+                          : 1);
+                const boundedPixels = Math.max(-120, Math.min(120, pixels));
+                if (ctrlKey)
+                    updateMapViewByGesture(numericId, -boundedPixels * 0.01, 0, {
+                        clientX,
+                        clientY
+                    });
+                else updateMapViewByGesture(numericId, 0, mapScrollPitchDelta(boundedPixels));
+                return;
+            }
+            const delta = deltaX + deltaY;
+            if (delta === 0) return;
+            e.evt.preventDefault();
+            slot.scrollLeft += delta;
+        },
+        [selectedMapAtPoint, updateMapViewByGesture]
+    );
+
+    useEffect(() => {
         const slot = stageSlot.current;
-        if (!slot) return;
-        const delta = e.evt.deltaX + e.evt.deltaY;
-        if (delta === 0) return;
-        e.evt.preventDefault();
-        slot.scrollLeft += delta;
-    }, []);
+        if (!slot || navigator.maxTouchPoints > 0) return;
+        type SafariGestureEvent = Event & { clientX: number; clientY: number; scale: number };
+        let activeMapId: number | null = null;
+        let lastScale = 1;
+        const onStart = (event: Event) => {
+            const gesture = event as SafariGestureEvent;
+            activeMapId = selectedMapAtPoint(gesture.clientX, gesture.clientY);
+            if (activeMapId === null) return;
+            lastScale = gesture.scale || 1;
+            safariMapGestureActive.current = true;
+            event.preventDefault();
+        };
+        const onChange = (event: Event) => {
+            if (activeMapId === null) return;
+            const gesture = event as SafariGestureEvent;
+            event.preventDefault();
+            const scale = gesture.scale || 1;
+            updateMapViewByGesture(activeMapId, mapPinchZoomDelta(lastScale, scale), 0, {
+                clientX: gesture.clientX,
+                clientY: gesture.clientY
+            });
+            lastScale = scale;
+        };
+        const onEnd = (event: Event) => {
+            if (activeMapId === null) return;
+            event.preventDefault();
+            activeMapId = null;
+            safariMapGestureActive.current = false;
+            useEditorStore.getState().flushMapViewUpdate();
+        };
+        slot.addEventListener('gesturestart', onStart, { passive: false });
+        slot.addEventListener('gesturechange', onChange, { passive: false });
+        slot.addEventListener('gestureend', onEnd, { passive: false });
+        return () => {
+            slot.removeEventListener('gesturestart', onStart);
+            slot.removeEventListener('gesturechange', onChange);
+            slot.removeEventListener('gestureend', onEnd);
+            safariMapGestureActive.current = false;
+        };
+    }, [selectedMapAtPoint, updateMapViewByGesture]);
 
     useEffect(() => {
         if (selectedLayerIds.length === 1 && trRef.current) {
@@ -1552,6 +1797,7 @@ export function EditorSlate() {
                             onTouchStart={handleStageInteractionStart}
                             onTouchMove={handleTouchMove}
                             onTouchEnd={handleTouchEnd}
+                            onTouchCancel={handleTouchEnd}
                             scaleX={stageScaleFactor}
                             scaleY={stageScaleFactor}
                             style={{
