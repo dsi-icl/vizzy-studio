@@ -98,16 +98,26 @@ export function ParametersPanel({
     const updateConfig = useCallback(
         (field: keyof LayerWithEditorState['config'], value: number) => {
             if (!selectedLayer || selectedLayer.config.locked) return;
-            const newConfig = { ...selectedLayer.config, [field]: value };
-            const updatedLayer = { ...selectedLayer, config: newConfig };
-
+            let updatedLayer: LayerWithEditorState | null = null;
             useEditorStore.setState((s) => {
+                const current = s.layers.get(selectedLayer.numericId);
+                if (!current || current.config.locked) return s;
+                updatedLayer = {
+                    ...current,
+                    config: { ...current.config, [field]: value }
+                };
                 const newLayers = new Map(s.layers);
                 newLayers.set(selectedLayer.numericId, updatedLayer);
                 return { layers: newLayers };
             });
-
-            throttledConfigUpdate.current(updatedLayer);
+            if (!updatedLayer) return;
+            if (selectedLayer.type === 'map') {
+                const store = useEditorStore.getState();
+                store.queueMapLayerUpdate(selectedLayer.numericId);
+                if (store.saveStatus !== 'dirty') store.markDirty();
+            } else {
+                throttledConfigUpdate.current(updatedLayer);
+            }
         },
         [selectedLayer]
     );
@@ -116,18 +126,7 @@ export function ParametersPanel({
         (field: MapViewField, value: number) => {
             if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
                 return;
-            const updatedLayer = {
-                ...selectedLayer,
-                view: { ...selectedLayer.view, [field]: value }
-            };
-
-            useEditorStore.setState((s) => {
-                const newLayers = new Map(s.layers);
-                newLayers.set(selectedLayer.numericId, updatedLayer);
-                return { layers: newLayers };
-            });
-
-            throttledConfigUpdate.current(updatedLayer);
+            useEditorStore.getState().updateMapView(selectedLayer.numericId, { [field]: value });
         },
         [selectedLayer]
     );
@@ -136,15 +135,20 @@ export function ParametersPanel({
         (value: MapStyleId) => {
             if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
                 return;
-            const updatedLayer = { ...selectedLayer, style: value };
-
+            let changed = false;
             useEditorStore.setState((s) => {
+                const current = s.layers.get(selectedLayer.numericId);
+                if (current?.type !== 'map' || current.config.locked || current.style === value)
+                    return s;
                 const newLayers = new Map(s.layers);
-                newLayers.set(selectedLayer.numericId, updatedLayer);
+                newLayers.set(selectedLayer.numericId, { ...current, style: value });
+                changed = true;
                 return { layers: newLayers };
             });
-
-            throttledConfigUpdate.current(updatedLayer);
+            if (!changed) return;
+            const store = useEditorStore.getState();
+            store.queueMapLayerUpdate(selectedLayer.numericId);
+            if (store.saveStatus !== 'dirty') store.markDirty();
         },
         [selectedLayer]
     );
