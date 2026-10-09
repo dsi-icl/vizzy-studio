@@ -25,7 +25,7 @@ function broadcastAction(action: PatchAction, layerExists: boolean, origin: stri
     if (action.kind !== 'restore') return;
 
     if (!layerExists) {
-        engine.createLayer('editor:undo_restore', action.layer);
+        engine.createLayer(origin, action.layer);
         return;
     }
     engine.sendJSON({ type: 'upsert_layer', origin, layer: action.layer });
