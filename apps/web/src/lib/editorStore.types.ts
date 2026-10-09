@@ -83,7 +83,7 @@ export interface EditorState {
     ) => void;
     addTextLayer: () => void;
     addMapLayer: () => void;
-    addShapeLayer: (shape: 'rectangle' | 'circle') => void;
+    addShapeLayer: (shape: 'rectangle' | 'oval') => void;
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
     addLineLayer: (line: Array<number>) => void;

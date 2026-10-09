@@ -1,7 +1,7 @@
 import type { StageLayout } from '@repo/db/schema';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
-import { Circle, KonvaNodeEvents, Layer, Rect, Stage, Line } from 'react-konva';
+import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage, Line } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
@@ -113,15 +113,15 @@ export function ViewerSlatePreview({
                                     />
                                 );
                             if (shape.type === 'shape') {
-                                if (shape.shape === 'circle')
+                                if (shape.shape === 'oval')
                                     return (
-                                        <Circle
+                                        <Ellipse
                                             key={shape.numericId}
                                             x={shape.config.cx}
                                             y={shape.config.cy}
-                                            offsetX={shape.config.width / 2}
-                                            offsetY={shape.config.height / 2}
-                                            radius={shape.config.width / 2}
+                                            radiusX={shape.config.width / 2}
+                                            radiusY={shape.config.height / 2}
+                                            rotation={shape.config.rotation}
                                             fill="transparent"
                                             stroke={shape.strokeColor}
                                             strokeWidth={shape.strokeWidth * 2}
