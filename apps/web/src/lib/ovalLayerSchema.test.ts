@@ -25,6 +25,26 @@ const shapeLayer = (layer: Record<string, unknown>) => ({
     ...layer
 });
 
+const LEGACY_CIRCLE = {
+    shape: 'circle',
+    fill: '#27869d',
+    strokeColor: '#d98484',
+    strokeDash: [],
+    strokeWidth: 10,
+    cornerRadius: 0,
+    config: {
+        cx: 13834,
+        cy: 2621,
+        width: 851,
+        height: 810,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
+        zIndex: 3,
+        visible: true
+    }
+};
+
 function upsert(layer: Record<string, unknown>) {
     return GSMessageSchema.safeParse({
         type: 'upsert_layer',
@@ -82,5 +102,23 @@ describe('oval layer wire schema', () => {
 
     test('rejects an unknown shape', () => {
         expect(upsert({ shape: 'triangle' }).success).toBe(false);
+    });
+
+    test('a legacy deck keeps the oval where its author placed it', () => {
+        const parsed = upsert(LEGACY_CIRCLE);
+        if (!parsed.success) throw new Error('expected parse to succeed');
+        const layer = (parsed.data as { layer: Record<string, unknown> }).layer;
+        const config = layer.config as Record<string, number>;
+
+        // The old circle drew itself half a box up and left of cx/cy, so that is
+        // where the centred oval has to land.
+        expect(layer.shape).toBe('oval');
+        expect(config.cx).toBe(LEGACY_CIRCLE.config.cx - LEGACY_CIRCLE.config.width / 2);
+        expect(config.cy).toBe(LEGACY_CIRCLE.config.cy - LEGACY_CIRCLE.config.height / 2);
+        expect(config.width).toBe(LEGACY_CIRCLE.config.width);
+        expect(config.height).toBe(LEGACY_CIRCLE.config.height);
+        expect(layer.fill).toBe(LEGACY_CIRCLE.fill);
+        expect(layer.strokeColor).toBe(LEGACY_CIRCLE.strokeColor);
+        expect(layer.strokeWidth).toBe(LEGACY_CIRCLE.strokeWidth);
     });
 });
