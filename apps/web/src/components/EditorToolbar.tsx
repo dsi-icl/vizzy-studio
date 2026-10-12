@@ -340,14 +340,19 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                                 }}
                                 className="flex flex-col gap-2"
                             >
-                                <label className="text-xs font-medium text-muted-foreground">
+                                <label
+                                    htmlFor="commit-message"
+                                    className="text-xs font-medium text-muted-foreground"
+                                >
                                     Commit message
                                 </label>
                                 <Input
+                                    id="commit-message"
                                     ref={commitInputRef}
                                     value={commitMessage}
                                     onChange={(e) => setCommitMessage(e.target.value)}
                                     placeholder="Describe your changes..."
+                                    // eslint-disable-next-line jsx-a11y/no-autofocus
                                     autoFocus
                                 />
                                 <Button type="submit" size="sm" disabled={saveStatus === 'saving'}>

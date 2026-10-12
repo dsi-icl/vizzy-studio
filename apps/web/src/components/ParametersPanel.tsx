@@ -83,7 +83,7 @@ export function ParametersPanel({
 
             throttledWebUrlUpdate.current(updatedLayer);
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
     );
 
     const updateConfig = useCallback(
@@ -106,7 +106,7 @@ export function ParametersPanel({
 
             throttledConfigUpdate.current(updatedLayer);
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
     );
 
     const selectedLeftX = selectedLayer
