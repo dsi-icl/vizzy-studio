@@ -382,33 +382,24 @@ function WallApp() {
 
                 // 3. Calculate the true dynamic bounding box of the rotated rectangle
                 const cullingPadding = getCullingPadding(layer, effectivePos);
-                const isCircleShape = layer.type === 'shape' && layer.shape === 'circle';
-                const radiusX = isCircleShape
-                    ? Math.max(sw, sh) / 2 + cullingPadding
-                    : (sw / 2) * Math.abs(Math.cos(rad)) +
-                      (sh / 2) * Math.abs(Math.sin(rad)) +
-                      cullingPadding;
-                const radiusY = isCircleShape
-                    ? Math.max(sw, sh) / 2 + cullingPadding
-                    : (sw / 2) * Math.abs(Math.sin(rad)) +
-                      (sh / 2) * Math.abs(Math.cos(rad)) +
-                      cullingPadding;
+                const radiusX =
+                    (sw / 2) * Math.abs(Math.cos(rad)) +
+                    (sh / 2) * Math.abs(Math.sin(rad)) +
+                    cullingPadding;
+                const radiusY =
+                    (sw / 2) * Math.abs(Math.sin(rad)) +
+                    (sh / 2) * Math.abs(Math.cos(rad)) +
+                    cullingPadding;
 
                 // Protect against network NaN poisoning
                 if (isNaN(radiusX) || isNaN(radiusY)) return;
 
                 // 4. Evaluate against the screen viewport
-                const cullCx = isCircleShape
-                    ? effectivePos.cx - effectivePos.width / 2
-                    : effectivePos.cx;
-                const cullCy = isCircleShape
-                    ? effectivePos.cy - effectivePos.height / 2
-                    : effectivePos.cy;
                 const isVisible =
-                    cullCx + radiusX > myViewport.x &&
-                    cullCx - radiusX < myViewport.x + myViewport.w &&
-                    cullCy + radiusY > myViewport.y &&
-                    cullCy - radiusY < myViewport.y + myViewport.h;
+                    effectivePos.cx + radiusX > myViewport.x &&
+                    effectivePos.cx - radiusX < myViewport.x + myViewport.w &&
+                    effectivePos.cy + radiusY > myViewport.y &&
+                    effectivePos.cy - radiusY < myViewport.y + myViewport.h;
 
                 if (isVisible) {
                     const localX = effectivePos.cx - effectivePos.width / 2 - myViewport.x;
@@ -779,7 +770,7 @@ function WallApp() {
                         </div>
                     );
 
-                if (layer.shape === 'circle')
+                if (layer.shape === 'oval')
                     return (
                         <div key={layer.numericId} {...commonProps}>
                             <svg
@@ -788,8 +779,11 @@ function WallApp() {
                                 className="overflow-visible"
                                 xmlns="http://www.w3.org/2000/svg"
                             >
-                                <circle
-                                    r={layer.config.width / 2}
+                                <ellipse
+                                    cx={layer.config.width / 2}
+                                    cy={layer.config.height / 2}
+                                    rx={layer.config.width / 2}
+                                    ry={layer.config.height / 2}
                                     fill={layer.fill}
                                     stroke={layer.strokeColor}
                                     strokeDasharray={layer.strokeDash.join(' ')}
