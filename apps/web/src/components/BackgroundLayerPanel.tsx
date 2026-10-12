@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { ColorPickerPopover } from '~/components/ColourPicker';
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -29,6 +30,16 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
         () =>
             debounce(
                 (nextLayer: BackgroundLayer) => {
+                    useEditorStore.getState().recordLayerChange({
+                        patches: [
+                            makeLayerPatch(
+                                nextLayer.numericId,
+                                useEditorStore.getState().layers.get(nextLayer.numericId) ?? null,
+                                nextLayer
+                            )
+                        ],
+                        mergeKey: `background:${nextLayer.numericId}`
+                    });
                     useEditorStore.setState((s) => {
                         const newLayers = new Map(s.layers);
                         newLayers.set(nextLayer.numericId, nextLayer);
@@ -58,8 +69,11 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
     return (
         <>
             <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Background style</label>
+                <label htmlFor="background-style" className="text-xs text-muted-foreground">
+                    Background style
+                </label>
                 <select
+                    id="background-style"
                     value={backgroundType}
                     onChange={(e) =>
                         updateField(
@@ -76,7 +90,7 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
                 </select>
             </div>
             <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Background color</label>
+                <span className="text-xs text-muted-foreground">Background color</span>
                 <ColorPickerPopover
                     tip="Background colour"
                     value={activeLayer.backgroundColor}
@@ -86,7 +100,7 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
             {!isSolidBackground ? (
                 <>
                     <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Atmosphere color</label>
+                        <span className="text-xs text-muted-foreground">Atmosphere color</span>
                         <ColorPickerPopover
                             tip="Atmosphere colour"
                             value={activeLayer.atmosphereColor}
@@ -94,7 +108,7 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Motif color 1</label>
+                        <span className="text-xs text-muted-foreground">Motif color 1</span>
                         <ColorPickerPopover
                             tip="Motif colour 1"
                             value={activeLayer.motifColor1}
@@ -102,7 +116,7 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Motif color 2</label>
+                        <span className="text-xs text-muted-foreground">Motif color 2</span>
                         <ColorPickerPopover
                             tip="Motif colour 2"
                             value={activeLayer.motifColor2}
@@ -110,8 +124,11 @@ export function BackgroundLayerPanel({ activeLayer }: BackgroundLayerPanelProps)
                         />
                     </div>
                     <div className="space-y-1">
-                        <label className="text-xs text-muted-foreground">Seed</label>
+                        <label htmlFor="background-seed" className="text-xs text-muted-foreground">
+                            Seed
+                        </label>
                         <Input
+                            id="background-seed"
                             type="number"
                             min={0}
                             max={9999}

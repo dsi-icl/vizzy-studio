@@ -6,6 +6,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/too
 import { useEffect, useState } from 'react';
 
 import type { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
+import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
 export function PlaybackControls({
@@ -104,13 +106,14 @@ export function PlaybackControls({
                             variant={isLooping ? 'secondary' : 'ghost'}
                             size="icon-sm"
                             onClick={() => {
+                                const updatedLayer = { ...layer, loop: !isLooping };
+                                useEditorStore.getState().recordLayerChange({
+                                    patches: [makeLayerPatch(layer.numericId, layer, updatedLayer)]
+                                });
                                 engine.sendJSON({
                                     type: 'upsert_layer',
                                     origin: 'editor:playback_controls_input',
-                                    layer: {
-                                        ...layer,
-                                        loop: !isLooping
-                                    }
+                                    layer: updatedLayer
                                 });
                             }}
                         />

@@ -11,6 +11,7 @@ import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { makeLayerPatch } from '~/lib/editorLayerChange';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -43,6 +44,10 @@ export function WebLayerPanel({ activeLayer, projectId }: WebLayerPanelProps) {
         (value: string) => {
             setWebUrl(value);
             const updatedLayer = { ...activeLayer, url: value };
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(activeLayer.numericId, activeLayer, updatedLayer)],
+                mergeKey: `web_url:${activeLayer.numericId}`
+            });
             useEditorStore.setState((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.set(activeLayer.numericId, updatedLayer);
@@ -55,6 +60,9 @@ export function WebLayerPanel({ activeLayer, projectId }: WebLayerPanelProps) {
 
     const handleWebProxyToggle = useCallback(() => {
         const updatedLayer = { ...activeLayer, proxy: !activeLayer.proxy };
+        useEditorStore.getState().recordLayerChange({
+            patches: [makeLayerPatch(activeLayer.numericId, activeLayer, updatedLayer)]
+        });
         useEditorStore.getState().upsertLayer(updatedLayer);
         const engine = EditorEngine.getInstance();
         engine.sendJSON({
@@ -94,6 +102,9 @@ export function WebLayerPanel({ activeLayer, projectId }: WebLayerPanelProps) {
                 stillImageSizes: Array.isArray(sizes) ? sizes : undefined,
                 blurhash: blurhash ?? undefined
             };
+            useEditorStore.getState().recordLayerChange({
+                patches: [makeLayerPatch(activeLayer.numericId, activeLayer, updatedLayer)]
+            });
             useEditorStore.getState().upsertLayer(updatedLayer);
             const engine = EditorEngine.getInstance();
             engine.sendJSON({

@@ -1,9 +1,16 @@
 import type { StageLayout } from '@repo/db/schema';
 
+import type { HistoryEntry } from './editorHistory';
+import type { LayerPatch } from './editorLayerChange';
 import type { ConnectionStatus } from './reconnectingWs';
 import type { Layer, LayerWithEditorState, Slide } from './types';
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+export interface RecordedLayerChange {
+    patches: Array<LayerPatch | null>;
+    select?: string[];
+    mergeKey?: string | null;
+}
 
 export interface LayerClipboard {
     projectId: string;
@@ -58,6 +65,10 @@ export interface EditorState {
     headCommitId: string | null;
     insertionCenter: { x: number; y: number };
     insertionViewport: { width: number; height: number };
+
+    // ── Undo/redo ──
+    undoStack: HistoryEntry[];
+    redoStack: HistoryEntry[];
 
     // ── Actions ──
     loadProject: (projectId: string, commitId: string, slideId: string) => Promise<void>;
@@ -116,6 +127,10 @@ export interface EditorState {
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;
     stopTextEditing: () => void;
+    recordLayerChange: (change: RecordedLayerChange) => void;
+    undo: () => void;
+    redo: () => void;
+    clearHistory: () => void;
 }
 
 /** Helpers threaded from editorStore.ts into each slice factory. */
