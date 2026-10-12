@@ -751,6 +751,14 @@ export function EditorSlate() {
         }
 
         uppy.on('upload-success', (_file, response) => {
+            // If the user deleted the layer while it was uploading, don't recreate
+            // the layer after the upload finishes, keep the asset
+            if (!useEditorStore.getState().layers.has(numericId)) {
+                URL.revokeObjectURL(localUrl);
+                uppy.destroy();
+                return;
+            }
+
             // Derive asset URL from the tus upload ID
             const uploadId = response.uploadURL?.split('/').pop() ?? '';
             const assetFilename = isImage ? `${uploadId}${ext}` : `${uploadId}.mp4`;
