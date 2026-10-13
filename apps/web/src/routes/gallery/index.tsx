@@ -97,7 +97,7 @@ function HomePage() {
     }, [searchStr]);
 
     const galleryEnrollmentGateActive = enrollmentModeEnabled && Boolean(deviceEnrollmentId);
-    const canChooseWall = user?.role === 'admin' && !galleryEnrollmentGateActive;
+    const canChooseWall = user?.role === 'admin';
 
     const { data: walls = [] } = useQuery({
         ...wallsQueryOptions(),
