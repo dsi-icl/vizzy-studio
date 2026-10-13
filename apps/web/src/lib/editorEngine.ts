@@ -61,6 +61,7 @@ export class EditorEngine {
     private clockOffset = 0;
     private bestRTT = Infinity;
     private pingTimer: ReturnType<typeof setTimeout> | null = null;
+    private rttResetTimer: ReturnType<typeof setTimeout> | null = null;
     private currentProjectId: string | null = null;
     private currentCommitId: string | null = null;
     private currentSlideId: string | null = null;
@@ -70,11 +71,12 @@ export class EditorEngine {
             auth: { kind: 'editor' },
             onOpen: () => {
                 console.log('Editor Engine: Connected to Server');
-                // Reset clock sync state on every (re)connect
-                this.clockOffset = 0;
+                // Keep the last estimate until the first pong after reconnect.
                 this.bestRTT = Infinity;
                 if (this.pingTimer) clearTimeout(this.pingTimer);
-                this.startClockSync();
+                this.pingTimer = null;
+                if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
+                this.rttResetTimer = null;
 
                 // Re-join the scope if we were already in one (reconnection case)
                 if (this.currentProjectId && this.currentCommitId && this.currentSlideId) {
@@ -92,6 +94,7 @@ export class EditorEngine {
             this.connectionStatusCallbacks.forEach((cb) => cb(status));
         });
         this.bus.onReady(() => {
+            this.startClockSync();
             if (!this.currentProjectId || !this.currentCommitId || !this.currentSlideId) return;
             this.sendJSON({
                 type: 'switch_scope',
@@ -276,6 +279,7 @@ export class EditorEngine {
     public destroy() {
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
+        if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
         this.stopPointerBroadcast();
         // Otherwise these fire after teardown and toast about a slide the user
         // has already navigated away from.
@@ -329,10 +333,18 @@ export class EditorEngine {
     }
 
     private handlePong(data: Omit<Extract<GSMessage, { type: 'pong' }>, 'type'>) {
-        const rtt = Date.now() - data.t0 - (data.t2 - data.t1);
+        const receivedAt = Date.now();
+        const rtt = receivedAt - data.t0 - (data.t2 - data.t1);
+        if (!Number.isFinite(rtt) || rtt < 0 || data.t2 < data.t1) return;
         if (rtt < this.bestRTT) {
             this.bestRTT = rtt;
-            this.clockOffset = (data.t1 - data.t0 + (data.t2 - Date.now())) / 2;
+            this.clockOffset = (data.t1 - data.t0 + (data.t2 - receivedAt)) / 2;
+        }
+        if (!this.rttResetTimer) {
+            this.rttResetTimer = setTimeout(() => {
+                this.bestRTT = Infinity;
+                this.rttResetTimer = null;
+            }, 5000);
         }
     }
 

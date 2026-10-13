@@ -460,7 +460,20 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     <>
                         <Separator orientation="vertical" className="mx-1 my-1 h-6" />
                         <AppearanceToolbar
+                            key={activeLayer?.numericId}
                             showShapeFill={isShape}
+                            showShapeEffect={(isShape || isLine) && !isMultiLayerSelection}
+                            effectTarget={isLine ? 'line' : 'shape'}
+                            shapeEffect={
+                                activeLayer?.type === 'shape' || activeLayer?.type === 'line'
+                                    ? activeLayer.effect
+                                    : undefined
+                            }
+                            shapeEffectSettings={
+                                activeLayer?.type === 'shape' || activeLayer?.type === 'line'
+                                    ? activeLayer.effectSettings
+                                    : undefined
+                            }
                             showRectangleCornerRadius={
                                 activeLayer?.type === 'shape' && activeLayer.shape === 'rectangle'
                             }

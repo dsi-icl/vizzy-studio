@@ -25,14 +25,26 @@ export const useEditorStore =
     typeof window !== 'undefined' && window.__EDITOR_STORE__
         ? window.__EDITOR_STORE__
         : create<EditorState>()((set, get) => {
-              /** Throttled layer broadcast — one instance, shared across all slices */
-              const sendLayerUpdate = throttle(
-                  (layer: Parameters<SliceHelpers['sendLayerUpdate']>[0], origin: string) => {
+              /** Keep the latest update for every layer during the throttle window. */
+              const pendingLayerUpdates = new Map<
+                  number,
+                  { layer: Parameters<SliceHelpers['sendLayerUpdate']>[0]; origin: string }
+              >();
+              const flushLayerUpdates = throttle(
+                  () => {
                       const engine = EditorEngine.getInstance();
-                      engine.sendJSON({ type: 'upsert_layer', origin, layer });
+                      for (const { layer, origin } of pendingLayerUpdates.values()) {
+                          if (!get().layers.has(layer.numericId)) continue;
+                          engine.sendJSON({ type: 'upsert_layer', origin, layer });
+                      }
+                      pendingLayerUpdates.clear();
                   },
                   { wait: 100 }
               );
+              const sendLayerUpdate: SliceHelpers['sendLayerUpdate'] = (layer, origin) => {
+                  pendingLayerUpdates.set(layer.numericId, { layer, origin });
+                  flushLayerUpdates();
+              };
 
               /** Broadcast slide metadata — needs get() for commitId */
               function broadcastSlides(slides: Parameters<SliceHelpers['broadcastSlides']>[0]) {

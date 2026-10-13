@@ -9,6 +9,7 @@ import {
     useRef,
     useState,
     useLayoutEffect,
+    Fragment,
     type DragEvent
 } from 'react';
 import {
@@ -22,6 +23,7 @@ import {
 } from 'react-konva';
 import { toast } from 'sonner';
 
+import { EffectEllipse, EffectLine, EffectRect } from '~/components/AnimatedKonvaShape';
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
@@ -55,6 +57,8 @@ import {
 import { scrubInsecureTusResumeEntries } from '~/lib/tusClient';
 import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $createUploadToken } from '~/server/projects.fns';
+
+const getEditorTime = () => EditorEngine.getInstance().getServerTime();
 
 import { SlatePreview } from './SlatePreview';
 
@@ -1593,39 +1597,94 @@ export function EditorSlate() {
 
                                     if (layer.shape === 'rectangle') {
                                         return (
-                                            <Rect
-                                                key={`shape_${layer.numericId}`}
-                                                {...commonProps}
-                                                width={layer.config.width}
-                                                height={layer.config.height}
-                                                offsetX={layer.config.width / 2}
-                                                offsetY={layer.config.height / 2}
-                                                cornerRadius={layer.cornerRadius}
-                                                dash={layer.strokeDash}
-                                                dashOffset={(layer.strokeDash[0] ?? 0) / 2}
-                                                lineCap="round"
-                                                lineJoin="round"
-                                            />
+                                            <Fragment key={`shape_${layer.numericId}`}>
+                                                <Rect
+                                                    {...commonProps}
+                                                    opacity={
+                                                        layer.effect && layer.effect !== 'none'
+                                                            ? 0
+                                                            : hiddenOpacity
+                                                    }
+                                                    width={layer.config.width}
+                                                    height={layer.config.height}
+                                                    offsetX={layer.config.width / 2}
+                                                    offsetY={layer.config.height / 2}
+                                                    cornerRadius={layer.cornerRadius}
+                                                    dash={layer.strokeDash}
+                                                    dashOffset={(layer.strokeDash[0] ?? 0) / 2}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                />
+                                                {layer.effect && layer.effect !== 'none' ? (
+                                                    <EffectRect
+                                                        {...commonProps}
+                                                        id={undefined}
+                                                        listening={false}
+                                                        draggable={false}
+                                                        opacity={hiddenOpacity}
+                                                        effect={layer.effect}
+                                                        effectSettings={layer.effectSettings}
+                                                        getTimeMs={getEditorTime}
+                                                        followNodeId={layer.numericId.toString()}
+                                                        width={layer.config.width}
+                                                        height={layer.config.height}
+                                                        offsetX={layer.config.width / 2}
+                                                        offsetY={layer.config.height / 2}
+                                                        cornerRadius={layer.cornerRadius}
+                                                        dash={layer.strokeDash}
+                                                        dashOffset={(layer.strokeDash[0] ?? 0) / 2}
+                                                        lineCap="round"
+                                                        lineJoin="round"
+                                                    />
+                                                ) : null}
+                                            </Fragment>
                                         );
                                     }
                                     if (layer.shape === 'oval') {
                                         return (
-                                            <Ellipse
-                                                key={`shape_${layer.numericId}`}
-                                                {...commonProps}
-                                                radiusX={layer.config.width / 2}
-                                                radiusY={layer.config.height / 2}
-                                                dash={layer.strokeDash}
-                                                lineCap="round"
-                                                lineJoin="round"
-                                            />
+                                            <Fragment key={`shape_${layer.numericId}`}>
+                                                <Ellipse
+                                                    {...commonProps}
+                                                    opacity={
+                                                        layer.effect && layer.effect !== 'none'
+                                                            ? 0
+                                                            : hiddenOpacity
+                                                    }
+                                                    radiusX={layer.config.width / 2}
+                                                    radiusY={layer.config.height / 2}
+                                                    dash={layer.strokeDash}
+                                                    lineCap="round"
+                                                    lineJoin="round"
+                                                />
+                                                {layer.effect && layer.effect !== 'none' ? (
+                                                    <EffectEllipse
+                                                        {...commonProps}
+                                                        id={undefined}
+                                                        listening={false}
+                                                        draggable={false}
+                                                        opacity={hiddenOpacity}
+                                                        effect={layer.effect}
+                                                        effectSettings={layer.effectSettings}
+                                                        getTimeMs={getEditorTime}
+                                                        followNodeId={layer.numericId.toString()}
+                                                        radiusX={layer.config.width / 2}
+                                                        radiusY={layer.config.height / 2}
+                                                        dash={layer.strokeDash}
+                                                        lineCap="round"
+                                                        lineJoin="round"
+                                                    />
+                                                ) : null}
+                                            </Fragment>
                                         );
                                     }
                                 }
                                 if (layer.type === 'line') {
                                     return (
-                                        <Line
+                                        <EffectLine
                                             key={`lin_${layer.numericId}`}
+                                            effect={layer.effect}
+                                            effectSettings={layer.effectSettings}
+                                            getTimeMs={getEditorTime}
                                             id={layer.numericId.toString()}
                                             listening={props.listening}
                                             opacity={hiddenOpacity}

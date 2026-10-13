@@ -28,6 +28,7 @@ export class WallEngine {
 
     // Clock Sync State
     private clockOffset = 0;
+    private hasClockSync = false;
     private bestRTT = Infinity;
     private rttResetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -52,14 +53,18 @@ export class WallEngine {
             },
             onOpen: () => {
                 console.log('Wall Engine: Connected to Master Server');
-                // Reset clock sync on every (re)connect
-                this.clockOffset = 0;
+                // Keep the last estimate until the first pong after reconnect.
+                this.hasClockSync = false;
                 this.bestRTT = Infinity;
                 if (this.pingTimer) clearTimeout(this.pingTimer);
-                this.startClockSync();
+                this.pingTimer = null;
+                if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
+                this.rttResetTimer = null;
             },
             onMessage: (event) => this.handleMessage(event)
         });
+        // The bus rejects pings before wall authentication. Send the first one as soon as it is ready.
+        this.bus.onReady(() => this.startClockSync());
 
         // On reconnecting: avoid immediate full clear/hydrate churn during short network blips.
         // Only clear if disconnect is sustained.
@@ -88,6 +93,7 @@ export class WallEngine {
     public destroy() {
         console.log('Wall Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
+        if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
         if (this.reconnectClearTimer) clearTimeout(this.reconnectClearTimer);
         for (const rafId of this.playbackStartRafs.values()) cancelAnimationFrame(rafId);
         this.playbackStartRafs.clear();
@@ -172,6 +178,10 @@ export class WallEngine {
         return Date.now() + this.clockOffset;
     }
 
+    public get clockSynced(): boolean {
+        return this.hasClockSync;
+    }
+
     private startClockSync() {
         const sendPing = () => {
             const buffer = new ArrayBuffer(9);
@@ -185,16 +195,22 @@ export class WallEngine {
     }
 
     private handlePong(data: Omit<Extract<GSMessage, { type: 'pong' }>, 'type'>) {
-        const rtt = Date.now() - data.t0 - (data.t2 - data.t1);
+        const receivedAt = Date.now();
+        const rtt = receivedAt - data.t0 - (data.t2 - data.t1);
+        if (!Number.isFinite(rtt) || rtt < 0 || data.t2 < data.t1) return;
         if (rtt < this.bestRTT) {
             this.bestRTT = rtt;
-            this.clockOffset = (data.t1 - data.t0 + (data.t2 - Date.now())) / 2;
+            this.clockOffset = (data.t1 - data.t0 + (data.t2 - receivedAt)) / 2;
+            this.hasClockSync = true;
         }
-        // Periodically reset bestRTT to allow network environment changes to register.
-        if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
-        this.rttResetTimer = setTimeout(() => {
-            this.bestRTT = Infinity;
-        }, 5000);
+        // Start a fixed sampling window; resetting it on every pong would keep the first
+        // low-latency sample forever and let independent wall clocks drift apart.
+        if (!this.rttResetTimer) {
+            this.rttResetTimer = setTimeout(() => {
+                this.bestRTT = Infinity;
+                this.rttResetTimer = null;
+            }, 5000);
+        }
     }
 
     // --- MESSAGE ROUTING ---

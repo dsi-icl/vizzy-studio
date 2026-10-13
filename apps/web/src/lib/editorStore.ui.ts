@@ -1,5 +1,9 @@
 import { EditorEngine } from './editorEngine';
 import type { EditorState, SliceHelpers } from './editorStore.types';
+import { DEFAULT_SHAPE_EFFECT_SETTINGS } from './shapeEffects';
+import type { ShapeEffect } from './types';
+import { ShapeEffectSettingsSchema } from './types';
+import type { ShapeEffectSettings } from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -91,6 +95,87 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
                 }
                 return newState;
             });
+            get().markDirty();
+        },
+
+        setShapeEffect: (effect: ShapeEffect) => {
+            const selectedLayerIds = get().selectedLayerIds;
+            if (selectedLayerIds.length !== 1) return;
+            const numericId = Number.parseInt(selectedLayerIds[0], 10);
+            const layer = get().layers.get(numericId);
+            if (
+                (layer?.type !== 'shape' && layer?.type !== 'line') ||
+                (layer.type === 'line' && effect !== 'none' && effect !== 'travel') ||
+                (layer.effect ?? 'none') === effect
+            )
+                return;
+
+            const effectSettings =
+                effect === 'none'
+                    ? layer.effectSettings
+                    : {
+                          ...DEFAULT_SHAPE_EFFECT_SETTINGS,
+                          ...layer.effectSettings,
+                          playMode: effect === 'reveal' ? ('once' as const) : ('loop' as const),
+                          startAtMs:
+                              effect === 'reveal'
+                                  ? EditorEngine.getInstance().getServerTime()
+                                  : undefined
+                      };
+            const updatedLayer = {
+                ...layer,
+                effect,
+                effectSettings
+            };
+            set((s) => {
+                const layers = new Map(s.layers);
+                layers.set(numericId, updatedLayer);
+                return { layers };
+            });
+            helpers.sendLayerUpdate(updatedLayer, 'editor:set_shape_effect');
+            get().markDirty();
+        },
+
+        setShapeEffectSettings: (settings: Partial<ShapeEffectSettings>) => {
+            const selectedLayerIds = get().selectedLayerIds;
+            if (selectedLayerIds.length !== 1) return;
+            const numericId = Number.parseInt(selectedLayerIds[0], 10);
+            const layer = get().layers.get(numericId);
+            if (layer?.type !== 'shape' && layer?.type !== 'line') return;
+            const startAtMs =
+                settings.playMode === 'loop'
+                    ? undefined
+                    : (settings.startAtMs ??
+                      (settings.playMode === 'once' && layer.effectSettings?.playMode !== 'once'
+                          ? EditorEngine.getInstance().getServerTime()
+                          : layer.effectSettings?.startAtMs));
+            const effectSettings = ShapeEffectSettingsSchema.parse({
+                ...DEFAULT_SHAPE_EFFECT_SETTINGS,
+                ...layer.effectSettings,
+                ...settings,
+                startAtMs
+            });
+            if (
+                layer.effectSettings &&
+                layer.effectSettings.speed === effectSettings.speed &&
+                layer.effectSettings.intensity === effectSettings.intensity &&
+                layer.effectSettings.direction === effectSettings.direction &&
+                layer.effectSettings.ringCount === effectSettings.ringCount &&
+                layer.effectSettings.segmentLength === effectSettings.segmentLength &&
+                layer.effectSettings.playMode === effectSettings.playMode &&
+                layer.effectSettings.phaseOffsetMs === effectSettings.phaseOffsetMs &&
+                layer.effectSettings.accentColor === effectSettings.accentColor &&
+                layer.effectSettings.startAtMs === effectSettings.startAtMs
+            ) {
+                return;
+            }
+            const updatedLayer = { ...layer, effectSettings };
+            set((s) => {
+                const layers = new Map(s.layers);
+                layers.set(numericId, updatedLayer);
+                return { layers };
+            });
+            helpers.sendLayerUpdate(updatedLayer, 'editor:set_shape_effect_settings');
             get().markDirty();
         },
 

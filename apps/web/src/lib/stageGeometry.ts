@@ -2,6 +2,7 @@
 
 import type Konva from 'konva';
 
+import { getShapeEffectMaxScale } from '~/lib/shapeEffects';
 import type { LayerWithWallComponentState } from '~/lib/types';
 
 // ── Rotation ──────────────────────────────────────────────────────────────────
@@ -81,11 +82,37 @@ export function getCullingPadding(
     layer: LayerWithWallComponentState,
     pos: { scaleX: number; scaleY: number }
 ): number {
-    const scale = Math.max(Math.abs(pos.scaleX), Math.abs(pos.scaleY), 1);
+    const effectScale =
+        layer.type === 'shape' ? getShapeEffectMaxScale(layer.effect, layer.effectSettings) : 1;
+    const scale = Math.max(Math.abs(pos.scaleX), Math.abs(pos.scaleY), 1) * effectScale;
     const filterBlur =
         layer.config.filters?.enabled === true ? (layer.config.filters.blur ?? 0) : 0;
     const blurPadding = filterBlur * scale * 2;
     const strokePadding =
         layer.type === 'line' || layer.type === 'shape' ? (layer.strokeWidth / 2) * scale : 0;
-    return 20 + blurPadding + strokePadding;
+    return (
+        20 +
+        blurPadding +
+        strokePadding +
+        (layer.type === 'shape' && layer.effect === 'focus' ? 8 * scale : 0)
+    );
+}
+
+/** Radius of the largest rendered footprint, including the full pulse cycle. */
+export function getLayerCullingRadii(
+    layer: LayerWithWallComponentState,
+    pos: { width: number; height: number; rotation: number; scaleX: number; scaleY: number }
+): { x: number; y: number } {
+    const effectScale =
+        layer.type === 'shape' ? getShapeEffectMaxScale(layer.effect, layer.effectSettings) : 1;
+    const halfWidth = (Math.abs(pos.width * pos.scaleX) * effectScale) / 2;
+    const halfHeight = (Math.abs(pos.height * pos.scaleY) * effectScale) / 2;
+    const rotation = (pos.rotation * Math.PI) / 180;
+    const cosine = Math.abs(Math.cos(rotation));
+    const sine = Math.abs(Math.sin(rotation));
+    const padding = getCullingPadding(layer, pos);
+    return {
+        x: halfWidth * cosine + halfHeight * sine + padding,
+        y: halfWidth * sine + halfHeight * cosine + padding
+    };
 }

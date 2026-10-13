@@ -11,8 +11,15 @@ import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
+import {
+    getPolylineLength,
+    getShapeEffectFrame,
+    getShapeEffectSettings,
+    getShapeOutline,
+    partialShapeOutline
+} from '~/lib/shapeEffects';
 import { signedFetch } from '~/lib/signedFetch';
-import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
+import { getLayerCullingRadii, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import type { LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
@@ -40,6 +47,47 @@ export const Route = createFileRoute('/wall/')({
     }),
     component: WallApp
 });
+
+type WallShapeLayer = Extract<LayerWithWallComponentState, { type: 'shape' }>;
+
+function WallShapePath({ layer, overlay }: { layer: WallShapeLayer; overlay?: boolean }) {
+    const dash = overlay ? [] : layer.strokeDash;
+    const settings = getShapeEffectSettings(layer.effectSettings);
+    const shared = {
+        fill: overlay ? 'none' : layer.fill,
+        stroke: overlay ? settings.accentColor : layer.strokeColor,
+        strokeWidth: overlay ? Math.max(2, layer.strokeWidth * 0.65) : layer.strokeWidth,
+        strokeDasharray: dash.join(' '),
+        strokeDashoffset:
+            !overlay && layer.shape === 'rectangle' ? (layer.strokeDash[0] ?? 0) / 2 : undefined,
+        strokeLinecap: 'round' as const,
+        strokeLinejoin: 'round' as const,
+        overflow: 'visible' as const,
+        'data-shape-outline': overlay ? undefined : ''
+    };
+    if (layer.shape === 'rectangle') {
+        return (
+            <rect
+                {...shared}
+                x={0}
+                y={0}
+                width={layer.config.width}
+                height={layer.config.height}
+                rx={layer.cornerRadius}
+                ry={layer.cornerRadius}
+            />
+        );
+    }
+    return (
+        <ellipse
+            {...shared}
+            cx={layer.config.width / 2}
+            cy={layer.config.height / 2}
+            rx={layer.config.width / 2}
+            ry={layer.config.height / 2}
+        />
+    );
+}
 
 function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
@@ -348,6 +396,7 @@ function WallApp() {
         });
         let frameId: number;
         const loop = () => {
+            const serverTime = engine?.getServerTime() ?? Date.now();
             engine?.layers.forEach((layer) => {
                 if (!layer.el) return;
                 if (!layer.config.visible) {
@@ -372,24 +421,7 @@ function WallApp() {
                           })()
                         : pos;
 
-                // --- UPGRADED CLIENT-SIDE CULLING MATH (Rotated AABB) ---
-                // 1. Get the scaled width and height
-                const sw = effectivePos.width * effectivePos.scaleX;
-                const sh = effectivePos.height * effectivePos.scaleY;
-
-                // 2. Convert degrees to radians for JS Math functions
-                const rad = effectivePos.rotation * (Math.PI / 180);
-
-                // 3. Calculate the true dynamic bounding box of the rotated rectangle
-                const cullingPadding = getCullingPadding(layer, effectivePos);
-                const radiusX =
-                    (sw / 2) * Math.abs(Math.cos(rad)) +
-                    (sh / 2) * Math.abs(Math.sin(rad)) +
-                    cullingPadding;
-                const radiusY =
-                    (sw / 2) * Math.abs(Math.sin(rad)) +
-                    (sh / 2) * Math.abs(Math.cos(rad)) +
-                    cullingPadding;
+                const { x: radiusX, y: radiusY } = getLayerCullingRadii(layer, effectivePos);
 
                 // Protect against network NaN poisoning
                 if (isNaN(radiusX) || isNaN(radiusY)) return;
@@ -408,8 +440,107 @@ function WallApp() {
                     layer.visible = true;
                     layer.el.style.width = `${effectivePos.width}px`;
                     layer.el.style.height = `${effectivePos.height}px`;
-                    layer.el.style.transform = `translate3d(${localX}px, ${localY}px, 0) rotate(${effectivePos.rotation}deg) scale(${effectivePos.scaleX}, ${effectivePos.scaleY})`;
+                    const activeEffect =
+                        engine?.clockSynced && (layer.type === 'shape' || layer.type === 'line')
+                            ? layer.effect
+                            : undefined;
+                    const effectFrame =
+                        activeEffect && activeEffect !== 'none'
+                            ? getShapeEffectFrame(
+                                  activeEffect,
+                                  serverTime,
+                                  layer.type === 'shape' || layer.type === 'line'
+                                      ? layer.effectSettings
+                                      : undefined
+                              )
+                            : null;
+                    const effectScale = layer.type === 'shape' ? (effectFrame?.scale ?? 1) : 1;
+                    layer.el.style.transform = `translate3d(${localX}px, ${localY}px, 0) rotate(${effectivePos.rotation}deg) scale(${effectivePos.scaleX * effectScale}, ${effectivePos.scaleY * effectScale})`;
                     layer.el.style.opacity = '1';
+                    if (layer.type === 'shape') {
+                        const base = layer.el.querySelector<SVGElement>('[data-shape-outline]');
+                        if (base)
+                            base.style.strokeWidth =
+                                activeEffect === 'reveal' &&
+                                effectFrame &&
+                                effectFrame.revealProgress < 1
+                                    ? '0'
+                                    : '';
+                        const focus = layer.el.querySelector<SVGSVGElement>('[data-shape-focus]');
+                        if (focus) {
+                            focus.style.opacity = String(
+                                activeEffect === 'focus' ? (effectFrame?.focusOpacity ?? 0) : 0
+                            );
+                            focus.style.transform = `scale(${effectFrame ? effectFrame.focusScale / effectFrame.scale : 1})`;
+                        }
+                        layer.el
+                            .querySelectorAll<SVGSVGElement>('[data-shape-ping]')
+                            .forEach((ring, index) => {
+                                const values =
+                                    activeEffect === 'ping' ? effectFrame?.rings[index] : undefined;
+                                ring.style.opacity = String(values?.opacity ?? 0);
+                                ring.style.transform = `scale(${values && effectFrame ? values.scale / effectFrame.scale : 1})`;
+                            });
+                        const outline =
+                            activeEffect === 'travel' || activeEffect === 'reveal'
+                                ? getShapeOutline(
+                                      layer.shape,
+                                      layer.config.width,
+                                      layer.config.height,
+                                      layer.cornerRadius
+                                  )
+                                : null;
+                        const travel =
+                            layer.el.querySelector<SVGPolylineElement>('[data-shape-travel]');
+                        if (travel && outline && activeEffect === 'travel' && effectFrame) {
+                            const segment =
+                                (outline.total *
+                                    getShapeEffectSettings(layer.effectSettings).segmentLength) /
+                                100;
+                            travel.setAttribute(
+                                'stroke-dasharray',
+                                `${segment} ${Math.max(1, outline.total - segment)}`
+                            );
+                            travel.setAttribute(
+                                'stroke-dashoffset',
+                                String(-outline.total * effectFrame.travelProgress)
+                            );
+                            travel.style.opacity = String(effectFrame.travelOpacity);
+                        } else if (travel) travel.style.opacity = '0';
+                        const reveal =
+                            layer.el.querySelector<SVGPolylineElement>('[data-shape-reveal]');
+                        if (reveal && outline && activeEffect === 'reveal' && effectFrame) {
+                            const points = partialShapeOutline(
+                                outline,
+                                effectFrame.revealProgress,
+                                layer.effectSettings?.direction === 'reverse'
+                            );
+                            const pairs = [];
+                            for (let i = 0; i < points.length; i += 2)
+                                pairs.push(`${points[i]},${points[i + 1]}`);
+                            reveal.setAttribute('points', pairs.join(' '));
+                            reveal.style.opacity = effectFrame.revealProgress >= 1 ? '0' : '1';
+                        } else if (reveal) reveal.style.opacity = '0';
+                    } else if (layer.type === 'line') {
+                        const travel =
+                            layer.el.querySelector<SVGPolylineElement>('[data-line-travel]');
+                        if (travel && activeEffect === 'travel' && effectFrame) {
+                            const length = getPolylineLength(layer.line);
+                            const segment =
+                                (length *
+                                    getShapeEffectSettings(layer.effectSettings).segmentLength) /
+                                100;
+                            travel.setAttribute(
+                                'stroke-dasharray',
+                                `${segment} ${Math.max(1, length - segment)}`
+                            );
+                            travel.setAttribute(
+                                'stroke-dashoffset',
+                                String(-length * effectFrame.travelProgress)
+                            );
+                            travel.style.opacity = String(effectFrame.travelOpacity);
+                        } else if (travel) travel.style.opacity = '0';
+                    }
                 } else {
                     layer.visible = false;
                     layer.el.style.opacity = '0';
@@ -734,67 +865,114 @@ function WallApp() {
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                             />
+                            {layer.effect === 'travel' ? (
+                                <polyline
+                                    data-line-travel=""
+                                    points={svgPoints.join(' ')}
+                                    fill="none"
+                                    stroke={
+                                        getShapeEffectSettings(layer.effectSettings).accentColor
+                                    }
+                                    strokeWidth={Math.max(3, layer.strokeWidth + 2)}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    opacity={0}
+                                />
+                            ) : null}
                         </svg>
                     </div>
                 );
             }
 
             if (layer.type === 'shape') {
-                if (layer.shape === 'rectangle')
-                    return (
-                        <div key={layer.numericId} {...commonProps}>
-                            <svg
-                                width={layer.config.width}
-                                height={layer.config.height}
-                                className="overflow-visible"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <rect
-                                    x={0}
-                                    y={0}
+                const overlayStyle: CSSProperties = {
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    overflow: 'visible',
+                    pointerEvents: 'none',
+                    transformOrigin: '50% 50%'
+                };
+                const settings = getShapeEffectSettings(layer.effectSettings);
+                const outline =
+                    layer.effect === 'travel' || layer.effect === 'reveal'
+                        ? getShapeOutline(
+                              layer.shape,
+                              layer.config.width,
+                              layer.config.height,
+                              layer.cornerRadius
+                          )
+                        : null;
+                const effectOverlay =
+                    layer.effect === 'focus' ? (
+                        <svg
+                            data-shape-focus=""
+                            width={layer.config.width}
+                            height={layer.config.height}
+                            xmlns="http://www.w3.org/2000/svg"
+                            style={{ ...overlayStyle, opacity: 0 }}
+                        >
+                            <WallShapePath layer={layer} overlay />
+                        </svg>
+                    ) : layer.effect === 'ping' ? (
+                        <>
+                            {Array.from({ length: settings.ringCount }, (_, index) => (
+                                <svg
+                                    key={index}
+                                    data-shape-ping=""
                                     width={layer.config.width}
                                     height={layer.config.height}
-                                    rx={layer.cornerRadius}
-                                    ry={layer.cornerRadius}
-                                    fill={layer.fill}
-                                    stroke={layer.strokeColor}
-                                    strokeDasharray={layer.strokeDash.join(' ')}
-                                    strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                    strokeWidth={layer.strokeWidth}
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    overflow="visible"
-                                    //    rx=""
-                                />
-                            </svg>
-                        </div>
-                    );
-
-                if (layer.shape === 'oval')
-                    return (
-                        <div key={layer.numericId} {...commonProps}>
-                            <svg
-                                width={layer.config.width}
-                                height={layer.config.height}
-                                className="overflow-visible"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <ellipse
-                                    cx={layer.config.width / 2}
-                                    cy={layer.config.height / 2}
-                                    rx={layer.config.width / 2}
-                                    ry={layer.config.height / 2}
-                                    fill={layer.fill}
-                                    stroke={layer.strokeColor}
-                                    strokeDasharray={layer.strokeDash.join(' ')}
-                                    strokeWidth={layer.strokeWidth}
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    overflow="visible"
-                                />
-                            </svg>
-                        </div>
-                    );
+                                    style={{ ...overlayStyle, opacity: 0 }}
+                                >
+                                    <WallShapePath layer={layer} overlay />
+                                </svg>
+                            ))}
+                        </>
+                    ) : outline ? (
+                        <svg
+                            width={layer.config.width}
+                            height={layer.config.height}
+                            style={overlayStyle}
+                        >
+                            <polyline
+                                data-shape-travel={layer.effect === 'travel' ? '' : undefined}
+                                data-shape-reveal={layer.effect === 'reveal' ? '' : undefined}
+                                points={
+                                    layer.effect === 'travel'
+                                        ? outline.points.map(({ x, y }) => `${x},${y}`).join(' ')
+                                        : ''
+                                }
+                                fill="none"
+                                stroke={settings.accentColor}
+                                strokeWidth={
+                                    layer.effect === 'reveal'
+                                        ? layer.strokeWidth
+                                        : Math.max(3, layer.strokeWidth + 2)
+                                }
+                                strokeDasharray={
+                                    layer.effect === 'reveal'
+                                        ? layer.strokeDash.join(' ')
+                                        : undefined
+                                }
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                opacity={0}
+                            />
+                        </svg>
+                    ) : null;
+                return (
+                    <div key={layer.numericId} {...commonProps}>
+                        <svg
+                            width={layer.config.width}
+                            height={layer.config.height}
+                            className="overflow-visible"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <WallShapePath layer={layer} />
+                        </svg>
+                        {effectOverlay}
+                    </div>
+                );
             }
             return null;
         });
