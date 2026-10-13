@@ -147,6 +147,9 @@ export function GalleryProjectCard({
             project={project}
             previewHref={previewHref}
             previewDisabledReason={previewDisabledReason}
+            loadUnavailableMessage={
+                !user && !isEnrolledDevice ? 'Sign in to load this project on a wall.' : undefined
+            }
             autoOpenSignal={autoOpenSignal}
             forceDemoteFullscreenSignal={forceDemoteFullscreenSignal}
             forceCloseMinimizedSignal={forceCloseMinimizedSignal}
