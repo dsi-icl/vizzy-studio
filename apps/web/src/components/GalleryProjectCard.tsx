@@ -40,8 +40,9 @@ export function GalleryProjectCard({
 
     const wallId = useGalleryStore((s) => s.wallId);
     const isEnrolledDevice = useGalleryStore((s) => s.isEnrolledDevice);
-    const canUserManageWalls = Boolean(user) && allowWallActions;
-    const canEnrolledDeviceLoad = isEnrolledDevice && !user && allowWallActions;
+    const canAdminBindWall = user?.role === 'admin';
+    const canDeviceBindWall = isEnrolledDevice && !user;
+    const canBindWall = allowWallActions && (canAdminBindWall || canDeviceBindWall);
 
     const handleLoadProject = useCallback(
         async (wallId: string) => {
@@ -130,7 +131,6 @@ export function GalleryProjectCard({
         return null;
     }, []);
 
-    const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
     const hasCustomRenderUrl =
         typeof project.customRenderUrl === 'string' && project.customRenderUrl.trim().length > 0;
     const previewHref =
@@ -152,12 +152,12 @@ export function GalleryProjectCard({
             forceCloseMinimizedSignal={forceCloseMinimizedSignal}
             forceCloseSignal={forceCloseSignal}
             availableWalls={availableWalls}
-            onLoadProject={canLoad ? handleLoadProject : undefined}
-            onWallRebootRequest={canLoad ? handleWallRebootRequest : undefined}
-            onWallUnbindRequest={canLoad ? handleWallUnbindRequest : undefined}
-            onControllerTokenRequest={canLoad ? handleControllerTokenRequest : undefined}
+            onLoadProject={canBindWall ? handleLoadProject : undefined}
+            onWallRebootRequest={canBindWall ? handleWallRebootRequest : undefined}
+            onWallUnbindRequest={canBindWall ? handleWallUnbindRequest : undefined}
+            onControllerTokenRequest={canBindWall ? handleControllerTokenRequest : undefined}
             presetWallId={wallId}
-            hideWallPicker={canEnrolledDeviceLoad}
+            hideWallPicker={canDeviceBindWall}
         />
     );
 }
