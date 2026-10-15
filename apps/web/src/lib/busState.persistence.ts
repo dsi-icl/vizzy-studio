@@ -21,6 +21,7 @@ import {
     wallPeersByScope,
     type ScopeId
 } from './busState.state';
+import { revokeDemoSessionsForScope } from './demoGatewaySessions';
 import { revokePortalTokensForScope } from './portalTokens';
 
 const SCOPE_CLEANUP_GRACE_MS = 5 * 60 * 1000; // 5 minutes
@@ -77,6 +78,7 @@ async function executeScopeCleanup(scopeId: ScopeId) {
         clearActiveVideosForScope(scopeId);
         clearControllerTransientForScope(scopeId);
         revokePortalTokensForScope(scopeId);
+        revokeDemoSessionsForScope(scopeId);
 
         editorsByScope.delete(scopeId);
         wallPeersByScope.delete(scopeId);
@@ -97,6 +99,7 @@ async function executeScopeCleanup(scopeId: ScopeId) {
     clearActiveVideosForScope(scopeId);
     clearControllerTransientForScope(scopeId);
     revokePortalTokensForScope(scopeId);
+    revokeDemoSessionsForScope(scopeId);
 
     // Purge scope state
     scopedState.delete(scopeId);

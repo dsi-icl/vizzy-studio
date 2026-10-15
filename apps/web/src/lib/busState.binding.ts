@@ -10,6 +10,7 @@ import {
     wallUnbindTimers,
     type ScopeId
 } from './busState.state';
+import { revokeDemoSessionsForWall } from './demoGatewaySessions';
 import { revokePortalTokensForWall } from './portalTokens';
 
 const WALL_UNBIND_GRACE_MS = 5_000; // 5 seconds
@@ -22,6 +23,7 @@ export function bindWall(
     const oldScopeId = wallBindings.get(wallId);
     // Never let old controller API credentials survive a wall rebind.
     revokePortalTokensForWall(wallId);
+    revokeDemoSessionsForWall(wallId);
     clearControllerTransientForWall(wallId);
 
     // Tear down old binding
@@ -70,6 +72,7 @@ export function unbindWall(wallId: string) {
     const oldScopeId = wallBindings.get(wallId);
     // Wall credentials become invalid immediately when unbound.
     revokePortalTokensForWall(wallId);
+    revokeDemoSessionsForWall(wallId);
     clearControllerTransientForWall(wallId);
     if (oldScopeId !== undefined) {
         const watchers = scopeWatchers.get(oldScopeId);

@@ -1,10 +1,18 @@
+import { env } from '@repo/env';
 import { createServerFn } from '@tanstack/react-start';
 
-import { wallBindings } from '~/lib/busState';
+import { scopedState, wallBindings } from '~/lib/busState';
+import {
+    buildDemoLaunchUrl,
+    parseDemoSource,
+    parseDirectDemoUpstreams
+} from '~/lib/demoGatewayPaths';
+import { issueDemoLaunch } from '~/lib/demoGatewaySessions';
 import { createPortalToken, pruneExpiredPortalTokens } from '~/lib/portalTokens';
 import { z } from '~/lib/zod';
 import { logAuditDenied } from '~/server/audit';
 import { actorAuthContextMiddleware } from '~/server/auth-context.middleware';
+import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
 
 export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
@@ -56,4 +64,142 @@ export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
             throw new Error('Wall is not currently bound');
         }
         return createPortalToken(data.wallId, scopeId);
+    });
+
+/** A wall screen or gallery can open its bound demo through the private demo host. */
+export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
+    .validator(
+        z.object({
+            wallId: z.string(),
+            projectId: z.string(),
+            kind: z.enum(['controller', 'screen'])
+        })
+    )
+    .middleware([actorAuthContextMiddleware])
+    .handler(async ({ data, context }) => {
+        const authContext = (context as { authContext?: AuthContext } | undefined)?.authContext;
+        const device = authContext?.device;
+        const isBoundDevice =
+            (data.kind === 'screen' && device?.kind === 'wall' && device.wallId === data.wallId) ||
+            (data.kind === 'controller' &&
+                device?.kind === 'gallery' &&
+                (!device.wallId || device.wallId === data.wallId));
+        const isAdmin = authContext?.user?.role === 'admin';
+        if (!isBoundDevice && !isAdmin) {
+            await logAuditDenied({
+                action: 'DEMO_GATEWAY_TOKEN_ISSUE_DENIED',
+                reasonCode: 'FORBIDDEN_ROLE',
+                resourceType: 'portal_token',
+                resourceId: data.wallId,
+                authContext: authContext ?? { guest: true },
+                executionContext: {
+                    surface: 'serverfn',
+                    operation: '$issueDemoGatewayLaunch'
+                }
+            });
+            throw new Error('Forbidden');
+        }
+
+        const scopeId = wallBindings.get(data.wallId);
+        const scope = scopeId === undefined ? undefined : scopedState.get(scopeId);
+        if (scopeId === undefined || !scope || scope.projectId !== data.projectId) {
+            throw new Error('Wall is not bound to this project');
+        }
+
+        if (!env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
+            return null;
+        }
+        const project = await getProject(data.projectId);
+        if (!project) throw new Error('Project not found');
+        const rawUrl =
+            data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
+        const source = rawUrl
+            ? parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+            : null;
+        if (!source) return null;
+        const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
+        if (!directUpstreams) throw new Error('Demo direct upstream configuration is invalid');
+        if (!env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !directUpstreams.has(source.slug)) {
+            return null;
+        }
+
+        const { ticket, expiresAt } = issueDemoLaunch({
+            access: 'wall',
+            wallId: data.wallId,
+            scopeId,
+            projectId: data.projectId,
+            kind: data.kind,
+            slug: source.slug,
+            entryPath: `${source.entry.pathname}${source.entry.search}`
+        });
+        return {
+            url: buildDemoLaunchUrl(
+                env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                data.projectId,
+                data.kind,
+                ticket
+            ),
+            expiresAt
+        };
+    });
+
+/** A signed-in administrator can inspect a demo without binding any wall. */
+export const $issueAdminDemoPreviewLaunch = createServerFn({ method: 'POST' })
+    .validator(
+        z.object({
+            projectId: z.string(),
+            kind: z.enum(['controller', 'screen'])
+        })
+    )
+    .middleware([actorAuthContextMiddleware])
+    .handler(async ({ data, context }) => {
+        const authContext = (context as { authContext?: AuthContext } | undefined)?.authContext;
+        if (authContext?.user?.role !== 'admin') {
+            await logAuditDenied({
+                action: 'DEMO_GATEWAY_PREVIEW_DENIED',
+                reasonCode: 'FORBIDDEN_ROLE',
+                resourceType: 'project',
+                resourceId: data.projectId,
+                authContext: authContext ?? { guest: true },
+                executionContext: {
+                    surface: 'serverfn',
+                    operation: '$issueAdminDemoPreviewLaunch'
+                }
+            });
+            throw new Error('Forbidden');
+        }
+
+        if (!env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
+            throw new Error('Demo gateway is not configured');
+        }
+        const project = await getProject(data.projectId);
+        if (!project) throw new Error('Project not found');
+        const rawUrl =
+            data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
+        const source = rawUrl
+            ? parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+            : null;
+        if (!source) throw new Error('This project has no demo URL on the protected host');
+        const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
+        if (!directUpstreams) throw new Error('Demo direct upstream configuration is invalid');
+        if (!env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !directUpstreams.has(source.slug)) {
+            throw new Error('No upstream is configured for this demo');
+        }
+
+        const { ticket, expiresAt } = issueDemoLaunch({
+            access: 'admin-preview',
+            projectId: data.projectId,
+            kind: data.kind,
+            slug: source.slug,
+            entryPath: `${source.entry.pathname}${source.entry.search}`
+        });
+        return {
+            url: buildDemoLaunchUrl(
+                env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                data.projectId,
+                data.kind,
+                ticket
+            ),
+            expiresAt
+        };
     });

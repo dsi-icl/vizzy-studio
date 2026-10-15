@@ -14,6 +14,9 @@ const RawEnvSchema = z.object({
     SERVER_DATABASE_URL: z.string().min(1).optional(),
     SERVER_AUTH_SECRET: z.string().min(1).optional(),
     SERVER_CONFIG_ENCRYPTION_KEY: z.string().min(1).optional(),
+    SERVER_DEMO_GATEWAY_SOURCE_ORIGIN: z.string().optional(),
+    SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN: z.string().optional(),
+    SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS: z.string().optional(),
 
     ALLOWED_HOSTS: z.string().optional(),
     TRUSTED_ORIGINS: z.string().optional(),
@@ -70,6 +73,9 @@ export const env = {
     SERVER_DATABASE_URL: raw.SERVER_DATABASE_URL ?? '',
     SERVER_AUTH_SECRET: raw.SERVER_AUTH_SECRET ?? '',
     SERVER_CONFIG_ENCRYPTION_KEY: raw.SERVER_CONFIG_ENCRYPTION_KEY ?? '',
+    SERVER_DEMO_GATEWAY_SOURCE_ORIGIN: raw.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN ?? '',
+    SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN: raw.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN ?? '',
+    SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS: raw.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS ?? '',
 
     ALLOWED_HOSTS: raw.ALLOWED_HOSTS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',
     TRUSTED_ORIGINS: raw.TRUSTED_ORIGINS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',

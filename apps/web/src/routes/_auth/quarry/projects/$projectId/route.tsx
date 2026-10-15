@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 
 import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
+import { $issueAdminDemoPreviewLaunch } from '~/server/portal.fns';
 import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
 
@@ -141,6 +142,23 @@ function ProjectLayout() {
             : null;
     const isImpersonating = typeof impersonatedBy === 'string' && impersonatedBy.length > 0;
 
+    const openDemoPreview = async (kind: 'screen' | 'controller') => {
+        const tab = window.open('about:blank', '_blank');
+        if (!tab) {
+            toast.error('Allow pop-ups to open the demo preview');
+            return;
+        }
+        tab.opener = null;
+        tab.document.title = 'Opening demo preview…';
+        try {
+            const { url } = await $issueAdminDemoPreviewLaunch({ data: { projectId, kind } });
+            tab.location.replace(url);
+        } catch (error) {
+            tab.close();
+            toast.error(error instanceof Error ? error.message : 'Could not open demo preview');
+        }
+    };
+
     const publishCustomRender = useMutation({
         mutationFn: () => $publishCustomRenderProject({ data: { projectId } }),
         onSuccess: () => {
@@ -188,29 +206,47 @@ function ProjectLayout() {
                                 Default stage published
                             </Badge>
                         )}
-                        {hasCustomRender &&
-                            canPublish &&
-                            (defaultStage?.publishedCommitId ? (
+                        <div className="ml-auto flex flex-wrap items-center gap-2">
+                            {isAdmin(user?.role) && project.customRenderUrl && (
                                 <Button
                                     variant="outline"
                                     size="sm"
-                                    className="ml-auto"
-                                    disabled={unpublishCustomRender.isPending}
-                                    onClick={() => unpublishCustomRender.mutate()}
+                                    onClick={() => void openDemoPreview('screen')}
                                 >
-                                    <GlobeIcon weight="bold" /> Unpublish
+                                    Open Demo Screen
                                 </Button>
-                            ) : (
+                            )}
+                            {isAdmin(user?.role) && project.customControlUrl && (
                                 <Button
-                                    variant="default"
+                                    variant="outline"
                                     size="sm"
-                                    className="ml-auto"
-                                    disabled={publishCustomRender.isPending}
-                                    onClick={() => publishCustomRender.mutate()}
+                                    onClick={() => void openDemoPreview('controller')}
                                 >
-                                    <GlobeIcon weight="bold" /> Publish
+                                    Open Demo Controller
                                 </Button>
-                            ))}
+                            )}
+                            {hasCustomRender &&
+                                canPublish &&
+                                (defaultStage?.publishedCommitId ? (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={unpublishCustomRender.isPending}
+                                        onClick={() => unpublishCustomRender.mutate()}
+                                    >
+                                        <GlobeIcon weight="bold" /> Unpublish
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="default"
+                                        size="sm"
+                                        disabled={publishCustomRender.isPending}
+                                        onClick={() => publishCustomRender.mutate()}
+                                    >
+                                        <GlobeIcon weight="bold" /> Publish
+                                    </Button>
+                                ))}
+                        </div>
                     </div>
 
                     <Tabs
