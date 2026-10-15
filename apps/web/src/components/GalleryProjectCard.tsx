@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { isCustomProject } from '~/lib/customProject';
 import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
@@ -140,8 +141,7 @@ export function GalleryProjectCard({
     }, []);
 
     const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
-    const hasCustomRenderUrl =
-        typeof project.customRenderUrl === 'string' && project.customRenderUrl.trim().length > 0;
+    const hasCustomRenderUrl = isCustomProject(project);
     const previewHref =
         user && project.publishedCommitId && !hasCustomRenderUrl
             ? `/quarry/view/${encodeURIComponent(project.id)}/${encodeURIComponent(project.publishedCommitId)}`

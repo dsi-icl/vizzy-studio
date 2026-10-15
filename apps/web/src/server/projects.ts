@@ -15,6 +15,7 @@ import {
     type ProjectVisibility
 } from '@repo/db/schema';
 
+import { isCustomProject } from '~/lib/customProject';
 import type { AuditExecutionContextInput } from '~/server/audit';
 
 const INITIAL_STAGE_NAME = 'DO';
@@ -26,6 +27,8 @@ interface CreateProjectInput {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
+    isCustom?: boolean;
+    customPort?: number | null;
     customControlUrl?: string | null;
     customRenderUrl?: string | null;
     customRenderCompat: boolean;
@@ -41,6 +44,8 @@ interface UpdateProjectInput {
     tags?: string[];
     visibility?: ProjectVisibility;
     heroImages?: string[];
+    isCustom?: boolean;
+    customPort?: number | null;
     customControlUrl?: string;
     customRenderUrl?: string;
     customRenderCompat?: boolean;
@@ -679,7 +684,7 @@ export async function publishCustomRenderProject(
 ) {
     const existing = await dbCol.projects.findById(projectId);
     if (!existing) throw new Error('Project not found');
-    if (!existing.customRenderUrl) throw new Error('Project has no custom render URL');
+    if (!isCustomProject(existing)) throw new Error('Project is not a custom project');
     const stage = getDefaultStage(existing);
     if (!stage) throw new Error('Default stage not found');
 
