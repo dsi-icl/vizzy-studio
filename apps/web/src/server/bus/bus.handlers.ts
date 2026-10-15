@@ -920,7 +920,7 @@ export async function handleHelloAuth(peer: Peer, data: Record<string, any>) {
 
     if (parsed.proof.portalToken) {
         if (pending.hello.specimen === 'controller') {
-            const validated = validatePortalToken(parsed.proof.portalToken);
+            const validated = validatePortalToken(parsed.proof.portalToken, 'control');
             if (validated && validated.wallId === pending.hello.wallId) {
                 resolvedAuth.portal = { wallId: validated.wallId };
                 if (!authenticated) {

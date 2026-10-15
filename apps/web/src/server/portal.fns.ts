@@ -55,5 +55,5 @@ export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
         if (scopeId === undefined) {
             throw new Error('Wall is not currently bound');
         }
-        return createPortalToken(data.wallId, scopeId);
+        return createPortalToken(data.wallId, scopeId, 'control');
     });
