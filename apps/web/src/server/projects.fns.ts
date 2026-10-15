@@ -60,7 +60,6 @@ const CreateProjectInput = z.object({
     tags: z.array(z.string()).default([]),
     visibility: ProjectVisibility.default('private'),
     heroImages: z.array(z.string()).default([]),
-    isCustom: z.boolean().default(false),
     customPort: CustomPort.nullish(),
     customRenderCompat: z.boolean().default(false),
     collaborators: z.array(Collaborator).default([])
@@ -74,7 +73,6 @@ const UpdateProjectInput = z.object({
     tags: z.array(z.string()).optional(),
     visibility: ProjectVisibility.optional(),
     heroImages: z.array(z.string()).optional(),
-    isCustom: z.boolean().optional(),
     customPort: CustomPort.nullish(),
     customRenderCompat: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional()

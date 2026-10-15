@@ -55,7 +55,6 @@ export interface ProjectDocument {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
-    isCustom?: boolean;
     customPort?: number | null;
     /** @deprecated Pre-`/serve` public demo URL. Retained as a reference for the demo's identity. */
     customControlUrl?: string | null;

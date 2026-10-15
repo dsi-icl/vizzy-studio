@@ -1,6 +1,6 @@
 interface CustomProjectFields {
-    isCustom?: boolean | null;
-    /** @deprecated Read only as a fallback for documents predating `isCustom`. */
+    customPort?: number | null;
+    /** @deprecated Read only so a project configured before `/serve` still reads as custom. */
     customRenderUrl?: string | null;
 }
 
@@ -10,9 +10,8 @@ interface LegacyCustomUrlFields {
     customRenderProxy?: boolean;
 }
 
-/** Falls back to the legacy `customRenderUrl` for projects not yet migrated to v3. */
 export function isCustomProject(project: CustomProjectFields): boolean {
-    if (typeof project.isCustom === 'boolean') return project.isCustom;
+    if (typeof project.customPort === 'number') return true;
     return typeof project.customRenderUrl === 'string' && project.customRenderUrl.trim().length > 0;
 }
 

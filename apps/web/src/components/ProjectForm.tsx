@@ -8,7 +8,6 @@ interface CreateProjectInput {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
-    isCustom: boolean;
     customPort?: number | null;
     customRenderCompat: boolean;
     collaborators: Collaborator[];
@@ -93,7 +92,6 @@ export function ProjectForm({
             tags: [],
             visibility: 'public' as const,
             heroImages: [],
-            isCustom: false,
             customPort: '',
             customRenderCompat: false,
             collaborators: [],
@@ -115,7 +113,6 @@ export function ProjectForm({
             tags: form.getFieldValue('tags'),
             visibility: form.getFieldValue('visibility'),
             heroImages: form.getFieldValue('heroImages'),
-            isCustom: form.getFieldValue('isCustom'),
             customPort: form.getFieldValue('customPort').trim()
                 ? Number(form.getFieldValue('customPort'))
                 : null,
@@ -332,102 +329,70 @@ export function ProjectForm({
                         )}
                     </form.Field>
 
-                    <form.Field name="isCustom">
+                    <form.Field
+                        name="customPort"
+                        validators={{
+                            onChange: z
+                                .string()
+                                .refine(isValidDemoPort, 'Enter a port between 1024 and 65535.')
+                        }}
+                    >
                         {(field) => (
                             <div className="grid gap-2">
+                                <Label htmlFor={field.name}>Demo port</Label>
                                 <div className="flex items-center gap-2">
-                                    <input
+                                    <Input
                                         id={field.name}
-                                        type="checkbox"
-                                        className="size-4 accent-current"
-                                        checked={field.state.value}
+                                        inputMode="numeric"
+                                        placeholder="e.g. 3008"
+                                        value={field.state.value}
+                                        onBlur={field.handleBlur}
                                         onChange={(e) => {
-                                            field.handleChange(e.target.checked);
+                                            field.handleChange(e.target.value);
                                             scheduleAutoSave();
                                         }}
+                                        className="flex-1"
                                     />
-                                    <Label htmlFor={field.name}>Custom project</Label>
+                                    <form.Field name="customRenderCompat">
+                                        {(compatField) => (
+                                            <Button
+                                                type="button"
+                                                size="icon-sm"
+                                                variant={
+                                                    compatField.state.value ? 'outline' : 'ghost'
+                                                }
+                                                title={
+                                                    compatField.state.value
+                                                        ? 'Disable custom render compatibility mode'
+                                                        : 'Enable custom render compatibility mode'
+                                                }
+                                                onClick={() => {
+                                                    compatField.handleChange(
+                                                        !compatField.state.value
+                                                    );
+                                                    scheduleAutoSave();
+                                                }}
+                                            >
+                                                <PuzzlePieceIcon
+                                                    weight={
+                                                        compatField.state.value ? 'fill' : 'regular'
+                                                    }
+                                                />
+                                            </Button>
+                                        )}
+                                    </form.Field>
                                 </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Enter a port number to turn the project into a custom demo
+                                </p>
+                                {field.state.meta.errors ? (
+                                    <em className="text-xs text-red-500">
+                                        {field.state.meta.errors.map((e) => e?.message).join(', ')}
+                                    </em>
+                                ) : null}
                             </div>
                         )}
                     </form.Field>
-
-                    <form.Subscribe selector={(state) => state.values.isCustom}>
-                        {(isCustom) =>
-                            isCustom ? (
-                                <form.Field
-                                    name="customPort"
-                                    validators={{
-                                        onChange: z
-                                            .string()
-                                            .refine(
-                                                isValidDemoPort,
-                                                'Enter a port between 1024 and 65535.'
-                                            )
-                                    }}
-                                >
-                                    {(field) => (
-                                        <div className="grid gap-2">
-                                            <Label htmlFor={field.name}>Demo port</Label>
-                                            <div className="flex items-center gap-2">
-                                                <Input
-                                                    id={field.name}
-                                                    inputMode="numeric"
-                                                    placeholder="3008"
-                                                    value={field.state.value}
-                                                    onBlur={field.handleBlur}
-                                                    onChange={(e) => {
-                                                        field.handleChange(e.target.value);
-                                                        scheduleAutoSave();
-                                                    }}
-                                                    className="flex-1"
-                                                />
-                                                <form.Field name="customRenderCompat">
-                                                    {(compatField) => (
-                                                        <Button
-                                                            type="button"
-                                                            size="icon-sm"
-                                                            variant={
-                                                                compatField.state.value
-                                                                    ? 'outline'
-                                                                    : 'ghost'
-                                                            }
-                                                            title={
-                                                                compatField.state.value
-                                                                    ? 'Disable custom render compatibility mode'
-                                                                    : 'Enable custom render compatibility mode'
-                                                            }
-                                                            onClick={() => {
-                                                                compatField.handleChange(
-                                                                    !compatField.state.value
-                                                                );
-                                                                scheduleAutoSave();
-                                                            }}
-                                                        >
-                                                            <PuzzlePieceIcon
-                                                                weight={
-                                                                    compatField.state.value
-                                                                        ? 'fill'
-                                                                        : 'regular'
-                                                                }
-                                                            />
-                                                        </Button>
-                                                    )}
-                                                </form.Field>
-                                            </div>
-                                            {field.state.meta.errors ? (
-                                                <em className="text-xs text-red-500">
-                                                    {field.state.meta.errors
-                                                        .map((e) => e?.message)
-                                                        .join(', ')}
-                                                </em>
-                                            ) : null}
-                                        </div>
-                                    )}
-                                </form.Field>
-                            ) : null
-                        }
-                    </form.Subscribe>
                 </div>
 
                 <div className="flex flex-col gap-4 lg:col-span-4">

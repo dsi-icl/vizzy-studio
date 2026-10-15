@@ -4,15 +4,12 @@ import { describe, test } from 'node:test';
 import { isCustomProject, withoutLegacyCustomUrls } from './customProject';
 
 describe('isCustomProject', () => {
-    test('prefers the explicit flag over the legacy URL', () => {
-        assert.equal(isCustomProject({ isCustom: true }), true);
-        assert.equal(
-            isCustomProject({ isCustom: false, customRenderUrl: 'https://demos/x' }),
-            false
-        );
+    test('a configured port makes a project custom', () => {
+        assert.equal(isCustomProject({ customPort: 3008 }), true);
+        assert.equal(isCustomProject({ customPort: null }), false);
     });
 
-    test('falls back to the legacy URL for unmigrated documents', () => {
+    test('falls back to the legacy URL so a pre-/serve project is not silently normal', () => {
         assert.equal(isCustomProject({ customRenderUrl: 'https://demos/x' }), true);
         assert.equal(isCustomProject({ customRenderUrl: '  ' }), false);
         assert.equal(isCustomProject({ customRenderUrl: null }), false);
@@ -26,7 +23,6 @@ describe('withoutLegacyCustomUrls', () => {
         const stored = {
             id: 'p1',
             name: 'Custom demo',
-            isCustom: true,
             customPort: 3008,
             customRenderUrl: 'https://demos/x/screen',
             customControlUrl: 'https://demos/x/control?token=secret',
@@ -43,7 +39,7 @@ describe('withoutLegacyCustomUrls', () => {
         assert.equal(JSON.stringify(projected).includes('demos'), false);
     });
 
-    test('resolves isCustom for a project that predates the flag', () => {
+    test('resolves isCustom for a project configured before /serve', () => {
         assert.equal(
             withoutLegacyCustomUrls({ customRenderUrl: 'https://demos/x/screen' }).isCustom,
             true

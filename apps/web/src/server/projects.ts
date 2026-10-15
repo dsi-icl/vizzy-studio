@@ -28,7 +28,6 @@ interface CreateProjectInput {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
-    isCustom?: boolean;
     customPort?: number | null;
     customRenderCompat: boolean;
     collaborators: Collaborator[];
@@ -42,7 +41,6 @@ interface UpdateProjectInput {
     tags?: string[];
     visibility?: ProjectVisibility;
     heroImages?: string[];
-    isCustom?: boolean;
     customPort?: number | null;
     customRenderCompat?: boolean;
     collaborators?: Array<{ email: string; role: CollaboratorRole }>;
@@ -367,7 +365,7 @@ export async function updateProject(
     });
 
     // Live-push custom render settings changes to any bound walls
-    if ('isCustom' in updates || 'customPort' in updates || 'customRenderCompat' in updates) {
+    if ('customPort' in updates || 'customRenderCompat' in updates) {
         const merged = { ...existing, ...updates };
         updateProjectCustomRenderSettings(
             projectId,
