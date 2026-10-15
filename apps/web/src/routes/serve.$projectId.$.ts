@@ -9,6 +9,7 @@ import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
 import { createServeCookie, resolveServeCookieActor, type ServeActor } from '~/server/serveCookie';
+import { isWebSocketUpgrade, serveWebSocketHooks } from '~/server/serveWebSocket';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
@@ -118,6 +119,12 @@ function notFound(): Response {
 }
 
 async function handler({ request }: { request: Request }): Promise<Response> {
+    if (isWebSocketUpgrade(request)) {
+        return Object.assign(new Response('WebSocket upgrade is required.', { status: 426 }), {
+            crossws: serveWebSocketHooks
+        });
+    }
+
     const url = new URL(request.url);
     const parsed = parseServePath(url.pathname);
     if (!parsed) return notFound();

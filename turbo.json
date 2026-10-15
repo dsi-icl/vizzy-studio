@@ -36,6 +36,7 @@
         "PROXY_MAX_BYTES",
         "DEMOS_FQDN",
         "SERVE_FETCH_TIMEOUT_MS",
+        "SERVE_WS_CONNECT_TIMEOUT_MS",
         "FFMPEG_PATH",
         "TRUSTED_ORIGINS",
         "STRICT_BLOCKING",
