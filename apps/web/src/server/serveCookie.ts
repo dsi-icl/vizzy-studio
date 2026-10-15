@@ -25,6 +25,13 @@ interface ServeCookiePayload {
 export interface ServeActor {
     surface: ServeSurface;
     wallId: string;
+    expiresAt?: number;
+}
+
+export function shouldRefreshServeCookie(actor: ServeActor, now = Date.now()): boolean {
+    if (actor.expiresAt === undefined) return false;
+    const halfLifeMs = (SERVE_COOKIE_MAX_AGE_SECONDS * 1000) / 2;
+    return actor.expiresAt - now < halfLifeMs;
 }
 
 export function serveCookieName(projectId: string): string {
@@ -128,5 +135,5 @@ export function resolveServeCookieActor(request: Request, projectId: string): Se
     if (parsed.projectId !== projectId) return null;
     if (parsed.exp <= Date.now()) return null;
 
-    return { surface: parsed.surface, wallId: parsed.wallId };
+    return { surface: parsed.surface, wallId: parsed.wallId, expiresAt: parsed.exp };
 }

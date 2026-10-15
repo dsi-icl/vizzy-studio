@@ -8,7 +8,12 @@ import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit
 import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
-import { createServeCookie, resolveServeCookieActor, type ServeActor } from '~/server/serveCookie';
+import {
+    createServeCookie,
+    resolveServeCookieActor,
+    shouldRefreshServeCookie,
+    type ServeActor
+} from '~/server/serveCookie';
 import { isWebSocketUpgrade, serveWebSocketHooks } from '~/server/serveWebSocket';
 import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
@@ -150,7 +155,8 @@ async function handler({ request }: { request: Request }): Promise<Response> {
     }
 
     let actor = resolveServeCookieActor(request, projectId);
-    let mintCookie = false;
+    let mintCookie = actor !== null && shouldRefreshServeCookie(actor);
+    const freshlyAuthorized = actor === null;
 
     if (!actor) {
         actor = await authorizeFreshRequest(request);
@@ -214,6 +220,9 @@ async function handler({ request }: { request: Request }): Promise<Response> {
 
     if (mintCookie) {
         headers.append('set-cookie', createServeCookie({ request, projectId, actor }));
+    }
+
+    if (freshlyAuthorized) {
         // Logged on first authorisation only — every asset the demo loads would otherwise
         // write an audit row.
         await logAuditSuccess({

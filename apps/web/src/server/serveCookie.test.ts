@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { createServeCookie, resolveServeCookieActor, serveCookieName } from './serveCookie';
+import {
+    createServeCookie,
+    resolveServeCookieActor,
+    serveCookieName,
+    shouldRefreshServeCookie,
+    SERVE_COOKIE_MAX_AGE_SECONDS
+} from './serveCookie';
 
 const PID = '507f1f77bcf86cd799439011';
 const OTHER_PID = '507f1f77bcf86cd799439012';
@@ -25,10 +31,9 @@ describe('serve cookie', () => {
             actor: { surface: 'wall', wallId: 'wall-a' }
         });
 
-        assert.deepEqual(resolveServeCookieActor(request(asRequestCookie(setCookie)), PID), {
-            surface: 'wall',
-            wallId: 'wall-a'
-        });
+        const resolved = resolveServeCookieActor(request(asRequestCookie(setCookie)), PID);
+        assert.equal(resolved?.surface, 'wall');
+        assert.equal(resolved?.wallId, 'wall-a');
     });
 
     test('is scoped to its own project by name and path', () => {
@@ -81,6 +86,40 @@ describe('serve cookie', () => {
             resolveServeCookieActor(request(`${name}=${swapped}.${signature}`), PID),
             null
         );
+    });
+
+    test('re-issues once a cookie is past its half-life', () => {
+        const ttlMs = SERVE_COOKIE_MAX_AGE_SECONDS * 1000;
+        const now = Date.now();
+        const actor = { surface: 'wall' as const, wallId: 'wall-a' };
+
+        // A cookie just minted has most of its life left.
+        assert.equal(shouldRefreshServeCookie({ ...actor, expiresAt: now + ttlMs }, now), false);
+        // Exactly at the half-life, still fine.
+        assert.equal(
+            shouldRefreshServeCookie({ ...actor, expiresAt: now + ttlMs / 2 }, now),
+            false
+        );
+        // Past it, re-issue.
+        assert.equal(
+            shouldRefreshServeCookie({ ...actor, expiresAt: now + ttlMs / 2 - 1 }, now),
+            true
+        );
+        // A fresh authorisation has no cookie to refresh.
+        assert.equal(shouldRefreshServeCookie(actor, now), false);
+    });
+
+    test('reports the expiry so the proxy can re-issue', () => {
+        const before = Date.now();
+        const setCookie = createServeCookie({
+            request: request(),
+            projectId: PID,
+            actor: { surface: 'wall', wallId: 'wall-a' }
+        });
+        const resolved = resolveServeCookieActor(request(asRequestCookie(setCookie)), PID);
+
+        assert.ok(resolved?.expiresAt);
+        assert.ok(resolved.expiresAt >= before + SERVE_COOKIE_MAX_AGE_SECONDS * 1000);
     });
 
     test('rejects an absent or malformed cookie', () => {
