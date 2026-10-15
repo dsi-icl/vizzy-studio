@@ -18,6 +18,11 @@ import {
 } from '~/lib/demoGatewaySessions';
 
 const UPSTREAM_TIMEOUT_MS = 15_000;
+// The demos Nginx allows a 60 s cache lock plus 120 s proxy read for tiles,
+// and a 300 s proxy read for do-image. These are header wait limits only:
+// once streaming starts, a fixed total deadline would cut off valid responses.
+const TILE_HEADER_TIMEOUT_MS = 210_000;
+const DO_IMAGE_HEADER_TIMEOUT_MS = 360_000;
 const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
 const REQUEST_HEADERS = [
     'accept',
@@ -53,6 +58,16 @@ function response(status: number, message: string): Response {
             'X-Content-Type-Options': 'nosniff'
         }
     });
+}
+
+function extendedHeaderTimeoutMs(pathname: string): number | null {
+    if (pathname === '/tiles' || pathname.startsWith('/tiles/')) {
+        return TILE_HEADER_TIMEOUT_MS;
+    }
+    if (pathname === '/do-image' || pathname.startsWith('/do-image/')) {
+        return DO_IMAGE_HEADER_TIMEOUT_MS;
+    }
+    return null;
 }
 
 function configuredOrigin(raw: string): URL | null {
@@ -320,11 +335,17 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
     if (request.headers.has('upgrade')) return response(426, 'Unsupported upgrade');
 
     const target = new URL(`${upstreamPath}${url.search}`, selectedOrigin);
+    const headerTimeoutMs = extendedHeaderTimeoutMs(url.pathname);
+    const headerAbort = headerTimeoutMs === null ? null : new AbortController();
+    const headerTimer =
+        headerAbort && headerTimeoutMs !== null
+            ? setTimeout(() => headerAbort.abort(), headerTimeoutMs)
+            : null;
     const init: RequestInit & { duplex?: 'half' } = {
         method: request.method,
         headers: upstreamHeaders(request, publicOrigin, grant),
         redirect: 'manual',
-        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+        signal: headerAbort?.signal ?? AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
     };
     if (request.method !== 'GET' && request.method !== 'HEAD' && request.body) {
         init.body = request.body;
@@ -335,6 +356,8 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         upstream = await fetch(target, init);
     } catch {
         return response(502, 'Demo upstream is unavailable');
+    } finally {
+        if (headerTimer) clearTimeout(headerTimer);
     }
 
     const headers = copyResponseHeaders(upstream, publicOrigin);

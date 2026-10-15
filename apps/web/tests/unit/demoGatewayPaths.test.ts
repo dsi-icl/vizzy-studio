@@ -31,10 +31,30 @@ describe('host based demo gateway paths', () => {
         expect(
             parseDemoSource(`${PUBLIC_ORIGIN}/sustainability/control`, PUBLIC_ORIGIN)?.slug
         ).toBe('sustainability');
+        expect(parseDemoSource(`${PUBLIC_ORIGIN}/do-image/control`, PUBLIC_ORIGIN)?.slug).toBe(
+            'do-image'
+        );
         expect(
             parseDemoSource('https://other.example/sustainability/control', PUBLIC_ORIGIN)
         ).toBeNull();
         expect(parseDemoSource(`${PUBLIC_ORIGIN}/api/private`, PUBLIC_ORIGIN)).toBeNull();
+    });
+
+    test('recognizes every currently running public demo slug', () => {
+        for (const slug of [
+            'bitcoin',
+            'sustainability',
+            'flyconnectome',
+            'nightingale',
+            'london-map',
+            'ideafast',
+            'do-image',
+            'do-stroke-map-germany'
+        ]) {
+            expect(parseDemoSource(`${PUBLIC_ORIGIN}/${slug}/control`, PUBLIC_ORIGIN)?.slug).toBe(
+                slug
+            );
+        }
     });
 
     test('keeps compiled asset and shared Nginx paths unchanged', () => {
@@ -43,6 +63,21 @@ describe('host based demo gateway paths', () => {
         expect(isAllowedDemoPath('/pages/map.png', 'sustainability')).toBe(true);
         expect(isAllowedDemoPath('/bus', 'sustainability')).toBe(true);
         expect(isAllowedDemoPath('/bitcoin/assets/index.js', 'sustainability')).toBe(false);
+        expect(isAllowedDemoPath('/do-image/control', 'bitcoin')).toBe(false);
+        expect(isAllowedDemoPath('/do-image/control', 'do-image')).toBe(true);
+    });
+
+    test('allows Nightingale companion paths only for the Nightingale demo', () => {
+        expect(isAllowedDemoPath('/nightingale-wall/assets/logo.svg', 'nightingale')).toBe(true);
+        expect(isAllowedDemoPath('/nightingale-screen', 'nightingale')).toBe(true);
+        expect(isAllowedDemoPath('/nightingale-control/', 'nightingale')).toBe(true);
+        expect(isAllowedDemoPath('/nightingale-wall/assets/logo.svg', 'bitcoin')).toBe(false);
+        expect(isAllowedDemoPath('/nightingale-wallpaper', 'nightingale')).toBe(false);
+    });
+
+    test('allows IDEA-FAST observatory resources only for IDEA-FAST', () => {
+        expect(isAllowedDemoPath('/observatory/src/main.js', 'ideafast')).toBe(true);
+        expect(isAllowedDemoPath('/observatory/src/main.js', 'bitcoin')).toBe(false);
     });
 
     test('rewrites upstream redirects without exposing the demos VM address', () => {
@@ -105,6 +140,11 @@ describe('host based demo gateway paths', () => {
                 '{"api":{"origin":"http://127.0.0.1:1","assetsFromRoot":true}}'
             )
         ).toBeNull();
+        expect(
+            parseDirectDemoUpstreams(
+                '{"do-image":{"origin":"http://127.0.0.1:3011","assetsFromRoot":false}}'
+            )?.has('do-image')
+        ).toBe(true);
         expect(
             parseDirectDemoUpstreams(
                 '{"sustainability":{"origin":"https://evil.example/path","assetsFromRoot":true}}'

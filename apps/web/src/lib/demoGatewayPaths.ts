@@ -11,13 +11,23 @@ export const SHARED_DEMO_PATHS = new Set([
     'data',
     'maps',
     'tiles',
-    'do-image',
     'btc-globe',
     'nightingale-model'
 ]);
 
+// Existing builds publish some resources beside their primary demo slug.
+// Keep these aliases scoped to the demo that uses them.
+const DEMO_PATH_ALIASES: Readonly<Record<string, readonly string[]>> = {
+    nightingale: ['nightingale-wall', 'nightingale-screen', 'nightingale-control'],
+    ideafast: ['observatory']
+};
+
 const PROJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const DEMO_SLUG_PATTERN = /^[a-z\d][a-z\d_-]*$/i;
+
+function isReservedDemoSlug(slug: string): boolean {
+    return slug === '_vizzy' || SHARED_DEMO_PATHS.has(slug);
+}
 
 export interface DirectDemoUpstream {
     origin: URL;
@@ -31,7 +41,7 @@ export function parseDirectDemoUpstreams(raw: string): Map<string, DirectDemoUps
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
         const routes = new Map<string, DirectDemoUpstream>();
         for (const [slug, value] of Object.entries(parsed)) {
-            if (!DEMO_SLUG_PATTERN.test(slug) || SHARED_DEMO_PATHS.has(slug) || slug === '_vizzy') {
+            if (!DEMO_SLUG_PATTERN.test(slug) || isReservedDemoSlug(slug)) {
                 return null;
             }
             if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -79,7 +89,7 @@ export function parseDemoSource(
         }
         if (entry.username || entry.password || entry.hash) return null;
         const slug = entry.pathname.split('/')[1] ?? '';
-        if (!DEMO_SLUG_PATTERN.test(slug) || SHARED_DEMO_PATHS.has(slug) || slug === '_vizzy') {
+        if (!DEMO_SLUG_PATTERN.test(slug) || isReservedDemoSlug(slug)) {
             return null;
         }
         return { entry, slug };
@@ -114,6 +124,13 @@ export function buildDemoLaunchUrl(
 export function isAllowedDemoPath(pathname: string, slug: string): boolean {
     if (!pathname.startsWith('/') || pathname.startsWith('//')) return false;
     if (pathname === `/${slug}` || pathname.startsWith(`/${slug}/`)) return true;
+    if (
+        DEMO_PATH_ALIASES[slug]?.some(
+            (alias) => pathname === `/${alias}` || pathname.startsWith(`/${alias}/`)
+        )
+    ) {
+        return true;
+    }
     const first = pathname.split('/')[1] ?? '';
     return SHARED_DEMO_PATHS.has(first);
 }
