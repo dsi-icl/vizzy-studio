@@ -55,6 +55,7 @@ import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
+import { Route as ServeProjectIdSplatRouteImport } from './routes/serve.$projectId.$'
 import { Route as AuthQuarryProjectsProjectIdRouteRouteImport } from './routes/_auth/quarry/projects/$projectId/route'
 import { Route as AuthQuarryProjectsNewRouteImport } from './routes/_auth/quarry/projects/new'
 import { Route as AdminWallsWallIdIndexRouteImport } from './routes/admin/walls/$wallId/index'
@@ -303,6 +304,11 @@ const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
   path: '/api/wall/media-cookie',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ServeProjectIdSplatRoute = ServeProjectIdSplatRouteImport.update({
+  id: '/serve/$projectId/$',
+  path: '/serve/$projectId/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthQuarryProjectsProjectIdRouteRoute =
   AuthQuarryProjectsProjectIdRouteRouteImport.update({
     id: '/$projectId',
@@ -454,6 +460,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
   '/admin/walls/': typeof AdminWallsIndexRoute
@@ -516,6 +523,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry': typeof AuthQuarryIndexRoute
   '/admin/signage': typeof AdminSignageIndexRoute
   '/admin/walls': typeof AdminWallsIndexRoute
@@ -583,6 +591,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/_auth/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
   '/admin/walls/': typeof AdminWallsIndexRoute
@@ -650,6 +659,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/serve/$projectId/$'
     | '/quarry/'
     | '/admin/signage/'
     | '/admin/walls/'
@@ -712,6 +722,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/serve/$projectId/$'
     | '/quarry'
     | '/admin/signage'
     | '/admin/walls'
@@ -778,6 +789,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/serve/$projectId/$'
     | '/_auth/quarry/'
     | '/admin/signage/'
     | '/admin/walls/'
@@ -831,6 +843,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
+  ServeProjectIdSplatRoute: typeof ServeProjectIdSplatRoute
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
   ApiPortalV1SlidesRoute: typeof ApiPortalV1SlidesRouteWithChildren
@@ -1159,6 +1172,13 @@ declare module '@tanstack/react-router' {
       path: '/api/wall/media-cookie'
       fullPath: '/api/wall/media-cookie'
       preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/serve/$projectId/$': {
+      id: '/serve/$projectId/$'
+      path: '/serve/$projectId/$'
+      fullPath: '/serve/$projectId/$'
+      preLoaderRoute: typeof ServeProjectIdSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth/quarry/projects/$projectId': {
@@ -1495,6 +1515,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
+  ServeProjectIdSplatRoute: ServeProjectIdSplatRoute,
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
   ApiPortalV1SlidesRoute: ApiPortalV1SlidesRouteWithChildren,
