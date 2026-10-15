@@ -38,8 +38,7 @@ export interface Project {
         blurhash?: string;
         sizes?: number[];
     }>;
-    customControlUrl?: string;
-    customRenderUrl?: string | null;
+    controlPath?: string;
 }
 
 interface ProjectCardProps {
@@ -66,7 +65,7 @@ interface ProjectCardProps {
 }
 
 function buildControllerUrl(
-    customControlUrl: string | undefined,
+    controlPath: string | undefined,
     wallId: string,
     portalToken?: string | null
 ): string {
@@ -84,7 +83,7 @@ function buildControllerUrl(
             return input;
         }
     };
-    const raw = customControlUrl?.trim();
+    const raw = controlPath?.trim();
     if (!raw) return withPortalToken(fallback);
 
     const withTokens = raw
@@ -239,7 +238,7 @@ function ProjectCardDialogBody({
         if (!activeWallId) return '';
         if (onControllerTokenRequest && !controllerPortalToken) return '';
         const baseUrl = buildControllerUrl(
-            project.customControlUrl,
+            project.controlPath,
             activeWallId,
             controllerPortalToken
         );
@@ -247,7 +246,7 @@ function ProjectCardDialogBody({
     }, [
         activeWallId,
         controllerPortalToken,
-        project.customControlUrl,
+        project.controlPath,
         controllerReloadNonce,
         onControllerTokenRequest
     ]);

@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
-import { isCustomProject } from '~/lib/customProject';
 import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
@@ -141,15 +140,14 @@ export function GalleryProjectCard({
     }, []);
 
     const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
-    const hasCustomRenderUrl = isCustomProject(project);
+    // The gallery route only sets `controlPath` for custom projects.
+    const isCustom = Boolean(project.controlPath);
     const previewHref =
-        user && project.publishedCommitId && !hasCustomRenderUrl
+        user && project.publishedCommitId && !isCustom
             ? `/quarry/view/${encodeURIComponent(project.id)}/${encodeURIComponent(project.publishedCommitId)}`
             : undefined;
     const previewDisabledReason =
-        user && hasCustomRenderUrl
-            ? 'Preview is unavailable because this project uses a custom render URL.'
-            : undefined;
+        user && isCustom ? 'Preview is unavailable because this is a custom project.' : undefined;
 
     return (
         <ProjectCard

@@ -30,7 +30,6 @@ type HydrateStagePayload = {
     layers: LayerWithWallComponentState[];
     customRenderUrl?: string;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
     layout: StageLayout;
 } & HydrateScopeContext;
 
@@ -45,7 +44,6 @@ function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
-    const [customRenderProxy, setCustomRenderProxy] = useState(false);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const [physicalViewport, setPhysicalViewport] = useState({
@@ -171,7 +169,6 @@ function WallApp() {
         setLayers(next.layers);
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
-        setCustomRenderProxy(next.customRenderProxy);
         setStageLayout(next.layout);
         lastHydrateContextRef.current = {
             hasContent: hasHydrateContent(next),
@@ -311,7 +308,6 @@ function WallApp() {
                     layers: data.layers,
                     customRenderUrl: data.customRender?.url,
                     customRenderCompat: Boolean(data.customRender?.compat),
-                    customRenderProxy: Boolean(data.customRender?.proxy),
                     layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
@@ -801,15 +797,12 @@ function WallApp() {
 
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
-        const iframeSrc = new URL(customRenderUrl);
+        const iframeSrc = new URL(customRenderUrl, window.location.origin);
         if (!customRenderCompat) {
             iframeSrc.searchParams.set('c', String(col));
             iframeSrc.searchParams.set('r', String(row));
         }
-        const finalSrc =
-            customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
-                ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
-                : iframeSrc.toString();
+        const finalSrc = `${iframeSrc.pathname}${iframeSrc.search}`;
         const worldWidth = screenWidth * columns;
         const worldHeight = screenHeight * rows;
         return (

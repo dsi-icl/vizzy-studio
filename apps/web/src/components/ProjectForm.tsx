@@ -1,10 +1,4 @@
-import {
-    ImageIcon,
-    LightningIcon,
-    LightningSlashIcon,
-    PuzzlePieceIcon,
-    TrashIcon
-} from '@phosphor-icons/react';
+import { ImageIcon, PuzzlePieceIcon, TrashIcon } from '@phosphor-icons/react';
 import type { Collaborator, ProjectVisibility } from '@repo/db/schema';
 
 interface CreateProjectInput {
@@ -14,10 +8,9 @@ interface CreateProjectInput {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
-    customControlUrl?: string;
-    customRenderUrl?: string;
+    isCustom: boolean;
+    customPort?: number | null;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
     collaborators: Collaborator[];
 }
 import { Button } from '@repo/ui/components/button';
@@ -45,9 +38,12 @@ import {
     projectTagSuggestionsQueryOptions
 } from '~/server/projects.queries';
 
+/** The port is held as text while editing; `getPayload` converts it. */
+type ProjectFormValues = Omit<CreateProjectInput, 'customPort'> & { customPort: string };
+
 interface ProjectFormProps {
     projectId?: string;
-    defaultValues?: Partial<CreateProjectInput>;
+    defaultValues?: Partial<ProjectFormValues>;
     onSubmit: (data: CreateProjectInput) => void;
     isSubmitting?: boolean;
     submitLabel?: string;
@@ -55,19 +51,12 @@ interface ProjectFormProps {
     autoSaveDelayMs?: number;
 }
 
-function isValidHttpUrl(value: string): boolean {
-    try {
-        const parsed = new URL(value);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-        return false;
-    }
-}
-
-function isOptionalHttpUrl(value: string): boolean {
+function isValidDemoPort(value: string): boolean {
     const trimmed = value.trim();
     if (!trimmed) return true;
-    return isValidHttpUrl(trimmed);
+    if (!/^\d+$/.test(trimmed)) return false;
+    const port = Number(trimmed);
+    return port >= 1024 && port <= 65535;
 }
 
 export function ProjectForm({
@@ -104,15 +93,17 @@ export function ProjectForm({
             tags: [],
             visibility: 'public' as const,
             heroImages: [],
-            customControlUrl: '',
-            customRenderUrl: '',
+            isCustom: false,
+            customPort: '',
             customRenderCompat: false,
-            customRenderProxy: false,
             collaborators: [],
             ...defaultValues
         },
         onSubmit: ({ value }) => {
-            onSubmit(value);
+            onSubmit({
+                ...value,
+                customPort: value.customPort.trim() ? Number(value.customPort) : null
+            });
         }
     });
 
@@ -124,10 +115,11 @@ export function ProjectForm({
             tags: form.getFieldValue('tags'),
             visibility: form.getFieldValue('visibility'),
             heroImages: form.getFieldValue('heroImages'),
-            customControlUrl: form.getFieldValue('customControlUrl') || undefined,
-            customRenderUrl: form.getFieldValue('customRenderUrl') || undefined,
+            isCustom: form.getFieldValue('isCustom'),
+            customPort: form.getFieldValue('customPort').trim()
+                ? Number(form.getFieldValue('customPort'))
+                : null,
             customRenderCompat: form.getFieldValue('customRenderCompat'),
-            customRenderProxy: form.getFieldValue('customRenderProxy'),
             collaborators: form.getFieldValue('collaborators')
         }),
         [form]
@@ -340,97 +332,56 @@ export function ProjectForm({
                         )}
                     </form.Field>
 
-                    <form.Field
-                        name="customControlUrl"
-                        validators={{
-                            onChange: z
-                                .string()
-                                .refine(
-                                    isOptionalHttpUrl,
-                                    'Enter a valid URL starting with http:// or https://.'
-                                )
-                        }}
-                    >
+                    <form.Field name="isCustom">
                         {(field) => (
                             <div className="grid gap-2">
-                                <Label htmlFor={field.name}>Custom Control URL</Label>
-                                <Input
-                                    id={field.name}
-                                    value={field.state.value}
-                                    onBlur={field.handleBlur}
-                                    onChange={(e) => {
-                                        field.handleChange(e.target.value);
-                                        scheduleAutoSave();
-                                    }}
-                                />
-                                {field.state.meta.errors ? (
-                                    <em className="text-xs text-red-500">
-                                        {field.state.meta.errors.map((e) => e?.message).join(', ')}
-                                    </em>
-                                ) : null}
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        id={field.name}
+                                        type="checkbox"
+                                        className="size-4 accent-current"
+                                        checked={field.state.value}
+                                        onChange={(e) => {
+                                            field.handleChange(e.target.checked);
+                                            scheduleAutoSave();
+                                        }}
+                                    />
+                                    <Label htmlFor={field.name}>Custom project</Label>
+                                </div>
                             </div>
                         )}
                     </form.Field>
 
-                    <form.Field
-                        name="customRenderUrl"
-                        validators={{
-                            onChange: z
-                                .string()
-                                .refine(
-                                    isOptionalHttpUrl,
-                                    'Enter a valid URL starting with http:// or https://.'
-                                )
-                        }}
-                    >
-                        {(field) => {
-                            const hasValidRenderUrl = isValidHttpUrl(field.state.value.trim());
-                            return (
-                                <div className="grid gap-2">
-                                    <Label htmlFor={field.name}>Custom Render URL</Label>
-                                    <div className="flex items-center gap-2">
-                                        <Input
-                                            id={field.name}
-                                            value={field.state.value}
-                                            onBlur={field.handleBlur}
-                                            onChange={(e) => {
-                                                field.handleChange(e.target.value);
-                                                scheduleAutoSave();
-                                            }}
-                                            className="flex-1"
-                                        />
-                                        {hasValidRenderUrl ? (
-                                            <>
-                                                <form.Field name="customRenderProxy">
-                                                    {(proxyField) => (
-                                                        <Button
-                                                            type="button"
-                                                            size="icon-sm"
-                                                            variant={
-                                                                proxyField.state.value
-                                                                    ? 'outline'
-                                                                    : 'ghost'
-                                                            }
-                                                            title={
-                                                                proxyField.state.value
-                                                                    ? 'Disable custom render proxy'
-                                                                    : 'Enable custom render proxy'
-                                                            }
-                                                            onClick={() => {
-                                                                proxyField.handleChange(
-                                                                    !proxyField.state.value
-                                                                );
-                                                                scheduleAutoSave();
-                                                            }}
-                                                        >
-                                                            {proxyField.state.value ? (
-                                                                <LightningIcon />
-                                                            ) : (
-                                                                <LightningSlashIcon />
-                                                            )}
-                                                        </Button>
-                                                    )}
-                                                </form.Field>
+                    <form.Subscribe selector={(state) => state.values.isCustom}>
+                        {(isCustom) =>
+                            isCustom ? (
+                                <form.Field
+                                    name="customPort"
+                                    validators={{
+                                        onChange: z
+                                            .string()
+                                            .refine(
+                                                isValidDemoPort,
+                                                'Enter a port between 1024 and 65535.'
+                                            )
+                                    }}
+                                >
+                                    {(field) => (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor={field.name}>Demo port</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    id={field.name}
+                                                    inputMode="numeric"
+                                                    placeholder="3008"
+                                                    value={field.state.value}
+                                                    onBlur={field.handleBlur}
+                                                    onChange={(e) => {
+                                                        field.handleChange(e.target.value);
+                                                        scheduleAutoSave();
+                                                    }}
+                                                    className="flex-1"
+                                                />
                                                 <form.Field name="customRenderCompat">
                                                     {(compatField) => (
                                                         <Button
@@ -463,20 +414,20 @@ export function ProjectForm({
                                                         </Button>
                                                     )}
                                                 </form.Field>
-                                            </>
-                                        ) : null}
-                                    </div>
-                                    {field.state.meta.errors ? (
-                                        <em className="text-xs text-red-500">
-                                            {field.state.meta.errors
-                                                .map((e) => e?.message)
-                                                .join(', ')}
-                                        </em>
-                                    ) : null}
-                                </div>
-                            );
-                        }}
-                    </form.Field>
+                                            </div>
+                                            {field.state.meta.errors ? (
+                                                <em className="text-xs text-red-500">
+                                                    {field.state.meta.errors
+                                                        .map((e) => e?.message)
+                                                        .join(', ')}
+                                                </em>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                </form.Field>
+                            ) : null
+                        }
+                    </form.Subscribe>
                 </div>
 
                 <div className="flex flex-col gap-4 lg:col-span-4">

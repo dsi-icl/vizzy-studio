@@ -15,7 +15,8 @@ import {
     type ProjectVisibility
 } from '@repo/db/schema';
 
-import { isCustomProject } from '~/lib/customProject';
+import { isCustomProject, withoutLegacyCustomUrls } from '~/lib/customProject';
+import { serveWallPath } from '~/lib/serveUrls';
 import type { AuditExecutionContextInput } from '~/server/audit';
 
 const INITIAL_STAGE_NAME = 'DO';
@@ -29,10 +30,7 @@ interface CreateProjectInput {
     heroImages: string[];
     isCustom?: boolean;
     customPort?: number | null;
-    customControlUrl?: string | null;
-    customRenderUrl?: string | null;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
     collaborators: Collaborator[];
 }
 
@@ -46,10 +44,7 @@ interface UpdateProjectInput {
     heroImages?: string[];
     isCustom?: boolean;
     customPort?: number | null;
-    customControlUrl?: string;
-    customRenderUrl?: string;
     customRenderCompat?: boolean;
-    customRenderProxy?: boolean;
     collaborators?: Array<{ email: string; role: CollaboratorRole }>;
 }
 
@@ -190,7 +185,7 @@ export async function listProjects(userEmail: string, includeArchived = false) {
         filter.deletedAt = { $exists: false };
     }
     const projects = await dbCol.projects.find(filter, { sort: { updatedAt: -1 } });
-    return projects;
+    return projects.map(withoutLegacyCustomUrls);
 }
 
 export async function listPublishedProjects() {
@@ -214,7 +209,7 @@ export async function listPublishedProjects() {
         )
     );
 
-    if (heroFilenames.length === 0) return visibleProjects;
+    if (heroFilenames.length === 0) return visibleProjects.map(withoutLegacyCustomUrls);
 
     const heroAssets = await dbCol.assets.findBlurhashMetaByUrls(heroFilenames);
 
@@ -240,7 +235,7 @@ export async function listPublishedProjects() {
             .filter((entry) => Boolean(entry.src));
         const firstHeroMeta = heroImageMeta[0];
         return {
-            ...project,
+            ...withoutLegacyCustomUrls(project),
             heroImageBlurhash: firstHeroMeta?.blurhash,
             heroImageSizes: firstHeroMeta?.sizes,
             heroImageMeta
@@ -302,7 +297,7 @@ export async function listAssetsByUrlsForPicker(projectId: string, urls: string[
 export async function getProject(id: string) {
     const project = await dbCol.projects.findById(id);
     if (!project) return null;
-    return project;
+    return withoutLegacyCustomUrls(project);
 }
 
 export async function getCommit(id: string) {
@@ -372,16 +367,12 @@ export async function updateProject(
     });
 
     // Live-push custom render settings changes to any bound walls
-    if (
-        'customRenderUrl' in updates ||
-        'customRenderCompat' in updates ||
-        'customRenderProxy' in updates
-    ) {
+    if ('isCustom' in updates || 'customPort' in updates || 'customRenderCompat' in updates) {
+        const merged = { ...existing, ...updates };
         updateProjectCustomRenderSettings(
             projectId,
-            updates.customRenderUrl ?? existing.customRenderUrl ?? undefined,
-            updates.customRenderCompat,
-            updates.customRenderProxy
+            isCustomProject(merged) ? serveWallPath(projectId) : undefined,
+            updates.customRenderCompat
         );
     }
 

@@ -62,8 +62,8 @@ export interface ProjectDocument {
     /** @deprecated Pre-`/serve` public demo URL; read only via `isCustomProject()`'s fallback. */
     customRenderUrl?: string | null;
     customRenderCompat: boolean;
-    /** @deprecated Proxying is mandatory for custom projects. */
-    customRenderProxy: boolean;
+    /** @deprecated Proxying is mandatory for custom projects; no longer written. */
+    customRenderProxy?: boolean;
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
     /** Shared palette of recently picked colours, most recent first. */
     recentColours?: string[];

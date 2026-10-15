@@ -294,8 +294,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         customRender: z
             .object({
                 url: z.string(),
-                compat: z.boolean().default(false),
-                proxy: z.boolean().default(false)
+                compat: z.boolean().default(false)
             })
             .optional(),
         boundSource: z.enum(['live', 'gallery', 'signage']).optional()
@@ -554,12 +553,10 @@ export interface ScopeState {
     mutationRevision?: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
-    /** Optional custom render URL from the project configuration. */
+    /** Derived `/serve/<projectId>` path for a custom project; never a public demo URL. */
     customRenderUrl?: string;
     /** Whether the custom render URL should be displayed in compatibility mode. */
     customRenderCompat?: boolean;
-    /** Whether custom render should be loaded via the built-in proxy. */
-    customRenderProxy?: boolean;
 }
 
 export interface Slide {

@@ -11,9 +11,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { GalleryProjectCard } from '~/components/GalleryProjectCard';
+import { isCustomProject } from '~/lib/customProject';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { GalleryEngine } from '~/lib/galleryEngine';
 import { initGalleryStore, useGalleryStore } from '~/lib/galleryStore';
+import { serveControlPath } from '~/lib/serveUrls';
 import { publishedProjectsQueryOptions } from '~/server/projects.queries';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
@@ -471,8 +473,7 @@ function HomePage() {
                     description: p.description,
                     tags: p.tags,
                     publishedCommitId: presentedStage.publishedCommitId,
-                    customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
-                    customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
+                    controlPath: isCustomProject(p) ? serveControlPath(p.id) : undefined,
                     imageUrl: p.heroImages[0] ?? '',
                     blurhash: (p as { heroImageBlurhash?: string }).heroImageBlurhash,
                     sizes: (p as { heroImageSizes?: number[] }).heroImageSizes,

@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
 import { ProjectForm } from '~/components/ProjectForm';
+import { isCustomProject } from '~/lib/customProject';
 import { $updateProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
 
@@ -46,10 +47,9 @@ function InfoTab() {
                     tags: project.tags,
                     visibility: project.visibility,
                     heroImages: project.heroImages,
-                    customControlUrl: project.customControlUrl ?? '',
-                    customRenderUrl: project.customRenderUrl ?? '',
+                    isCustom: isCustomProject(project),
+                    customPort: project.customPort ? String(project.customPort) : '',
                     customRenderCompat: project.customRenderCompat ?? false,
-                    customRenderProxy: project.customRenderProxy ?? false,
                     collaborators: project.collaborators
                 }}
                 onSubmit={({ collaborators: _collaborators, ...data }) =>

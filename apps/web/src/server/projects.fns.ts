@@ -51,10 +51,6 @@ import {
     updateProject
 } from './projects';
 
-const HttpUrlString = z
-    .string()
-    .refine((val) => !val || /^https?:\/\//i.test(val), 'Must be a valid HTTP or HTTPS URL');
-
 const CustomPort = z.number().int().min(1024).max(65535);
 
 const CreateProjectInput = z.object({
@@ -66,10 +62,7 @@ const CreateProjectInput = z.object({
     heroImages: z.array(z.string()).default([]),
     isCustom: z.boolean().default(false),
     customPort: CustomPort.nullish(),
-    customControlUrl: HttpUrlString.optional(),
-    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().default(false),
-    customRenderProxy: z.boolean().default(false),
     collaborators: z.array(Collaborator).default([])
 });
 
@@ -83,10 +76,7 @@ const UpdateProjectInput = z.object({
     heroImages: z.array(z.string()).optional(),
     isCustom: z.boolean().optional(),
     customPort: CustomPort.nullish(),
-    customControlUrl: HttpUrlString.optional(),
-    customRenderUrl: HttpUrlString.optional(),
     customRenderCompat: z.boolean().optional(),
-    customRenderProxy: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional()
 });
 const AuditOutcomeEnum = z.enum(['success', 'denied', 'failure', 'error']);
