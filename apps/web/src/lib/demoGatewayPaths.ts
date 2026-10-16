@@ -9,7 +9,7 @@ const RESERVED_PATHS = new Set(['_vizzy', 'demos', 'assets', 's', 'control', 'sc
 
 /** Only root segments outside /<slug> need an operator declaration. */
 export function parseDemoPathPolicy(raw: string): DemoPathPolicy | null {
-    if (!raw.trim()) return new Map();
+    if (!raw.trim()) return null;
     try {
         const parsed: unknown = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;

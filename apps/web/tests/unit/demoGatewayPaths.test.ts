@@ -41,7 +41,8 @@ const safeDemoRedirect = (
 
 describe('host based demo gateway paths', () => {
     test('rejects invalid or ambiguous operator path rules', () => {
-        expect(parseDemoPathPolicy('')?.size).toBe(0);
+        expect(parseDemoPathPolicy('')).toBeNull();
+        expect(parseDemoPathPolicy('{}')?.size).toBe(0);
         expect(parseDemoPathPolicy('{"bitcoin":["api","api"]}')).toBeNull();
         expect(parseDemoPathPolicy('{"bitcoin":["nightingale"],"nightingale":[]}')).toBeNull();
         expect(parseDemoPathPolicy('{"bitcoin":["screen"]}')).toBeNull();
