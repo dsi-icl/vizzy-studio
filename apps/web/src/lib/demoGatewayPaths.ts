@@ -21,6 +21,7 @@ const DEMO_PATH_ALIASES: Readonly<Record<string, readonly string[]>> = {
     nightingale: ['nightingale-wall', 'nightingale-screen', 'nightingale-control'],
     ideafast: ['observatory']
 };
+const DEMO_PATH_ALIAS_NAMES = new Set(Object.values(DEMO_PATH_ALIASES).flat());
 
 const PROJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const DEMO_SLUG_PATTERN = /^[a-z\d][a-z\d_-]*$/i;
@@ -133,6 +134,15 @@ export function isAllowedDemoPath(pathname: string, slug: string): boolean {
     }
     const first = pathname.split('/')[1] ?? '';
     return SHARED_DEMO_PATHS.has(first);
+}
+
+export function isProjectDemoRootPath(pathname: string): boolean {
+    const first = pathname.split('/')[1] ?? '';
+    // A project's /control and /screen are routes inside its own demo slug.
+    return (
+        (SHARED_DEMO_PATHS.has(first) && first !== 'control' && first !== 'screen') ||
+        DEMO_PATH_ALIAS_NAMES.has(first)
+    );
 }
 
 export function safeDemoRedirect(

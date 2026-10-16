@@ -110,6 +110,18 @@ describe('project path demo gateway', () => {
         expect(parseDemoProjects(JSON.stringify({ bad: { slug: 'bitcoin' } }))).toBeNull();
     });
 
+    test('routes demo-specific root resources only to their owning demo', () => {
+        expect(upstreamDemoPath('/observatory/src/main.js', 'ideafast')).toBe(
+            '/observatory/src/main.js'
+        );
+        expect(upstreamDemoPath('/nightingale-screen', 'nightingale')).toBe('/nightingale-screen');
+        expect(upstreamDemoPath('/nightingale-control', 'nightingale')).toBe(
+            '/nightingale-control'
+        );
+        expect(upstreamDemoPath('/observatory/src/main.js', 'bitcoin')).toBeNull();
+        expect(upstreamDemoPath('/nightingale-screen', 'bitcoin')).toBeNull();
+    });
+
     test('accepts the currently running demo slugs as project mappings', () => {
         for (const slug of [
             'bitcoin',

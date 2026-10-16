@@ -1,24 +1,13 @@
-import { isAllowedDemoPath, parseDemoSource, type DemoGatewayKind } from './demoGatewayPaths';
+import {
+    isAllowedDemoPath,
+    isProjectDemoRootPath,
+    parseDemoSource,
+    type DemoGatewayKind
+} from './demoGatewayPaths';
 
 const PROJECT_ID = /^[a-f\d]{24}$/i;
 const ROUTE_ID = /^[A-Za-z\d_-]{22}$/;
 const SLUG = /^[a-z\d][a-z\d_-]*$/i;
-const ROOT_PATHS = new Set([
-    'api',
-    'ws',
-    'bus',
-    'pages',
-    'network',
-    'data',
-    'maps',
-    'tiles',
-    'btc-globe',
-    'nightingale-model',
-    'observatory',
-    'nightingale-wall',
-    'nightingale-screen',
-    'nightingale-control'
-]);
 
 export function parseDemoProjects(raw: string): Map<string, string> | null {
     if (!raw.trim()) return new Map();
@@ -104,8 +93,7 @@ export function upstreamDemoPath(resourcePath: string, slug: string): string | n
         resourcePath.startsWith('/_launch/')
     )
         return null;
-    const first = resourcePath.split('/')[1] ?? '';
-    const path = ROOT_PATHS.has(first) ? resourcePath : `/${slug}${resourcePath}`;
+    const path = isProjectDemoRootPath(resourcePath) ? resourcePath : `/${slug}${resourcePath}`;
     return isAllowedDemoPath(path, slug) ? path : null;
 }
 
