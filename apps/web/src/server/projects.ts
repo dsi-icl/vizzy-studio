@@ -29,6 +29,8 @@ interface CreateProjectInput {
     visibility: ProjectVisibility;
     heroImages: string[];
     customPort?: number | null;
+    customHost?: string | null;
+    customStripPrefix?: boolean;
     customRenderCompat: boolean;
     collaborators: Collaborator[];
 }
@@ -42,6 +44,8 @@ interface UpdateProjectInput {
     visibility?: ProjectVisibility;
     heroImages?: string[];
     customPort?: number | null;
+    customHost?: string | null;
+    customStripPrefix?: boolean;
     customRenderCompat?: boolean;
     collaborators?: Array<{ email: string; role: CollaboratorRole }>;
 }

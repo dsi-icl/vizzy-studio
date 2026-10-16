@@ -55,6 +55,19 @@ export function buildServeUpstreamUrl(input: {
     return `http://${input.host}:${input.port}${input.pathname}${input.search}`;
 }
 
+export function upstreamPathname(
+    parsed: ParsedServePath,
+    requestPathname: string,
+    stripPrefix?: boolean
+): string {
+    return stripPrefix ? parsed.rest : requestPathname;
+}
+
+export function resolveDemoHost(allowed: string[], customHost?: string | null): string | null {
+    if (!customHost) return null;
+    return allowed.includes(customHost) ? customHost : null;
+}
+
 export function rewriteServeLocation(
     location: string,
     upstreamUrl: string,

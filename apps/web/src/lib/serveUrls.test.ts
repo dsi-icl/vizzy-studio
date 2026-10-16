@@ -4,6 +4,8 @@ import { describe, test } from 'node:test';
 import {
     buildServeUpstreamUrl,
     parseServePath,
+    resolveDemoHost,
+    upstreamPathname,
     rewriteServeLocation,
     serveBasePath,
     serveBusPath,
@@ -94,5 +96,39 @@ describe('rewriteServeLocation', () => {
             rewriteServeLocation('/api/portal/v1/bind', UPSTREAM, BASE),
             `/serve/${PID}/api/portal/v1/bind`
         );
+    });
+});
+
+describe('resolveDemoHost', () => {
+    const HOSTS = ['demos.vm1', 'demos.vm2'];
+
+    test('uses the project host when it is allowed', () => {
+        assert.equal(resolveDemoHost(HOSTS, HOSTS[1]), 'demos.vm2');
+    });
+
+    test('requires the project to name its host', () => {
+        assert.equal(resolveDemoHost(HOSTS, null), null);
+        assert.equal(resolveDemoHost(HOSTS, undefined), null);
+        assert.equal(resolveDemoHost(HOSTS, ''), null);
+    });
+
+    test('fails closed for a host that is not in the build config', () => {
+        assert.equal(resolveDemoHost(HOSTS, 'retired.example'), null);
+        assert.equal(resolveDemoHost([], HOSTS[0]), null);
+    });
+});
+
+describe('upstreamPathname', () => {
+    const parsed = { projectId: PID, rest: '/assets/main.js' };
+    const requested = `/serve/${PID}/assets/main.js`;
+
+    test('forwards unchanged for a demo built at its serve path', () => {
+        assert.equal(upstreamPathname(parsed, requested, false), requested);
+        assert.equal(upstreamPathname(parsed, requested, undefined), requested);
+    });
+
+    test('strips the prefix for a demo built at the root of its port', () => {
+        // Equivalent to nginx `proxy_pass http://127.0.0.1:PORT/` with its trailing slash.
+        assert.equal(upstreamPathname(parsed, requested, true), '/assets/main.js');
     });
 });

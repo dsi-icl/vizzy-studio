@@ -8,8 +8,10 @@ import { buildForwardedHeaders, buildRelayedHeaders } from '~/lib/serveHeaders';
 import {
     buildServeUpstreamUrl,
     parseServePath,
+    resolveDemoHost,
     rewriteServeLocation,
-    serveBasePath
+    serveBasePath,
+    upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
@@ -127,10 +129,26 @@ async function handler({ request }: { request: Request }): Promise<Response> {
         mintCookie = true;
     }
 
+    const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
+    if (!host) {
+        await logAuditFailure({
+            action: 'SERVE_PROXY_FAILED',
+            reasonCode: 'DEMO_HOST_NOT_ALLOWED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Demo host is not configured', { status: 503 });
+    }
+
     const upstreamUrl = buildServeUpstreamUrl({
-        host: env.DEMOS_FQDN,
+        host,
         port,
-        pathname: url.pathname,
+        pathname: upstreamPathname(parsed, url.pathname, project.customStripPrefix),
         search: url.search
     });
 

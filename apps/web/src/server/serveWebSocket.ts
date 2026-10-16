@@ -3,7 +3,7 @@ import { env } from '@repo/env';
 import { createWebSocketProxy, defineHooks, type Peer } from 'crossws';
 
 import { isCustomProject } from '~/lib/customProject';
-import { parseServePath } from '~/lib/serveUrls';
+import { parseServePath, resolveDemoHost, upstreamPathname } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
@@ -60,7 +60,20 @@ async function resolveUpstream(request: Request): Promise<string | null> {
         return null;
     }
 
-    return `ws://${env.DEMOS_FQDN}:${port}${url.pathname}${url.search}`;
+    const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
+    if (!host) {
+        await logAuditFailure({
+            action: 'SERVE_WS_FAILED',
+            reasonCode: 'DEMO_HOST_NOT_ALLOWED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext
+        });
+        return null;
+    }
+
+    const pathname = upstreamPathname(parsed, url.pathname, project.customStripPrefix);
+    return `ws://${host}:${port}${pathname}${url.search}`;
 }
 
 function resolvedUpstream(peer: Peer): string | null {

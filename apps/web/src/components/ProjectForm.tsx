@@ -9,6 +9,8 @@ interface CreateProjectInput {
     visibility: ProjectVisibility;
     heroImages: string[];
     customPort?: number | null;
+    customHost?: string | null;
+    customStripPrefix?: boolean;
     customRenderCompat: boolean;
     collaborators: Collaborator[];
 }
@@ -39,7 +41,10 @@ import {
 } from '~/server/projects.queries';
 
 /** The port is held as text while editing; `getPayload` converts it. */
-type ProjectFormValues = Omit<CreateProjectInput, 'customPort'> & { customPort: string };
+type ProjectFormValues = Omit<CreateProjectInput, 'customPort' | 'customHost'> & {
+    customPort: string;
+    customHost: string;
+};
 
 interface ProjectFormProps {
     projectId?: string;
@@ -94,6 +99,8 @@ export function ProjectForm({
             visibility: 'public' as const,
             heroImages: [],
             customPort: '',
+            customHost: '',
+            customStripPrefix: false,
             customRenderCompat: false,
             collaborators: [],
             ...defaultValues
@@ -101,7 +108,9 @@ export function ProjectForm({
         onSubmit: ({ value }) => {
             onSubmit({
                 ...value,
-                customPort: value.customPort.trim() ? Number(value.customPort) : null
+                customPort: value.customPort.trim() ? Number(value.customPort) : null,
+                customHost: value.customHost.trim() || null,
+                customStripPrefix: value.customStripPrefix
             });
         }
     });
@@ -117,6 +126,8 @@ export function ProjectForm({
             customPort: form.getFieldValue('customPort').trim()
                 ? Number(form.getFieldValue('customPort'))
                 : null,
+            customHost: form.getFieldValue('customHost').trim() || null,
+            customStripPrefix: form.getFieldValue('customStripPrefix'),
             customRenderCompat: form.getFieldValue('customRenderCompat'),
             collaborators: form.getFieldValue('collaborators')
         }),
@@ -326,6 +337,44 @@ export function ProjectForm({
                                     <option value="private">Private</option>
                                     <option value="public">Public</option>
                                 </select>
+                            </div>
+                        )}
+                    </form.Field>
+
+                    <form.Field name="customHost">
+                        {(field) => (
+                            <div className="grid gap-2">
+                                <Label htmlFor={field.name}>Demo host</Label>
+                                <Input
+                                    id={field.name}
+                                    placeholder="e.g. do-demos.dsi.ic.ac.uk"
+                                    value={field.state.value}
+                                    onBlur={field.handleBlur}
+                                    onChange={(e) => {
+                                        field.handleChange(e.target.value);
+                                        scheduleAutoSave();
+                                    }}
+                                />
+                            </div>
+                        )}
+                    </form.Field>
+
+                    <form.Field name="customStripPrefix">
+                        {(field) => (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    id={field.name}
+                                    type="checkbox"
+                                    className="size-4 accent-current"
+                                    checked={field.state.value}
+                                    onChange={(e) => {
+                                        field.handleChange(e.target.checked);
+                                        scheduleAutoSave();
+                                    }}
+                                />
+                                <Label htmlFor={field.name}>
+                                    Demo runs at the root of its port
+                                </Label>
                             </div>
                         )}
                     </form.Field>

@@ -55,6 +55,10 @@ import {
 
 const CustomPort = z.number().int().min(1024).max(65535);
 
+const CustomHost = z
+    .string()
+    .refine((val) => !val || env.DEMOS_HOSTS.includes(val), 'Not an allowed demo host.');
+
 const CreateProjectInput = z.object({
     name: z.string().min(1, 'Name is required'),
     authorOrganisation: z.string().min(1, 'Author/Organisation is required'),
@@ -63,6 +67,8 @@ const CreateProjectInput = z.object({
     visibility: ProjectVisibility.default('private'),
     heroImages: z.array(z.string()).default([]),
     customPort: CustomPort.nullish(),
+    customHost: CustomHost.nullish(),
+    customStripPrefix: z.boolean().optional(),
     customRenderCompat: z.boolean().default(false),
     collaborators: z.array(Collaborator).default([])
 });
@@ -76,6 +82,8 @@ const UpdateProjectInput = z.object({
     visibility: ProjectVisibility.optional(),
     heroImages: z.array(z.string()).optional(),
     customPort: CustomPort.nullish(),
+    customHost: CustomHost.nullish(),
+    customStripPrefix: z.boolean().optional(),
     customRenderCompat: z.boolean().optional(),
     collaborators: z.array(Collaborator).optional()
 });
