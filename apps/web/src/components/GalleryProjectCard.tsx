@@ -140,16 +140,14 @@ export function GalleryProjectCard({
     }, []);
 
     const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
-    const hasCustomRenderUrl =
-        typeof project.customRenderUrl === 'string' && project.customRenderUrl.trim().length > 0;
+    // The gallery route only sets `controlPath` for custom projects.
+    const isCustom = Boolean(project.controlPath);
     const previewHref =
-        user && project.publishedCommitId && !hasCustomRenderUrl
+        user && project.publishedCommitId && !isCustom
             ? `/quarry/view/${encodeURIComponent(project.id)}/${encodeURIComponent(project.publishedCommitId)}`
             : undefined;
     const previewDisabledReason =
-        user && hasCustomRenderUrl
-            ? 'Preview is unavailable because this project uses a custom render URL.'
-            : undefined;
+        user && isCustom ? 'Preview is unavailable because this is a custom project.' : undefined;
 
     return (
         <ProjectCard

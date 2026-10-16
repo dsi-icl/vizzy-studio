@@ -61,10 +61,14 @@ export interface ProjectDocument {
     tags: string[];
     visibility: ProjectVisibility;
     heroImages: string[];
+    customPort?: number | null;
+    /** @deprecated */
     customControlUrl?: string | null;
+    /** @deprecated */
     customRenderUrl?: string | null;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
+    /** @deprecated */
+    customRenderProxy?: boolean;
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
     /** Shared palette of recently picked colours, most recent first. */
     recentColours?: string[];

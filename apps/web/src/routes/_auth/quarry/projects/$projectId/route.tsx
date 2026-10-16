@@ -25,6 +25,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
+import { isCustomProject } from '~/lib/customProject';
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
 import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
@@ -124,7 +125,7 @@ function ProjectLayout() {
     const location = useLocation();
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
-    const hasCustomRender = !!project.customRenderUrl;
+    const hasCustomRender = isCustomProject(project);
     const defaultStage =
         project.stages.find(({ id }) => id === project.defaultStageId) ?? project.stages[0];
     const canPublish = canPublishProject(user);

@@ -25,7 +25,6 @@ export function getOrCreateScope(
     slideId: string,
     customRenderUrl?: string,
     customRenderCompat?: boolean,
-    customRenderProxy?: boolean,
     layout?: StageLayout,
     stageId?: string
 ) {
@@ -41,8 +40,7 @@ export function getOrCreateScope(
             dirty: false,
             hydrateCache: null,
             customRenderUrl,
-            customRenderCompat: customRenderCompat ?? false,
-            customRenderProxy: customRenderProxy ?? false
+            customRenderCompat: customRenderCompat ?? false
         };
         scopedState.set(scopeId, scope);
 
@@ -68,10 +66,6 @@ export function getOrCreateScope(
         }
         if (customRenderCompat !== undefined && scope.customRenderCompat !== customRenderCompat) {
             scope.customRenderCompat = customRenderCompat;
-            changed = true;
-        }
-        if (customRenderProxy !== undefined && scope.customRenderProxy !== customRenderProxy) {
-            scope.customRenderProxy = customRenderProxy;
             changed = true;
         }
         if (changed) scope.hydrateCache = null;
@@ -101,8 +95,7 @@ export function getEditorHydratePayload(scopeId: ScopeId): string {
                 ? {
                       customRender: {
                           url: scope.customRenderUrl,
-                          compat: Boolean(scope.customRenderCompat),
-                          proxy: Boolean(scope.customRenderProxy)
+                          compat: Boolean(scope.customRenderCompat)
                       }
                   }
                 : {})
@@ -129,8 +122,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
                 ? {
                       customRender: {
                           url: scope.customRenderUrl,
-                          compat: Boolean(scope.customRenderCompat),
-                          proxy: Boolean(scope.customRenderProxy)
+                          compat: Boolean(scope.customRenderCompat)
                       }
                   }
                 : {}),
@@ -157,8 +149,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
             ? {
                   customRender: {
                       url: scope.customRenderUrl,
-                      compat: Boolean(scope.customRenderCompat),
-                      proxy: Boolean(scope.customRenderProxy)
+                      compat: Boolean(scope.customRenderCompat)
                   }
               }
             : {}),

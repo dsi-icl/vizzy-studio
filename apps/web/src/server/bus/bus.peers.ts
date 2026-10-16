@@ -154,7 +154,6 @@ export async function registerEditorPeer(
         scopeInput.slideId,
         undefined,
         undefined,
-        undefined,
         stage.layout,
         stage.id
     );

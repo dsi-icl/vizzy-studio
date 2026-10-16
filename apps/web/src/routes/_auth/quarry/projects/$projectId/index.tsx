@@ -46,10 +46,8 @@ function InfoTab() {
                     tags: project.tags,
                     visibility: project.visibility,
                     heroImages: project.heroImages,
-                    customControlUrl: project.customControlUrl ?? '',
-                    customRenderUrl: project.customRenderUrl ?? '',
+                    customPort: project.customPort ? String(project.customPort) : '',
                     customRenderCompat: project.customRenderCompat ?? false,
-                    customRenderProxy: project.customRenderProxy ?? false,
                     collaborators: project.collaborators
                 }}
                 onSubmit={({ collaborators: _collaborators, ...data }) =>

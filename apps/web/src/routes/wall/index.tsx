@@ -32,7 +32,6 @@ type HydrateStagePayload = {
     layers: LayerWithWallComponentState[];
     customRenderUrl?: string;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
     layout: StageLayout;
 } & HydrateScopeContext;
 
@@ -47,7 +46,9 @@ function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
-    const [customRenderProxy, setCustomRenderProxy] = useState(false);
+    const [customRenderProjectId, setCustomRenderProjectId] = useState<string | undefined>();
+    const [serveCookieProjectId, setServeCookieProjectId] = useState<string | null>(null);
+    const [serveCookieFailed, setServeCookieFailed] = useState(false);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const [physicalViewport, setPhysicalViewport] = useState({
@@ -173,7 +174,7 @@ function WallApp() {
         setLayers(next.layers);
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
-        setCustomRenderProxy(next.customRenderProxy);
+        setCustomRenderProjectId(next.customRenderUrl ? next.projectId : undefined);
         setStageLayout(next.layout);
         lastHydrateContextRef.current = {
             hasContent: hasHydrateContent(next),
@@ -299,6 +300,57 @@ function WallApp() {
     }, [engine, wallId]);
 
     useEffect(() => {
+        if (!wallId || !customRenderProjectId) {
+            setServeCookieProjectId(null);
+            setServeCookieFailed(false);
+            return;
+        }
+        let cancelled = false;
+        let refreshTimer: number | null = null;
+
+        const refreshServeCookie = () => {
+            if (cancelled) return;
+            signedFetch(
+                '/api/wall/serve-cookie',
+                {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ projectId: customRenderProjectId })
+                },
+                { deviceKind: 'wall', wallId }
+            )
+                .then((res) => {
+                    if (!res.ok) throw new Error(`Serve cookie request failed: ${res.status}`);
+                    if (!cancelled) {
+                        setServeCookieProjectId(customRenderProjectId);
+                        setServeCookieFailed(false);
+                    }
+                })
+                .catch((error) => {
+                    console.warn('[Wall] Failed to obtain serve auth cookie', error);
+                    if (!cancelled) {
+                        setServeCookieProjectId(null);
+                        setServeCookieFailed(true);
+                    }
+                })
+                .finally(() => {
+                    if (!cancelled) {
+                        refreshTimer = window.setTimeout(
+                            refreshServeCookie,
+                            WALL_MEDIA_COOKIE_REFRESH_MS
+                        );
+                    }
+                });
+        };
+
+        refreshServeCookie();
+        return () => {
+            cancelled = true;
+            if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+        };
+    }, [wallId, customRenderProjectId]);
+
+    useEffect(() => {
         const unsubscribe = engine?.subscribeToLayoutUpdates((data) => {
             if (data.type === 'hydrate') {
                 // Eagerly warm the browser cache for image URLs before React mounts them
@@ -316,7 +368,6 @@ function WallApp() {
                     layers: data.layers,
                     customRenderUrl: data.customRender?.url,
                     customRenderCompat: Boolean(data.customRender?.compat),
-                    customRenderProxy: Boolean(data.customRender?.proxy),
                     layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
@@ -815,15 +866,18 @@ function WallApp() {
 
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
-        const iframeSrc = new URL(customRenderUrl);
+        const iframeSrc = new URL(customRenderUrl, window.location.origin);
         if (!customRenderCompat) {
             iframeSrc.searchParams.set('c', String(col));
             iframeSrc.searchParams.set('r', String(row));
         }
-        const finalSrc =
-            customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
-                ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
-                : iframeSrc.toString();
+        const serveCookieReady =
+            !!customRenderProjectId && serveCookieProjectId === customRenderProjectId;
+        const finalSrc = serveCookieReady
+            ? `${iframeSrc.pathname}${iframeSrc.search}`
+            : serveCookieFailed
+              ? '/web-nonet?l=wall'
+              : '/web-placeholder?l=wall';
         const worldWidth = screenWidth * columns;
         const worldHeight = screenHeight * rows;
         return (

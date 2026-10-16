@@ -197,8 +197,7 @@ export function hydrateWallNodes(wallId: string) {
 export function updateProjectCustomRenderSettings(
     projectId: string,
     customRenderUrl: string | undefined,
-    customRenderCompat?: boolean,
-    customRenderProxy?: boolean
+    customRenderCompat?: boolean
 ) {
     const affectedWallIds = new Set<string>();
     for (const [scopeId, scope] of scopedState) {
@@ -206,9 +205,6 @@ export function updateProjectCustomRenderSettings(
         scope.customRenderUrl = customRenderUrl;
         if (customRenderCompat !== undefined) {
             scope.customRenderCompat = customRenderCompat;
-        }
-        if (customRenderProxy !== undefined) {
-            scope.customRenderProxy = customRenderProxy;
         }
         scope.hydrateCache = null;
         // Find walls bound to this scope
