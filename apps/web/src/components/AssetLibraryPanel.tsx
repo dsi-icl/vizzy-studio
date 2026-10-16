@@ -1,11 +1,9 @@
 import { CaretDownIcon, ImageIcon } from '@phosphor-icons/react';
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 
-import { EditorEngine } from '~/lib/editorEngine';
+import { placeAssetInEditor } from '~/lib/editorMediaPlacement';
 import { useEditorStore } from '~/lib/editorStore';
-import { fitSizeToViewport } from '~/lib/fitSizeToViewport';
-import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
-import type { Layer, LayerWithEditorState } from '~/lib/types';
 import { $deleteAsset } from '~/server/projects.fns';
 
 import { AssetLibrary, type AssetLibraryAsset } from './AssetLibrary';
@@ -25,129 +23,27 @@ export function AssetLibraryPanel({
     onCollapse,
     onExpand
 }: AssetLibraryPanelProps) {
-    const addAssetAsLayer = useCallback(async (asset: AssetLibraryAsset) => {
-        const isVideo =
-            asset.mimeType?.startsWith('video/') ||
-            /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.name) ||
-            /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.url);
-
-        const store = useEditorStore.getState();
-        const engine = EditorEngine.getInstance();
-        const numericId = store.allocateId();
-        const zIndex = store.allocateZIndex();
-        const { x: insertionX, y: insertionY } = store.insertionCenter;
-
-        let mediaWidth = 800;
-        let mediaHeight = 600;
-        let duration = 0;
-
-        if (isVideo) {
+    const addAssetAsLayer = useCallback(
+        async (asset: AssetLibraryAsset) => {
             try {
-                const vid = document.createElement('video');
-                vid.muted = true;
-                vid.playsInline = true;
-                vid.crossOrigin = 'anonymous';
-                vid.src = `/api/assets/${asset.url}`;
-                await new Promise<void>((resolve, reject) => {
-                    vid.onloadeddata = () => resolve();
-                    vid.onerror = () => reject(new Error('Failed to load video'));
+                await placeAssetInEditor({
+                    assetId: asset.id,
+                    projectId,
+                    origin: 'editor:asset_library'
                 });
-                mediaWidth = vid.videoWidth || mediaWidth;
-                mediaHeight = vid.videoHeight || mediaHeight;
-                duration = vid.duration || 0;
-                vid.removeAttribute('src');
-                vid.load();
-            } catch {
-                // use defaults
+            } catch (error) {
+                if (error instanceof Error && error.name === 'AbortError') return;
+                toast.error(error instanceof Error ? error.message : 'Unable to add this asset');
             }
-        } else {
-            try {
-                const img = new window.Image();
-                img.crossOrigin = 'anonymous';
-                img.src = `/api/assets/${asset.url}`;
-                await new Promise<void>((resolve) => {
-                    img.onload = () => resolve();
-                    img.onerror = () => resolve();
-                });
-                mediaWidth = img.naturalWidth || mediaWidth;
-                mediaHeight = img.naturalHeight || mediaHeight;
-            } catch {
-                // use defaults
-            }
-        }
-
-        const fitted = fitSizeToViewport(
-            mediaWidth,
-            mediaHeight,
-            store.insertionViewport.width,
-            store.insertionViewport.height
-        );
-
-        const config: Layer['config'] = {
-            cx: insertionX,
-            cy: insertionY,
-            width: fitted.width,
-            height: fitted.height,
-            rotation: 0,
-            scaleX: 1,
-            scaleY: 1,
-            zIndex,
-            visible: true
-        };
-
-        const defaultPlayback: Extract<Layer, { type: 'video' }>['playback'] = {
-            status: 'paused',
-            anchorMediaTime: 0,
-            anchorServerTime: engine.getServerTime()
-        };
-
-        const layerName = makeUniqueMediaLayerName(
-            asset.name,
-            useEditorStore.getState().layers.values()
-        );
-
-        const layerBase = {
-            numericId,
-            name: layerName,
-            url: `/api/assets/${asset.url}`,
-            config,
-            isUploading: false,
-            progress: 100
-        };
-
-        let layer:
-            | Extract<LayerWithEditorState, { type: 'image' }>
-            | Extract<LayerWithEditorState, { type: 'video' }>;
-        if (isVideo) {
-            layer = {
-                type: 'video',
-                playback: defaultPlayback,
-                rvfcActive: false,
-                duration,
-                loop: true,
-                blurhash: asset.blurhash ?? '',
-                ...layerBase
-            };
-        } else {
-            layer = {
-                type: 'image',
-                blurhash: asset.blurhash ?? '',
-                ...layerBase
-            };
-        }
-
-        store.upsertLayer(layer);
-        store.toggleLayerSelection(numericId.toString(), false, false);
-
-        engine.sendJSON({
-            type: 'upsert_layer',
-            origin: 'editor:asset_library',
-            layer
-        });
-        store.markDirty();
-    }, []);
+        },
+        [projectId]
+    );
 
     const deleteAsset = useCallback(async (asset: AssetLibraryAsset) => {
+        if (asset.deepZoom) {
+            await $deleteAsset({ data: { id: asset.id } });
+            return;
+        }
         const store = useEditorStore.getState();
         const assetUrl = asset.url;
         const prefixedUrl = `/api/assets/${assetUrl}`;

@@ -62,3 +62,37 @@ export const SignageSlideEntry = z.object({
     displayDurationMs: z.int().positive().optional(),
     gapDurationMs: z.int().nonnegative().optional()
 });
+
+// Only new Deep Zoom images carry these fields. Absence keeps the existing
+// image path; reading an old asset must never infer or backfill this metadata.
+const ImageDeepZoomDimensions = z.object({
+    schemaVersion: z.literal(1),
+    width: z.int().positive(),
+    height: z.int().positive()
+});
+
+export const ImageTileSource = z.object({
+    // Identifies immutable content, including its version. Reprocessing must
+    // publish a new sourceId so saved layers/commits retain their old content.
+    sourceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/),
+    tileSize: z.literal(512),
+    maxZoom: z.int().nonnegative(),
+    format: z.literal('webp')
+});
+export type ImageTileSource = z.infer<typeof ImageTileSource>;
+
+export const ImageDeepZoomAsset = z.discriminatedUnion('status', [
+    ImageDeepZoomDimensions.extend({ status: z.enum(['queued', 'processing']) }),
+    ImageDeepZoomDimensions.extend({ status: z.literal('ready'), tiles: ImageTileSource }),
+    ImageDeepZoomDimensions.extend({ status: z.literal('failed'), error: z.string().min(1) })
+]);
+export type ImageDeepZoomAsset = z.infer<typeof ImageDeepZoomAsset>;
+
+// A layer carries only a ready snapshot, never job status. Its existing `url`
+// continues to identify the original asset; config still owns all transforms.
+export const ImageDeepZoomLayer = ImageDeepZoomDimensions.extend({
+    assetId: z.string().min(1),
+    previewUrl: z.string().min(1),
+    tiles: ImageTileSource
+});
+export type ImageDeepZoomLayer = z.infer<typeof ImageDeepZoomLayer>;

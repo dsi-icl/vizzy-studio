@@ -8,7 +8,9 @@ import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
-export function PreviewMediaLayer({
+import { KonvaTiledImage } from './KonvaStaticImage';
+
+function LegacyPreviewMediaLayer({
     shape,
     stageScaleFactor
 }: {
@@ -170,5 +172,18 @@ export function PreviewTextLayer({
             fill="#555"
             listening={false}
         />
+    );
+}
+
+export function PreviewMediaLayer(props: Parameters<typeof LegacyPreviewMediaLayer>[0]) {
+    return props.shape.type === 'image' && props.shape.deepZoom ? (
+        <KonvaTiledImage
+            layer={props.shape}
+            previewScale={props.stageScaleFactor}
+            followConfig
+            listening={false}
+        />
+    ) : (
+        <LegacyPreviewMediaLayer {...props} />
     );
 }
