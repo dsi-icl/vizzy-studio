@@ -52,6 +52,7 @@ export async function getRouter() {
         defaultErrorComponent: DefaultCatchBoundary,
         defaultNotFoundComponent: DefaultNotFound,
         scrollRestoration: true,
+        scrollToTopSelectors: ['[data-scroll-restoration-id="project-content"]'],
         defaultStructuralSharing: true
     });
 

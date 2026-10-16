@@ -1,11 +1,11 @@
 'use client';
 
-import { throttle } from '@tanstack/pacer';
+import { throttle, Throttler } from '@tanstack/pacer';
 import { toast } from 'sonner';
 
 import { BusClient } from './busClient';
 import { type ConnectionStatus } from './reconnectingWs';
-import { GSMessageSchema, type GSMessage, type Layer } from './types';
+import { GSMessageSchema, type GSMessage, type Layer, type LayerWithEditorState } from './types';
 
 /** How often the local pointer is put on the wire while it keeps moving. */
 export const POINTER_BROADCAST_INTERVAL_MS = 100;
@@ -145,10 +145,11 @@ export class EditorEngine {
                     const scaleX = view.getFloat32(offset + 18, true);
                     const scaleY = view.getFloat32(offset + 22, true);
                     const rotation = view.getFloat32(offset + 26, true);
-
-                    this.binaryCallbacks.forEach((cb) =>
-                        cb(id, cx, cy, width, height, scaleX, scaleY, rotation)
-                    );
+                    if (!this.isLocalUpload(id)) {
+                        this.binaryCallbacks.forEach((cb) =>
+                            cb(id, cx, cy, width, height, scaleX, scaleY, rotation)
+                        );
+                    }
                     offset += 30;
                 }
             }
@@ -229,6 +230,7 @@ export class EditorEngine {
         response: Extract<GSMessage, { type: 'layer_create_response' }>
     ): void {
         const pending = this.pendingLayerCreates.get(response.createRequestId);
+        if (!pending) return; // Ignore responses for a scope that has been left.
         if (pending) {
             clearTimeout(pending.timer);
             this.pendingLayerCreates.delete(response.createRequestId);
@@ -276,6 +278,7 @@ export class EditorEngine {
     public destroy() {
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
+        this.binaryMoveThrottler.cancel();
         this.stopPointerBroadcast();
         // Otherwise these fire after teardown and toast about a slide the user
         // has already navigated away from.
@@ -383,6 +386,15 @@ export class EditorEngine {
 
     /** Join a project/commit/slide scope. Re-sends hello if already connected. */
     public joinScope(projectId: string, commitId: string, slideId: string) {
+        if (
+            this.currentProjectId !== projectId ||
+            this.currentCommitId !== commitId ||
+            this.currentSlideId !== slideId
+        ) {
+            this.binaryMoveThrottler.cancel();
+            for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
+            this.pendingLayerCreates.clear();
+        }
         this.currentProjectId = projectId;
         this.currentCommitId = commitId;
         this.currentSlideId = slideId;
@@ -440,6 +452,8 @@ export class EditorEngine {
     }
 
     public leaveScope() {
+        for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
+        this.pendingLayerCreates.clear();
         if (!this.currentProjectId) return;
         this.sendJSON({ type: 'leave_scope' });
         this.currentProjectId = null;
@@ -537,6 +551,7 @@ export class EditorEngine {
      * layer is created, so a failed write cannot pass silently.
      */
     public createLayer = (origin: string, layer: Layer): void => {
+        if ((layer as LayerWithEditorState).isUploading) return;
         const createRequestId = `create_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
         this.trackLayerCreate(createRequestId, layer.numericId);
 
@@ -563,6 +578,30 @@ export class EditorEngine {
 
     /** Returns whether the message reached the socket. */
     public sendJSON = (data: GSMessage): boolean => {
+        // Upload drafts exist only in this editor. Cover every caller (parameter
+        // edits, drag/pinch, reordering, and delayed throttled updates) centrally.
+        if (
+            data.type === 'upsert_layer' &&
+            ((data.layer as LayerWithEditorState).isUploading ||
+                this.isLocalUpload(data.layer.numericId))
+        )
+            return false;
+        if (data.type === 'delete_layer' && this.isLocalUpload(data.numericId)) return false;
+        if (data.type === 'seed_scope')
+            data = {
+                ...data,
+                layers: data.layers.filter((layer) => !(layer as LayerWithEditorState).isUploading)
+            };
+        if (data.type === 'clear_stage' || data.type === 'delete_layer') {
+            // A disconnected create waiting for reconnect must not resurrect a
+            // layer that the user deleted (or cleared) in the meantime.
+            for (const [id, pending] of this.pendingLayerCreates) {
+                if (data.type === 'clear_stage' || pending.numericId === data.numericId) {
+                    clearTimeout(pending.timer);
+                    this.pendingLayerCreates.delete(id);
+                }
+            }
+        }
         // Protocol discipline:
         // Editor upsert_layer for video should never carry playback timeline fields.
         if (data.type === 'upsert_layer' && data.layer.type === 'video') {
@@ -572,7 +611,7 @@ export class EditorEngine {
         return this.bus.sendJSON(data);
     };
 
-    public broadcastBinaryMove = throttle(
+    private binaryMoveThrottler = new Throttler(
         (
             numericId: number,
             x: number,
@@ -583,6 +622,7 @@ export class EditorEngine {
             scaleY: number,
             rotation: number
         ) => {
+            if (this.isLocalUpload(numericId)) return;
             const buffer = new ArrayBuffer(33);
             const view = new DataView(buffer);
             view.setUint8(0, 0x05);
@@ -599,6 +639,18 @@ export class EditorEngine {
         },
         { wait: 16 }
     );
+
+    private isLocalUpload(numericId: number): boolean {
+        return Boolean(window.__EDITOR_STORE__?.getState().layers.get(numericId)?.isUploading);
+    }
+
+    public broadcastBinaryMove = (
+        ...args: Parameters<typeof this.binaryMoveThrottler.maybeExecute>
+    ) => {
+        if (!this.isLocalUpload(args[0])) this.binaryMoveThrottler.maybeExecute(...args);
+    };
+    public flushBinaryMove = () => this.binaryMoveThrottler.flush();
+    public cancelBinaryMove = () => this.binaryMoveThrottler.cancel();
 }
 
 // --- VITE HMR DEFENSE STRATEGY ---

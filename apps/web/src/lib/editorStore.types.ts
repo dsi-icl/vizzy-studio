@@ -54,6 +54,8 @@ export interface EditorState {
 
     // ── Save pipeline state ──
     loading: boolean;
+    /** Local cancellation generation for pending media placement, never persisted. */
+    placementEpoch: number;
     saveStatus: SaveStatus;
     headCommitId: string | null;
     insertionCenter: { x: number; y: number };

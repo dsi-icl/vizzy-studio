@@ -85,7 +85,8 @@ try {
         assert.equal(launch?.status, 303);
         assert.equal(launch.headers.get('Location'), `/bitcoin/?c=${col}&r=${row}`);
         const cookie = launch.headers.get('Set-Cookie')?.split(';', 1)[0];
-        assert.ok(cookie?.startsWith('__Host-vizzy_demo_session='));
+        assert.ok(cookie);
+        assert.ok(cookie.startsWith('__Host-vizzy_demo_session='));
         browserCookies.add(cookie);
 
         // The redirect has finished: HTML and assets load at their original paths.
