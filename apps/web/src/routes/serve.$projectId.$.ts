@@ -6,7 +6,6 @@ import { validatePortalToken } from '~/lib/portalTokens';
 import { buildServeUpstreamUrl, parseServePath } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
-import type { AuthContext } from '~/server/requestAuthContext';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
 import {
     createServeCookie,
@@ -15,14 +14,9 @@ import {
     type ServeActor
 } from '~/server/serveCookie';
 import { isWebSocketUpgrade, serveWebSocketHooks } from '~/server/serveWebSocket';
-import { resolveWallMediaCookieAuthContext } from '~/server/wallMediaCookie';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
 
-/**
- * Headers forwarded to the demo. Our own credentials are deliberately absent: the demo is
- * third-party code and must never see a session, wall or serve cookie.
- */
 const FORWARDED_REQUEST_HEADERS = [
     'accept',
     'accept-language',
@@ -33,12 +27,6 @@ const FORWARDED_REQUEST_HEADERS = [
     'user-agent'
 ];
 
-/**
- * Headers relayed back. `set-cookie`, CSP and `x-frame-options` are dropped — upstream must
- * not set cookies or framing policy on our origin. `content-encoding` and `content-length`
- * are dropped too: fetch decompresses the body transparently, so upstream's values would
- * describe bytes the browser never receives.
- */
 const RELAYED_RESPONSE_HEADERS = [
     'content-type',
     'cache-control',
@@ -60,10 +48,6 @@ function bearerOrQueryToken(request: Request): string | null {
     return queryToken && queryToken.length > 0 ? queryToken : null;
 }
 
-/**
- * The surface is decided by which credential succeeds, not by the path. Both surfaces load
- * the same bundles, so cross-checking the path would reject a control iframe's assets.
- */
 async function authorizeFreshRequest(request: Request): Promise<ServeActor | null> {
     const token = bearerOrQueryToken(request);
     if (token) {
@@ -72,10 +56,7 @@ async function authorizeFreshRequest(request: Request): Promise<ServeActor | nul
     }
 
     const { authContext } = await resolveRequestAuthContext(request);
-    let device: AuthContext['device'] = authContext.device;
-    if (!device) {
-        device = (await resolveWallMediaCookieAuthContext(request)) ?? undefined;
-    }
+    const device = authContext.device;
     if (device?.kind === 'wall' && device.wallId) {
         return { surface: 'wall', wallId: device.wallId };
     }
@@ -108,7 +89,6 @@ function buildRelayedHeaders(upstream: Response): Headers {
     return headers;
 }
 
-/** Keeps a redirect inside our origin so the demos VM's address is never disclosed. */
 function rewriteLocation(location: string, upstreamOrigin: string): string {
     try {
         const resolved = new URL(location, upstreamOrigin);
@@ -163,7 +143,7 @@ async function handler({ request }: { request: Request }): Promise<Response> {
         if (!actor) {
             await logAuditDenied({
                 action: 'SERVE_DENIED',
-                reasonCode: 'NO_WALL_DEVICE_OR_CONTROL_TOKEN',
+                reasonCode: 'NOT_BOUND_OR_NO_CREDENTIAL',
                 resourceType: 'project',
                 resourceId: projectId,
                 authContext: { guest: true },
@@ -191,7 +171,6 @@ async function handler({ request }: { request: Request }): Promise<Response> {
             method: request.method,
             headers: buildForwardedHeaders(request),
             body: request.body,
-            // Streams the request body instead of buffering it.
             duplex: 'half',
             redirect: 'manual',
             signal: AbortSignal.timeout(SERVE_FETCH_TIMEOUT_MS)
@@ -223,8 +202,6 @@ async function handler({ request }: { request: Request }): Promise<Response> {
     }
 
     if (freshlyAuthorized) {
-        // Logged on first authorisation only — every asset the demo loads would otherwise
-        // write an audit row.
         await logAuditSuccess({
             action: 'SERVE_AUTHORIZED',
             resourceType: 'project',

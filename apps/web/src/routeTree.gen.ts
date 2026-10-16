@@ -55,6 +55,7 @@ import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
+import { Route as ApiWallServeCookieRouteImport } from './routes/api/wall/serve-cookie'
 import { Route as ServeProjectIdSplatRouteImport } from './routes/serve.$projectId.$'
 import { Route as AuthQuarryProjectsProjectIdRouteRouteImport } from './routes/_auth/quarry/projects/$projectId/route'
 import { Route as AuthQuarryProjectsNewRouteImport } from './routes/_auth/quarry/projects/new'
@@ -304,6 +305,11 @@ const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
   path: '/api/wall/media-cookie',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWallServeCookieRoute = ApiWallServeCookieRouteImport.update({
+  id: '/api/wall/serve-cookie',
+  path: '/api/wall/serve-cookie',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ServeProjectIdSplatRoute = ServeProjectIdSplatRouteImport.update({
   id: '/serve/$projectId/$',
   path: '/serve/$projectId/$',
@@ -460,6 +466,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
@@ -523,6 +530,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry': typeof AuthQuarryIndexRoute
   '/admin/signage': typeof AdminSignageIndexRoute
@@ -591,6 +599,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/_auth/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
@@ -659,6 +668,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
     | '/quarry/'
     | '/admin/signage/'
@@ -722,6 +732,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
     | '/quarry'
     | '/admin/signage'
@@ -789,6 +800,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/uploads/$'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
     | '/_auth/quarry/'
     | '/admin/signage/'
@@ -843,6 +855,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
+  ApiWallServeCookieRoute: typeof ApiWallServeCookieRoute
   ServeProjectIdSplatRoute: typeof ServeProjectIdSplatRoute
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
@@ -1172,6 +1185,13 @@ declare module '@tanstack/react-router' {
       path: '/api/wall/media-cookie'
       fullPath: '/api/wall/media-cookie'
       preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wall/serve-cookie': {
+      id: '/api/wall/serve-cookie'
+      path: '/api/wall/serve-cookie'
+      fullPath: '/api/wall/serve-cookie'
+      preLoaderRoute: typeof ApiWallServeCookieRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/serve/$projectId/$': {
@@ -1515,6 +1535,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
+  ApiWallServeCookieRoute: ApiWallServeCookieRoute,
   ServeProjectIdSplatRoute: ServeProjectIdSplatRoute,
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
