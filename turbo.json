@@ -34,7 +34,7 @@
         "PROXY_ALLOW_MISSING_REFERRER",
         "PROXY_FETCH_TIMEOUT_MS",
         "PROXY_MAX_BYTES",
-        "DEMOS_FQDN",
+        "DEMOS_HOSTS",
         "SERVE_FETCH_TIMEOUT_MS",
         "SERVE_WS_CONNECT_TIMEOUT_MS",
         "FFMPEG_PATH",

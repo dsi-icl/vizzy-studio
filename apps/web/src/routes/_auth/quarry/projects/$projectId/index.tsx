@@ -47,6 +47,8 @@ function InfoTab() {
                     visibility: project.visibility,
                     heroImages: project.heroImages,
                     customPort: project.customPort ? String(project.customPort) : '',
+                    customHost: project.customHost ?? '',
+                    customStripPrefix: project.customStripPrefix ?? false,
                     customRenderCompat: project.customRenderCompat ?? false,
                     collaborators: project.collaborators
                 }}

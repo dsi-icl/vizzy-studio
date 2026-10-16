@@ -4,7 +4,13 @@ import { createWebSocketProxy, defineHooks, type Peer } from 'crossws';
 import WebSocket from 'ws';
 
 import { isCustomProject } from '~/lib/customProject';
-import { parseServeSessionPath, serveBasePath, serveSessionBasePath } from '~/lib/serveUrls';
+import {
+    parseServeSessionPath,
+    resolveDemoHost,
+    serveBasePath,
+    serveSessionBasePath,
+    upstreamPathname
+} from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
@@ -67,7 +73,24 @@ export async function resolveServeWebSocketUpstream(request: Request): Promise<s
         return null;
     }
 
-    return `ws://${env.DEMOS_FQDN}:${port}${serveBasePath(projectId)}${parsed.rest}${url.search}`;
+    const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
+    if (!host) {
+        await logAuditFailure({
+            action: 'SERVE_WS_FAILED',
+            reasonCode: 'DEMO_HOST_NOT_ALLOWED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext
+        });
+        return null;
+    }
+
+    const pathname = upstreamPathname(
+        { projectId, rest: parsed.rest },
+        `${serveBasePath(projectId)}${parsed.rest}`,
+        project.customStripPrefix
+    );
+    return `ws://${host}:${port}${pathname}${url.search}`;
 }
 
 function resolvedUpstream(peer: Peer): string | null {

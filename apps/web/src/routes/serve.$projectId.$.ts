@@ -7,9 +7,11 @@ import {
     buildServeUpstreamUrl,
     parseServePath,
     parseServeSessionPath,
+    resolveDemoHost,
     rewriteServeLocation,
     serveBasePath,
-    serveSessionBasePath
+    serveSessionBasePath,
+    upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { getProject } from '~/server/projects';
@@ -164,10 +166,30 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     const upstreamPath = `${serveBasePath(projectId)}${session.rest}`;
 
+    const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
+    if (!host) {
+        await logAuditFailure({
+            action: 'SERVE_PROXY_FAILED',
+            reasonCode: 'DEMO_HOST_NOT_ALLOWED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Demo host is not configured', { status: 503 });
+    }
+
     const upstreamUrl = buildServeUpstreamUrl({
-        host: env.DEMOS_FQDN,
+        host,
         port,
-        pathname: upstreamPath,
+        pathname: upstreamPathname(
+            { projectId, rest: session.rest },
+            upstreamPath,
+            project.customStripPrefix
+        ),
         search: url.search
     });
 

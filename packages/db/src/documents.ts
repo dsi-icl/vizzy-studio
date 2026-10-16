@@ -62,6 +62,8 @@ export interface ProjectDocument {
     visibility: ProjectVisibility;
     heroImages: string[];
     customPort?: number | null;
+    customHost?: string | null;
+    customStripPrefix?: boolean;
     /** @deprecated */
     customControlUrl?: string | null;
     /** @deprecated */
