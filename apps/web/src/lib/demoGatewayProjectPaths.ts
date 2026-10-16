@@ -1,15 +1,16 @@
 import {
     isAllowedDemoPath,
+    isOtherDemoRootPath,
     isProjectDemoRootPath,
     parseDemoSource,
-    type DemoGatewayKind
+    type DemoGatewayKind,
+    type DemoPathPolicy
 } from './demoGatewayPaths';
 
 const PROJECT_ID = /^[a-f\d]{24}$/i;
 const ROUTE_ID = /^[A-Za-z\d_-]{22}$/;
-const SLUG = /^[a-z\d][a-z\d_-]*$/i;
 
-export function parseDemoProjects(raw: string): Map<string, string> | null {
+export function parseDemoProjects(raw: string, policy: DemoPathPolicy): Map<string, string> | null {
     if (!raw.trim()) return new Map();
     try {
         const value: unknown = JSON.parse(raw);
@@ -24,13 +25,7 @@ export function parseDemoProjects(raw: string): Map<string, string> | null {
             )
                 return null;
             const slug = (config as Record<string, unknown>).slug;
-            if (
-                typeof slug !== 'string' ||
-                !SLUG.test(slug) ||
-                !parseDemoSource(`http://demo.invalid/${slug}/`, 'http://demo.invalid')
-            )
-                return null;
-            if (['assets', 'demos'].includes(slug)) return null;
+            if (typeof slug !== 'string' || !policy.has(slug)) return null;
             projects.set(projectId.toLowerCase(), slug);
         }
         return projects;
@@ -86,24 +81,32 @@ export function buildProjectDemoLaunchUrl(
     return url.toString();
 }
 
-export function upstreamDemoPath(resourcePath: string, slug: string): string | null {
+export function upstreamDemoPath(
+    resourcePath: string,
+    slug: string,
+    policy: DemoPathPolicy
+): string | null {
     if (
         !resourcePath.startsWith('/') ||
         resourcePath.startsWith('//') ||
         resourcePath.startsWith('/_launch/')
     )
         return null;
-    const path = isProjectDemoRootPath(resourcePath) ? resourcePath : `/${slug}${resourcePath}`;
-    return isAllowedDemoPath(path, slug) ? path : null;
+    if (!policy.has(slug)) return null;
+    if (isProjectDemoRootPath(resourcePath, slug, policy)) return resourcePath;
+    if (isOtherDemoRootPath(resourcePath, slug, policy)) return null;
+    const path = `/${slug}${resourcePath}`;
+    return isAllowedDemoPath(path, slug, policy) ? path : null;
 }
 
 export function publicDemoPath(
     projectId: string,
     upstreamPath: string,
     slug: string,
+    policy: DemoPathPolicy,
     routeId?: string
 ): string | null {
-    if (!PROJECT_ID.test(projectId) || !isAllowedDemoPath(upstreamPath, slug)) return null;
+    if (!PROJECT_ID.test(projectId) || !isAllowedDemoPath(upstreamPath, slug, policy)) return null;
     const prefix = `/${slug}`;
     const resourcePath =
         upstreamPath === prefix
@@ -119,24 +122,26 @@ export function resolveProjectDemoSource(
     projectId: string,
     publicOrigin: string,
     sourceOrigin: string,
-    projects: Map<string, string>
+    projects: Map<string, string>,
+    policy: DemoPathPolicy
 ): { slug: string; entryPath: string } | null {
     try {
         const url = new URL(rawUrl);
         if (url.username || url.password || url.hash) return null;
         const configuredSlug = projects.get(projectId.toLowerCase());
+        if (!configuredSlug) return null;
         if (url.origin === new URL(publicOrigin).origin) {
             const path = parseProjectDemoPath(url.pathname);
-            if (!path || path.projectId !== projectId.toLowerCase() || !configuredSlug) return null;
+            if (!path || path.projectId !== projectId.toLowerCase()) return null;
             if (path.resourcePath.startsWith('/s/') || path.resourcePath.startsWith('/_launch/'))
                 return null;
-            const upstreamPath = upstreamDemoPath(path.resourcePath, configuredSlug);
+            const upstreamPath = upstreamDemoPath(path.resourcePath, configuredSlug, policy);
             return upstreamPath
                 ? { slug: configuredSlug, entryPath: `${upstreamPath}${url.search}` }
                 : null;
         }
-        const legacy = parseDemoSource(rawUrl, sourceOrigin);
-        if (!legacy || (configuredSlug && configuredSlug !== legacy.slug)) return null;
+        const legacy = parseDemoSource(rawUrl, sourceOrigin, policy);
+        if (!legacy || configuredSlug !== legacy.slug) return null;
         return { slug: legacy.slug, entryPath: `${legacy.entry.pathname}${legacy.entry.search}` };
     } catch {
         return null;

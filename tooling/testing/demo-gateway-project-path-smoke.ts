@@ -10,6 +10,7 @@ const scopeId = 13;
 
 process.env.VITE_BASE_URL = publicOrigin;
 process.env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN = publicOrigin;
+process.env.SERVER_DEMO_GATEWAY_PATHS = JSON.stringify({ bitcoin: ['api', 'bus'] });
 process.env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN = sourceOrigin;
 process.env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN = upstreamOrigin;
 

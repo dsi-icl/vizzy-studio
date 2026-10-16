@@ -6,6 +6,7 @@ import { scopedState, wallBindings } from '~/lib/busState';
 import {
     directDemoPath,
     isAllowedDemoPath,
+    parseDemoPathPolicy,
     parseDemoLaunchPath,
     parseDirectDemoUpstreams,
     safeDemoRedirect
@@ -32,7 +33,10 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 // once streaming starts, a fixed total deadline would cut off valid responses.
 const TILE_HEADER_TIMEOUT_MS = 210_000;
 const DO_IMAGE_HEADER_TIMEOUT_MS = 360_000;
-const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
+const pathPolicy = parseDemoPathPolicy(env.SERVER_DEMO_GATEWAY_PATHS);
+const directUpstreams = pathPolicy
+    ? parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS, pathPolicy)
+    : null;
 const REQUEST_HEADERS = [
     'accept',
     'accept-encoding',
@@ -305,7 +309,7 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
     ) {
         return response(503, 'Demo gateway is not configured');
     }
-    if (!directUpstreams || (!upstreamOrigin && directUpstreams.size === 0)) {
+    if (!pathPolicy || !directUpstreams || (!upstreamOrigin && directUpstreams.size === 0)) {
         return response(503, 'Demo gateway is not configured');
     }
     if (env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !upstreamOrigin) {
@@ -348,7 +352,13 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         const session = issueDemoSession(grant);
         const entry = new URL(grant.entryPath, sourceOrigin ?? publicOrigin);
         const destinationPath = projectPathMode
-            ? publicDemoPath(grant.projectId, entry.pathname, grant.slug, session.routeId)
+            ? publicDemoPath(
+                  grant.projectId,
+                  entry.pathname,
+                  grant.slug,
+                  pathPolicy,
+                  session.routeId
+              )
             : entry.pathname;
         if (!destinationPath) return response(502, 'Demo path not found');
         const destination = new URL(`${destinationPath}${entry.search}`, publicOrigin);
@@ -393,9 +403,9 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         ? projectDemoSessionBase(grant.projectId, routedPath.routeId)
         : null;
     const demoPath = routedPath
-        ? upstreamDemoPath(routedPath.resourcePath, grant.slug)
+        ? upstreamDemoPath(routedPath.resourcePath, grant.slug, pathPolicy)
         : url.pathname;
-    if (!demoPath || !isAllowedDemoPath(demoPath, grant.slug))
+    if (!demoPath || !isAllowedDemoPath(demoPath, grant.slug, pathPolicy))
         return response(404, 'Demo path not found');
     const directRoute = directUpstreams.get(grant.slug);
     const selectedOrigin = directRoute?.origin ?? upstreamOrigin;
@@ -461,6 +471,7 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
             selectedOrigin,
             sourceOrigin ?? publicOrigin,
             grant.slug,
+            pathPolicy,
             directRoute
         );
         if (!safe) return response(502, 'Demo redirect left the allowed path');
@@ -470,6 +481,7 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
                 grant.projectId,
                 redirect.pathname,
                 grant.slug,
+                pathPolicy,
                 routedPath!.routeId
             );
             if (!path) return response(502, 'Demo redirect left the allowed path');

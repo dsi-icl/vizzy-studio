@@ -1,20 +1,44 @@
 import { describe, expect, test } from 'bun:test';
 
+import { parseDemoPathPolicy } from '../../src/lib/demoGatewayPaths';
 import {
     buildProjectDemoLaunchUrl,
-    parseDemoProjects,
+    parseDemoProjects as parseProjects,
     parseProjectDemoLaunchPath,
     parseProjectDemoPath,
     parseRoutedProjectDemoPath,
     projectDemoSessionBase,
-    publicDemoPath,
-    resolveProjectDemoSource,
-    upstreamDemoPath
+    publicDemoPath as publicPath,
+    resolveProjectDemoSource as resolveSource,
+    upstreamDemoPath as upstreamPath
 } from '../../src/lib/demoGatewayProjectPaths';
 
 const id = '69fb297952b72213cf9f59b8';
 const publicOrigin = 'https://vizzy.dsi.ic.ac.uk';
 const sourceOrigin = 'https://vizzy-studio-demos.dsi.ic.ac.uk';
+const policy = parseDemoPathPolicy(
+    JSON.stringify({
+        bitcoin: ['api', 'ws', 'bus', 'btc-globe'],
+        sustainability: [],
+        flyconnectome: [],
+        nightingale: ['nightingale-wall', 'nightingale-screen', 'nightingale-control'],
+        'london-map': [],
+        ideafast: ['observatory'],
+        'do-image': [],
+        'do-stroke-map-germany': []
+    })
+)!;
+const parseDemoProjects = (raw: string) => parseProjects(raw, policy);
+const upstreamDemoPath = (path: string, slug: string) => upstreamPath(path, slug, policy);
+const publicDemoPath = (id: string, path: string, slug: string, routeId?: string) =>
+    publicPath(id, path, slug, policy, routeId);
+const resolveProjectDemoSource = (
+    url: string,
+    projectId: string,
+    publicOrigin: string,
+    sourceOrigin: string,
+    projects: Map<string, string>
+) => resolveSource(url, projectId, publicOrigin, sourceOrigin, projects, policy);
 const projects = parseDemoProjects(JSON.stringify({ [id]: { slug: 'bitcoin' } }))!;
 
 describe('project path demo gateway', () => {

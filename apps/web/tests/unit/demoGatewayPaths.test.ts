@@ -3,18 +3,59 @@ import { describe, expect, test } from 'bun:test';
 import {
     buildDemoLaunchUrl,
     directDemoPath,
-    isAllowedDemoPath,
+    isAllowedDemoPath as checkDemoPath,
     parseDemoLaunchPath,
-    parseDemoSource,
-    parseDirectDemoUpstreams,
-    safeDemoRedirect
+    parseDemoSource as parseSource,
+    parseDemoPathPolicy,
+    parseDirectDemoUpstreams as parseUpstreams,
+    safeDemoRedirect as rewriteRedirect,
+    type DirectDemoUpstream
 } from '../../src/lib/demoGatewayPaths';
 
 const PROJECT_ID = '69fb297952b72213cf9f59b8';
 const PUBLIC_ORIGIN = 'https://vizzy-studio-demos.dsi.ic.ac.uk';
 const UPSTREAM_ORIGIN = new URL('http://146.169.9.215:5780');
+const POLICY = parseDemoPathPolicy(
+    JSON.stringify({
+        bitcoin: ['api', 'ws', 'bus', 'btc-globe'],
+        sustainability: ['api', 'bus', 'network', 'pages'],
+        flyconnectome: [],
+        nightingale: ['nightingale-wall', 'nightingale-screen', 'nightingale-control'],
+        'london-map': [],
+        ideafast: ['observatory'],
+        'do-image': [],
+        'do-stroke-map-germany': []
+    })
+)!;
+const parseDemoSource = (url: string, origin: string) => parseSource(url, origin, POLICY);
+const parseDirectDemoUpstreams = (raw: string) => parseUpstreams(raw, POLICY);
+const isAllowedDemoPath = (path: string, slug: string) => checkDemoPath(path, slug, POLICY);
+const safeDemoRedirect = (
+    location: string,
+    upstreamRequest: URL,
+    upstreamOrigin: URL,
+    publicOrigin: URL,
+    slug: string,
+    route?: DirectDemoUpstream
+) => rewriteRedirect(location, upstreamRequest, upstreamOrigin, publicOrigin, slug, POLICY, route);
 
 describe('host based demo gateway paths', () => {
+    test('rejects invalid or ambiguous operator path rules', () => {
+        expect(parseDemoPathPolicy('')).toBeNull();
+        expect(parseDemoPathPolicy('{"bitcoin":["api","api"]}')).toBeNull();
+        expect(parseDemoPathPolicy('{"bitcoin":["nightingale"],"nightingale":[]}')).toBeNull();
+        expect(parseDemoPathPolicy('{"bitcoin":["screen"]}')).toBeNull();
+        expect(parseDemoPathPolicy('{"bitcoin":["api"]}')?.get('bitcoin')?.has('api')).toBe(true);
+    });
+
+    test('accepts a new demo and its root path through configuration alone', () => {
+        const configured = parseDemoPathPolicy('{"new-demo":["new-resource"],"other-demo":[]}')!;
+        expect(
+            parseSource(`${PUBLIC_ORIGIN}/new-demo/control`, PUBLIC_ORIGIN, configured)?.slug
+        ).toBe('new-demo');
+        expect(checkDemoPath('/new-resource/file.json', 'new-demo', configured)).toBe(true);
+        expect(checkDemoPath('/new-resource/file.json', 'other-demo', configured)).toBe(false);
+    });
     test('creates a launch URL on the existing demos host', () => {
         const launch = buildDemoLaunchUrl(PUBLIC_ORIGIN, PROJECT_ID, 'screen', 'one-use-ticket');
         expect(launch).toBe(

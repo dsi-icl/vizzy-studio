@@ -13,6 +13,10 @@ const wallId = 'bitcoin-wall';
 const scopeId = 41;
 
 process.env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN = demoOrigin;
+process.env.SERVER_DEMO_GATEWAY_PATHS = JSON.stringify({
+    bitcoin: ['api', 'ws', 'bus'],
+    sustainability: ['api', 'pages', 'network']
+});
 process.env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN = upstreamOrigin;
 process.env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS = JSON.stringify({
     sustainability: { origin: directOrigin, assetsFromRoot: true }

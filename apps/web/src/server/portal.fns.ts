@@ -4,6 +4,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { scopedState, wallBindings } from '~/lib/busState';
 import {
     buildDemoLaunchUrl,
+    parseDemoPathPolicy,
     parseDemoSource,
     parseDirectDemoUpstreams
 } from '~/lib/demoGatewayPaths';
@@ -130,7 +131,9 @@ export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
         if (!project) throw new Error('Project not found');
         const rawUrl =
             data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
-        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS);
+        const pathPolicy = parseDemoPathPolicy(env.SERVER_DEMO_GATEWAY_PATHS);
+        if (!pathPolicy) throw new Error('Demo path configuration is invalid');
+        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS, pathPolicy);
         if (!projects) throw new Error('Demo project mapping is invalid');
         const source = rawUrl
             ? projectPathMode
@@ -139,9 +142,10 @@ export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
                       data.projectId,
                       env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
                       env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
-                      projects
+                      projects,
+                      pathPolicy
                   )
-                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN, pathPolicy)
             : null;
         if (!source) {
             if (projectPathMode && rawUrl && isManagedDemoUrl(rawUrl)) {
@@ -149,7 +153,10 @@ export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
             }
             return null;
         }
-        const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
+        const directUpstreams = parseDirectDemoUpstreams(
+            env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS,
+            pathPolicy
+        );
         if (!directUpstreams) throw new Error('Demo direct upstream configuration is invalid');
         if (!env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !directUpstreams.has(source.slug)) {
             return null;
@@ -219,7 +226,9 @@ export const $issueAdminDemoPreviewLaunch = createServerFn({ method: 'POST' })
         if (!project) throw new Error('Project not found');
         const rawUrl =
             data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
-        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS);
+        const pathPolicy = parseDemoPathPolicy(env.SERVER_DEMO_GATEWAY_PATHS);
+        if (!pathPolicy) throw new Error('Demo path configuration is invalid');
+        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS, pathPolicy);
         if (!projects) throw new Error('Demo project mapping is invalid');
         const source = rawUrl
             ? projectPathMode
@@ -228,12 +237,16 @@ export const $issueAdminDemoPreviewLaunch = createServerFn({ method: 'POST' })
                       data.projectId,
                       env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
                       env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
-                      projects
+                      projects,
+                      pathPolicy
                   )
-                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN, pathPolicy)
             : null;
         if (!source) throw new Error('This project has no demo URL on the protected host');
-        const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
+        const directUpstreams = parseDirectDemoUpstreams(
+            env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS,
+            pathPolicy
+        );
         if (!directUpstreams) throw new Error('Demo direct upstream configuration is invalid');
         if (!env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !directUpstreams.has(source.slug)) {
             throw new Error('No upstream is configured for this demo');

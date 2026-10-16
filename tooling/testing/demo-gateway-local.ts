@@ -13,6 +13,7 @@ const wallId = 'local-wall';
 const scopeId = 1;
 
 process.env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN = demoOrigin;
+process.env.SERVER_DEMO_GATEWAY_PATHS = JSON.stringify({ bitcoin: ['api'] });
 process.env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN = upstreamOrigin;
 delete process.env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS;
 

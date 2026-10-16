@@ -1,33 +1,47 @@
 export type DemoGatewayKind = 'controller' | 'screen';
 
-export const SHARED_DEMO_PATHS = new Set([
-    'api',
-    'ws',
-    'bus',
-    'control',
-    'screen',
-    'pages',
-    'network',
-    'data',
-    'maps',
-    'tiles',
-    'btc-globe',
-    'nightingale-model'
-]);
-
-// Existing builds publish some resources beside their primary demo slug.
-// Keep these aliases scoped to the demo that uses them.
-const DEMO_PATH_ALIASES: Readonly<Record<string, readonly string[]>> = {
-    nightingale: ['nightingale-wall', 'nightingale-screen', 'nightingale-control'],
-    ideafast: ['observatory']
-};
-const DEMO_PATH_ALIAS_NAMES = new Set(Object.values(DEMO_PATH_ALIASES).flat());
+export type DemoPathPolicy = ReadonlyMap<string, ReadonlySet<string>>;
 
 const PROJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const DEMO_SLUG_PATTERN = /^[a-z\d][a-z\d_-]*$/i;
 
-function isReservedDemoSlug(slug: string): boolean {
-    return slug === '_vizzy' || SHARED_DEMO_PATHS.has(slug);
+const RESERVED_PATHS = new Set(['_vizzy', 'demos', 'assets', 's', 'control', 'screen']);
+
+/** Root segments outside /<slug>, declared by the operator for each demo. */
+export function parseDemoPathPolicy(raw: string): DemoPathPolicy | null {
+    try {
+        const parsed: unknown = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const policy = new Map<string, ReadonlySet<string>>();
+        const allRoots = new Set<string>();
+        for (const [slug, paths] of Object.entries(parsed)) {
+            if (
+                !DEMO_SLUG_PATTERN.test(slug) ||
+                RESERVED_PATHS.has(slug) ||
+                !Array.isArray(paths)
+            ) {
+                return null;
+            }
+            const roots = new Set<string>();
+            for (const path of paths) {
+                if (
+                    typeof path !== 'string' ||
+                    !DEMO_SLUG_PATTERN.test(path) ||
+                    RESERVED_PATHS.has(path) ||
+                    roots.has(path)
+                ) {
+                    return null;
+                }
+                roots.add(path);
+                allRoots.add(path);
+            }
+            policy.set(slug, roots);
+        }
+        if (!policy.size || [...policy.keys()].some((slug) => allRoots.has(slug))) return null;
+        return policy;
+    } catch {
+        return null;
+    }
 }
 
 export interface DirectDemoUpstream {
@@ -35,14 +49,17 @@ export interface DirectDemoUpstream {
     assetsFromRoot: boolean;
 }
 
-export function parseDirectDemoUpstreams(raw: string): Map<string, DirectDemoUpstream> | null {
+export function parseDirectDemoUpstreams(
+    raw: string,
+    policy: DemoPathPolicy
+): Map<string, DirectDemoUpstream> | null {
     if (!raw.trim()) return new Map();
     try {
         const parsed: unknown = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
         const routes = new Map<string, DirectDemoUpstream>();
         for (const [slug, value] of Object.entries(parsed)) {
-            if (!DEMO_SLUG_PATTERN.test(slug) || isReservedDemoSlug(slug)) {
+            if (!policy.has(slug)) {
                 return null;
             }
             if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -80,7 +97,8 @@ export function directDemoPath(pathname: string, slug: string, route: DirectDemo
 
 export function parseDemoSource(
     rawUrl: string,
-    publicOrigin: string
+    publicOrigin: string,
+    policy: DemoPathPolicy
 ): { entry: URL; slug: string } | null {
     try {
         const entry = new URL(rawUrl);
@@ -90,7 +108,7 @@ export function parseDemoSource(
         }
         if (entry.username || entry.password || entry.hash) return null;
         const slug = entry.pathname.split('/')[1] ?? '';
-        if (!DEMO_SLUG_PATTERN.test(slug) || isReservedDemoSlug(slug)) {
+        if (!policy.has(slug)) {
             return null;
         }
         return { entry, slug };
@@ -122,27 +140,30 @@ export function buildDemoLaunchUrl(
     return url.toString();
 }
 
-export function isAllowedDemoPath(pathname: string, slug: string): boolean {
+export function isAllowedDemoPath(pathname: string, slug: string, policy: DemoPathPolicy): boolean {
     if (!pathname.startsWith('/') || pathname.startsWith('//')) return false;
+    if (!policy.has(slug)) return false;
     if (pathname === `/${slug}` || pathname.startsWith(`/${slug}/`)) return true;
-    if (
-        DEMO_PATH_ALIASES[slug]?.some(
-            (alias) => pathname === `/${alias}` || pathname.startsWith(`/${alias}/`)
-        )
-    ) {
-        return true;
-    }
     const first = pathname.split('/')[1] ?? '';
-    return SHARED_DEMO_PATHS.has(first);
+    return policy.get(slug)?.has(first) ?? false;
 }
 
-export function isProjectDemoRootPath(pathname: string): boolean {
+export function isProjectDemoRootPath(
+    pathname: string,
+    slug: string,
+    policy: DemoPathPolicy
+): boolean {
     const first = pathname.split('/')[1] ?? '';
-    // A project's /control and /screen are routes inside its own demo slug.
-    return (
-        (SHARED_DEMO_PATHS.has(first) && first !== 'control' && first !== 'screen') ||
-        DEMO_PATH_ALIAS_NAMES.has(first)
-    );
+    return policy.get(slug)?.has(first) ?? false;
+}
+
+export function isOtherDemoRootPath(
+    pathname: string,
+    slug: string,
+    policy: DemoPathPolicy
+): boolean {
+    const first = pathname.split('/')[1] ?? '';
+    return [...policy].some(([otherSlug, paths]) => otherSlug !== slug && paths.has(first));
 }
 
 export function safeDemoRedirect(
@@ -151,6 +172,7 @@ export function safeDemoRedirect(
     upstreamOrigin: URL,
     publicOrigin: URL,
     slug: string,
+    policy: DemoPathPolicy,
     directRoute?: DirectDemoUpstream
 ): string | null {
     try {
@@ -164,7 +186,7 @@ export function safeDemoRedirect(
         ) {
             resolved.pathname = `/${slug}${resolved.pathname}`;
         }
-        if (!isAllowedDemoPath(resolved.pathname, slug)) return null;
+        if (!isAllowedDemoPath(resolved.pathname, slug, policy)) return null;
         return `${resolved.pathname}${resolved.search}${resolved.hash}`;
     } catch {
         return null;
