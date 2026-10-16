@@ -63,6 +63,7 @@ interface ProjectCardProps {
     onActiveWallIdChange?: (wallId: string | null) => void;
     previewHref?: string;
     previewDisabledReason?: string;
+    loadUnavailableMessage?: string;
 }
 
 function buildControllerUrl(
@@ -120,7 +121,8 @@ function ProjectCardDialogBody({
     presetWallId,
     hideWallPicker = false,
     previewHref,
-    previewDisabledReason
+    previewDisabledReason,
+    loadUnavailableMessage
 }: ProjectCardProps) {
     const { state, fullscreen } = useMorphingDialog();
     const loadInFlightRef = useRef(false);
@@ -391,21 +393,23 @@ function ProjectCardDialogBody({
                             ) : null}
 
                             {!isFullscreen ? (
-                                onLoadProject ? (
+                                onLoadProject || previewState !== 'hidden' ? (
                                     <div className="mt-5 flex items-center gap-2">
-                                        <Button
-                                            className="min-w-0 flex-1"
-                                            onClick={handleLoadButton}
-                                            disabled={isLoadingWall}
-                                        >
-                                            {isLoadingWall ? (
-                                                <CircleNotchIcon className="animate-spin" />
-                                            ) : (
-                                                <>
-                                                    Load project <ArrowRightIcon />
-                                                </>
-                                            )}
-                                        </Button>
+                                        {onLoadProject ? (
+                                            <Button
+                                                className="min-w-0 flex-1"
+                                                onClick={handleLoadButton}
+                                                disabled={isLoadingWall}
+                                            >
+                                                {isLoadingWall ? (
+                                                    <CircleNotchIcon className="animate-spin" />
+                                                ) : (
+                                                    <>
+                                                        Load project <ArrowRightIcon />
+                                                    </>
+                                                )}
+                                            </Button>
+                                        ) : null}
                                         {previewState === 'enabled' ? (
                                             <Button
                                                 type="button"
@@ -472,11 +476,11 @@ function ProjectCardDialogBody({
                                             </Tooltip>
                                         ) : null}
                                     </div>
-                                ) : (
+                                ) : loadUnavailableMessage ? (
                                     <p className="mt-5 text-xs text-muted-foreground">
-                                        Sign in to load this project on a wall.
+                                        {loadUnavailableMessage}
                                     </p>
-                                )
+                                ) : null
                             ) : null}
                         </MorphingDialogDescription>
                     </div>
@@ -521,7 +525,8 @@ export function ProjectCard({
     presetWallId,
     hideWallPicker,
     previewHref,
-    previewDisabledReason
+    previewDisabledReason,
+    loadUnavailableMessage
 }: ProjectCardProps) {
     const activeWallIdRef = useRef<string | null>(null);
     const prevDialogStateRef = useRef<'closed' | 'expanded' | 'fullscreen' | 'minimized'>('closed');
@@ -671,6 +676,7 @@ export function ProjectCard({
                         project={project}
                         previewHref={previewHref}
                         previewDisabledReason={previewDisabledReason}
+                        loadUnavailableMessage={loadUnavailableMessage}
                         presetWallId={presetWallId}
                         availableWalls={availableWalls}
                         hideWallPicker={hideWallPicker}
