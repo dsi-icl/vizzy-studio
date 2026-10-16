@@ -22,7 +22,7 @@ export type DemoGrant = DemoGrantBase &
           }
     );
 
-type StoredGrant = DemoGrant & { expiresAt: number };
+type StoredGrant = DemoGrant & { expiresAt: number; routeId?: string };
 
 const LAUNCH_TTL_MS = 60_000;
 const SESSION_TTL_MS = 12 * 60 * 60_000;
@@ -57,13 +57,18 @@ export function consumeDemoLaunch(ticket: string): DemoGrant | null {
     return rest;
 }
 
-export function issueDemoSession(grant: DemoGrant): { token: string; expiresAt: number } {
+export function issueDemoSession(grant: DemoGrant): {
+    token: string;
+    routeId: string;
+    expiresAt: number;
+} {
     prune(sessions);
     const sessionToken = token();
+    const routeId = randomBytes(16).toString('base64url');
     const expiresAt =
         Date.now() + (grant.access === 'admin-preview' ? ADMIN_PREVIEW_TTL_MS : SESSION_TTL_MS);
-    sessions.set(sessionToken, { ...grant, expiresAt });
-    return { token: sessionToken, expiresAt };
+    sessions.set(sessionToken, { ...grant, expiresAt, routeId });
+    return { token: sessionToken, routeId, expiresAt };
 }
 
 export function getDemoSession(sessionToken: string): DemoGrant | null {
@@ -75,8 +80,13 @@ export function getDemoSession(sessionToken: string): DemoGrant | null {
         return null;
     }
     if (grant.access === 'wall') grant.expiresAt = now + SESSION_TTL_MS;
-    const { expiresAt: _, ...rest } = grant;
+    const { expiresAt: _, routeId: __, ...rest } = grant;
     return rest;
+}
+
+export function getDemoSessionRouteId(sessionToken: string): string | null {
+    if (!getDemoSession(sessionToken)) return null;
+    return sessions.get(sessionToken)?.routeId ?? null;
 }
 
 function revokeWhere(predicate: (grant: StoredGrant) => boolean): void {

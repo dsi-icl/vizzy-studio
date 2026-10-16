@@ -11,8 +11,17 @@ import {
     safeDemoRedirect
 } from '~/lib/demoGatewayPaths';
 import {
+    parseProjectDemoLaunchPath,
+    parseProjectDemoPath,
+    parseRoutedProjectDemoPath,
+    projectDemoSessionBase,
+    publicDemoPath,
+    upstreamDemoPath
+} from '~/lib/demoGatewayProjectPaths';
+import {
     consumeDemoLaunch,
     getDemoSession,
+    getDemoSessionRouteId,
     issueDemoSession,
     type DemoGrant
 } from '~/lib/demoGatewaySessions';
@@ -83,7 +92,10 @@ function configuredOrigin(raw: string): URL | null {
     }
 }
 
-function sessionCookieName(publicOrigin: URL): string {
+function sessionCookieName(publicOrigin: URL, projectPathMode = false): string {
+    if (projectPathMode) {
+        return `${publicOrigin.protocol === 'https:' ? '__Secure-' : ''}vizzy_demo_session`;
+    }
     return publicOrigin.protocol === 'https:' ? '__Host-vizzy_demo_session' : 'vizzy_demo_session';
 }
 
@@ -150,20 +162,32 @@ function safeOrigin(request: Request, publicOrigin: URL): boolean {
     return !origin || origin === publicOrigin.origin;
 }
 
-function upstreamHeaders(request: Request, publicOrigin: URL, grant: DemoGrant): Headers {
+function upstreamHeaders(
+    request: Request,
+    publicOrigin: URL,
+    sourceOrigin: URL,
+    grant: DemoGrant,
+    projectPathMode: boolean,
+    publicSessionBase: string | null
+): Headers {
     const headers = new Headers();
     for (const name of REQUEST_HEADERS) {
         const value = request.headers.get(name);
         if (value) headers.set(name, value);
     }
-    const cookies = demoCookies(request, sessionCookieName(publicOrigin));
+    // Main Vizzy auth cookies must never reach a demo process.
+    const cookies = projectPathMode ? null : demoCookies(request, sessionCookieName(publicOrigin));
     if (cookies) headers.set('Cookie', cookies);
     if (request.headers.get('origin') === publicOrigin.origin) {
-        headers.set('Origin', publicOrigin.origin);
+        headers.set('Origin', sourceOrigin.origin);
     }
     // The demos Nginx selects its shared /api, /ws and /bus upstream by Referer.
-    headers.set('Host', publicOrigin.host);
-    headers.set('Referer', `${publicOrigin.origin}/${grant.slug}/`);
+    headers.set('Host', sourceOrigin.host);
+    headers.set('Referer', `${sourceOrigin.origin}/${grant.slug}/`);
+    headers.set('X-Vizzy-Demo-Project-Id', grant.projectId);
+    headers.set('X-Vizzy-Demo-Surface', grant.kind);
+    if (grant.access === 'wall') headers.set('X-Vizzy-Demo-Wall-Id', grant.wallId);
+    if (publicSessionBase) headers.set('X-Vizzy-Demo-Public-Base', publicSessionBase);
     return headers;
 }
 
@@ -176,14 +200,23 @@ function safeSetCookie(raw: string, reservedName: string, secure: boolean): stri
     return filtered.join('; ');
 }
 
-function copyResponseHeaders(upstream: Response, publicOrigin: URL): Headers {
+function copyResponseHeaders(
+    upstream: Response,
+    publicOrigin: URL,
+    projectPathMode: boolean
+): Headers {
     const headers = new Headers();
     for (const [name, value] of upstream.headers) {
         const lower = name.toLowerCase();
         if (BLOCKED_RESPONSE_HEADERS.has(lower) || lower.startsWith('access-control-')) continue;
+        if (
+            projectPathMode &&
+            ['clear-site-data', 'service-worker-allowed', 'refresh'].includes(lower)
+        )
+            continue;
         headers.set(name, value);
     }
-    for (const raw of upstream.headers.getSetCookie()) {
+    for (const raw of projectPathMode ? [] : upstream.headers.getSetCookie()) {
         const cookie = safeSetCookie(
             raw,
             sessionCookieName(publicOrigin),
@@ -200,10 +233,13 @@ function copyResponseHeaders(upstream: Response, publicOrigin: URL): Headers {
 function websocketResponse(
     request: Request,
     publicOrigin: URL,
+    sourceOrigin: URL,
     upstreamOrigin: URL,
     upstreamPath: string,
     grant: DemoGrant,
-    sessionToken: string
+    sessionToken: string,
+    projectPathMode: boolean,
+    publicSessionBase: string | null
 ): Response {
     const target = new URL(`${upstreamPath}${new URL(request.url).search}`, upstreamOrigin);
     target.protocol = upstreamOrigin.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -211,10 +247,14 @@ function websocketResponse(
     const proxy = createWebSocketProxy({
         target,
         headers: {
-            Host: publicOrigin.host,
-            Origin: publicOrigin.origin,
-            Referer: `${publicOrigin.origin}/${grant.slug}/`,
-            ...(demoCookies(request, sessionCookieName(publicOrigin))
+            Host: sourceOrigin.host,
+            Origin: sourceOrigin.origin,
+            Referer: `${sourceOrigin.origin}/${grant.slug}/`,
+            'X-Vizzy-Demo-Project-Id': grant.projectId,
+            'X-Vizzy-Demo-Surface': grant.kind,
+            ...(grant.access === 'wall' ? { 'X-Vizzy-Demo-Wall-Id': grant.wallId } : {}),
+            ...(publicSessionBase ? { 'X-Vizzy-Demo-Public-Base': publicSessionBase } : {}),
+            ...(!projectPathMode && demoCookies(request, sessionCookieName(publicOrigin))
                 ? { Cookie: demoCookies(request, sessionCookieName(publicOrigin))! }
                 : {})
         }
@@ -243,9 +283,28 @@ function websocketResponse(
 }
 
 export async function handleDemoGatewayRequest(request: Request): Promise<Response | null> {
-    const publicOrigin = configuredOrigin(env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN);
+    const projectPathMode = !!env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN;
+    const publicOrigin = configuredOrigin(
+        projectPathMode
+            ? env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN
+            : env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN
+    );
+    const sourceOrigin = configuredOrigin(env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN);
     const upstreamOrigin = configuredOrigin(env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN);
     if (!publicOrigin || requestHost(request) !== publicOrigin.host) return null;
+    const url = new URL(request.url);
+    if (
+        projectPathMode &&
+        !url.pathname.startsWith('/demos/') &&
+        url.pathname !== '/_vizzy/gateway-health'
+    )
+        return null;
+    if (
+        projectPathMode &&
+        (!sourceOrigin || publicOrigin.origin !== configuredOrigin(env.VITE_BASE_URL)?.origin)
+    ) {
+        return response(503, 'Demo gateway is not configured');
+    }
     if (!directUpstreams || (!upstreamOrigin && directUpstreams.size === 0)) {
         return response(503, 'Demo gateway is not configured');
     }
@@ -253,7 +312,6 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         return response(503, 'Demo gateway is not configured');
     }
 
-    const url = new URL(request.url);
     if (!isSafePath(url.pathname)) return response(404, 'Demo path not found');
 
     if (url.pathname === '/_vizzy/gateway-health') {
@@ -263,9 +321,13 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         return response(200, 'OK');
     }
 
-    if (url.pathname.startsWith('/_vizzy/')) {
-        const launch = parseDemoLaunchPath(url.pathname);
-        if (!launch) return response(404, 'Demo launch not found');
+    const launch = projectPathMode
+        ? parseProjectDemoLaunchPath(url.pathname)
+        : parseDemoLaunchPath(url.pathname);
+    if (!projectPathMode && url.pathname.startsWith('/_vizzy/') && !launch) {
+        return response(404, 'Demo launch not found');
+    }
+    if (launch) {
         if (request.method !== 'GET' || request.headers.has('upgrade')) {
             return response(405, 'Demo launch requires GET');
         }
@@ -284,7 +346,12 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
             return response(503, 'Demo upstream is not configured');
         }
         const session = issueDemoSession(grant);
-        const destination = new URL(grant.entryPath, publicOrigin);
+        const entry = new URL(grant.entryPath, sourceOrigin ?? publicOrigin);
+        const destinationPath = projectPathMode
+            ? publicDemoPath(grant.projectId, entry.pathname, grant.slug, session.routeId)
+            : entry.pathname;
+        if (!destinationPath) return response(502, 'Demo path not found');
+        const destination = new URL(`${destinationPath}${entry.search}`, publicOrigin);
         if (grant.kind === 'controller' && grant.access === 'wall') {
             destination.searchParams.set('l', 'gallery');
             destination.searchParams.set('w', grant.wallId);
@@ -298,7 +365,7 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
             status: 303,
             headers: {
                 Location: `${destination.pathname}${destination.search}`,
-                'Set-Cookie': `${sessionCookieName(publicOrigin)}=${session.token}; Path=/; HttpOnly; ${publicOrigin.protocol === 'https:' ? 'Secure; ' : ''}SameSite=Lax`,
+                'Set-Cookie': `${sessionCookieName(publicOrigin, projectPathMode)}=${session.token}; Path=${projectPathMode ? `${projectDemoSessionBase(grant.projectId, session.routeId)}/` : '/'}; HttpOnly; ${publicOrigin.protocol === 'https:' ? 'Secure; ' : ''}SameSite=Lax`,
                 'Cache-Control': 'no-store',
                 'Referrer-Policy': 'no-referrer'
             }
@@ -309,33 +376,51 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         return response(405, 'Method not allowed');
     }
     if (!safeOrigin(request, publicOrigin)) return response(403, 'Demo origin is not allowed');
-    const sessionToken = readCookie(request, sessionCookieName(publicOrigin));
+    const projectPath = projectPathMode ? parseProjectDemoPath(url.pathname) : null;
+    if (projectPathMode && !projectPath) return response(404, 'Demo path not found');
+    const routedPath = projectPathMode ? parseRoutedProjectDemoPath(url.pathname) : null;
+    if (projectPathMode && !routedPath) return response(401, 'Demo session path is missing');
+    const sessionToken = readCookie(request, sessionCookieName(publicOrigin, projectPathMode));
     const grant = sessionToken ? getDemoSession(sessionToken) : null;
     if (!grant || !grantIsLive(grant)) return response(401, 'Demo session is missing or expired');
-    if (!isAllowedDemoPath(url.pathname, grant.slug)) return response(404, 'Demo path not found');
+    if (
+        routedPath &&
+        (routedPath.projectId !== grant.projectId.toLowerCase() ||
+            getDemoSessionRouteId(sessionToken!) !== routedPath.routeId)
+    )
+        return response(401, 'Demo session does not match project');
+    const publicSessionBase = routedPath
+        ? projectDemoSessionBase(grant.projectId, routedPath.routeId)
+        : null;
+    const demoPath = routedPath
+        ? upstreamDemoPath(routedPath.resourcePath, grant.slug)
+        : url.pathname;
+    if (!demoPath || !isAllowedDemoPath(demoPath, grant.slug))
+        return response(404, 'Demo path not found');
     const directRoute = directUpstreams.get(grant.slug);
     const selectedOrigin = directRoute?.origin ?? upstreamOrigin;
     if (!selectedOrigin || selectedOrigin.origin === publicOrigin.origin) {
         return response(503, 'Demo upstream is not configured');
     }
-    const upstreamPath = directRoute
-        ? directDemoPath(url.pathname, grant.slug, directRoute)
-        : url.pathname;
+    const upstreamPath = directRoute ? directDemoPath(demoPath, grant.slug, directRoute) : demoPath;
 
     if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
         return websocketResponse(
             request,
             publicOrigin,
+            sourceOrigin ?? publicOrigin,
             selectedOrigin,
             upstreamPath,
             grant,
-            sessionToken!
+            sessionToken!,
+            projectPathMode,
+            publicSessionBase
         );
     }
     if (request.headers.has('upgrade')) return response(426, 'Unsupported upgrade');
 
     const target = new URL(`${upstreamPath}${url.search}`, selectedOrigin);
-    const headerTimeoutMs = extendedHeaderTimeoutMs(url.pathname);
+    const headerTimeoutMs = extendedHeaderTimeoutMs(demoPath);
     const headerAbort = headerTimeoutMs === null ? null : new AbortController();
     const headerTimer =
         headerAbort && headerTimeoutMs !== null
@@ -343,7 +428,14 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
             : null;
     const init: RequestInit & { duplex?: 'half' } = {
         method: request.method,
-        headers: upstreamHeaders(request, publicOrigin, grant),
+        headers: upstreamHeaders(
+            request,
+            publicOrigin,
+            sourceOrigin ?? publicOrigin,
+            grant,
+            projectPathMode,
+            publicSessionBase
+        ),
         redirect: 'manual',
         signal: headerAbort?.signal ?? AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
     };
@@ -360,19 +452,31 @@ export async function handleDemoGatewayRequest(request: Request): Promise<Respon
         if (headerTimer) clearTimeout(headerTimer);
     }
 
-    const headers = copyResponseHeaders(upstream, publicOrigin);
+    const headers = copyResponseHeaders(upstream, publicOrigin, projectPathMode);
     const location = upstream.headers.get('location');
     if (location && upstream.status >= 300 && upstream.status < 400) {
         const safe = safeDemoRedirect(
             location,
             target,
             selectedOrigin,
-            publicOrigin,
+            sourceOrigin ?? publicOrigin,
             grant.slug,
             directRoute
         );
         if (!safe) return response(502, 'Demo redirect left the allowed path');
-        headers.set('Location', safe);
+        if (projectPathMode) {
+            const redirect = new URL(safe, sourceOrigin ?? publicOrigin);
+            const path = publicDemoPath(
+                grant.projectId,
+                redirect.pathname,
+                grant.slug,
+                routedPath!.routeId
+            );
+            if (!path) return response(502, 'Demo redirect left the allowed path');
+            headers.set('Location', `${path}${redirect.search}${redirect.hash}`);
+        } else {
+            headers.set('Location', safe);
+        }
     }
     const noBody = request.method === 'HEAD' || [204, 205, 304].includes(upstream.status);
     return new Response(noBody ? null : upstream.body, { status: upstream.status, headers });

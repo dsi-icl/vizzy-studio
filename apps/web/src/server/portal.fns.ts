@@ -7,6 +7,11 @@ import {
     parseDemoSource,
     parseDirectDemoUpstreams
 } from '~/lib/demoGatewayPaths';
+import {
+    buildProjectDemoLaunchUrl,
+    parseDemoProjects,
+    resolveProjectDemoSource
+} from '~/lib/demoGatewayProjectPaths';
 import { issueDemoLaunch } from '~/lib/demoGatewaySessions';
 import { createPortalToken, pruneExpiredPortalTokens } from '~/lib/portalTokens';
 import { z } from '~/lib/zod';
@@ -14,6 +19,17 @@ import { logAuditDenied } from '~/server/audit';
 import { actorAuthContextMiddleware } from '~/server/auth-context.middleware';
 import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
+
+function isManagedDemoUrl(rawUrl: string): boolean {
+    try {
+        const origin = new URL(rawUrl).origin;
+        return [env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN]
+            .filter(Boolean)
+            .some((configured) => new URL(configured).origin === origin);
+    } catch {
+        return false;
+    }
+}
 
 export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
     .validator(
@@ -66,7 +82,7 @@ export const $issueControllerPortalToken = createServerFn({ method: 'POST' })
         return createPortalToken(data.wallId, scopeId);
     });
 
-/** A wall screen or gallery can open its bound demo through the private demo host. */
+/** A wall screen or gallery can open its bound demo through the gateway. */
 export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
     .validator(
         z.object({
@@ -106,17 +122,33 @@ export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
             throw new Error('Wall is not bound to this project');
         }
 
-        if (!env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
+        const projectPathMode = !!env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN;
+        if (!projectPathMode && !env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
             return null;
         }
         const project = await getProject(data.projectId);
         if (!project) throw new Error('Project not found');
         const rawUrl =
             data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
+        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS);
+        if (!projects) throw new Error('Demo project mapping is invalid');
         const source = rawUrl
-            ? parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+            ? projectPathMode
+                ? resolveProjectDemoSource(
+                      rawUrl,
+                      data.projectId,
+                      env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
+                      env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                      projects
+                  )
+                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
             : null;
-        if (!source) return null;
+        if (!source) {
+            if (projectPathMode && rawUrl && isManagedDemoUrl(rawUrl)) {
+                throw new Error('This demo project is missing a valid gateway route');
+            }
+            return null;
+        }
         const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
         if (!directUpstreams) throw new Error('Demo direct upstream configuration is invalid');
         if (!env.SERVER_DEMO_GATEWAY_UPSTREAM_ORIGIN && !directUpstreams.has(source.slug)) {
@@ -130,15 +162,25 @@ export const $issueDemoGatewayLaunch = createServerFn({ method: 'POST' })
             projectId: data.projectId,
             kind: data.kind,
             slug: source.slug,
-            entryPath: `${source.entry.pathname}${source.entry.search}`
+            entryPath:
+                'entryPath' in source
+                    ? source.entryPath
+                    : `${source.entry.pathname}${source.entry.search}`
         });
         return {
-            url: buildDemoLaunchUrl(
-                env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
-                data.projectId,
-                data.kind,
-                ticket
-            ),
+            url: projectPathMode
+                ? buildProjectDemoLaunchUrl(
+                      env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
+                      data.projectId,
+                      data.kind,
+                      ticket
+                  )
+                : buildDemoLaunchUrl(
+                      env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                      data.projectId,
+                      data.kind,
+                      ticket
+                  ),
             expiresAt
         };
     });
@@ -169,15 +211,26 @@ export const $issueAdminDemoPreviewLaunch = createServerFn({ method: 'POST' })
             throw new Error('Forbidden');
         }
 
-        if (!env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
+        const projectPathMode = !!env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN;
+        if (!projectPathMode && !env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN) {
             throw new Error('Demo gateway is not configured');
         }
         const project = await getProject(data.projectId);
         if (!project) throw new Error('Project not found');
         const rawUrl =
             data.kind === 'controller' ? project.customControlUrl : project.customRenderUrl;
+        const projects = parseDemoProjects(env.SERVER_DEMO_GATEWAY_PROJECTS);
+        if (!projects) throw new Error('Demo project mapping is invalid');
         const source = rawUrl
-            ? parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
+            ? projectPathMode
+                ? resolveProjectDemoSource(
+                      rawUrl,
+                      data.projectId,
+                      env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
+                      env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                      projects
+                  )
+                : parseDemoSource(rawUrl, env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN)
             : null;
         if (!source) throw new Error('This project has no demo URL on the protected host');
         const directUpstreams = parseDirectDemoUpstreams(env.SERVER_DEMO_GATEWAY_DIRECT_UPSTREAMS);
@@ -191,15 +244,25 @@ export const $issueAdminDemoPreviewLaunch = createServerFn({ method: 'POST' })
             projectId: data.projectId,
             kind: data.kind,
             slug: source.slug,
-            entryPath: `${source.entry.pathname}${source.entry.search}`
+            entryPath:
+                'entryPath' in source
+                    ? source.entryPath
+                    : `${source.entry.pathname}${source.entry.search}`
         });
         return {
-            url: buildDemoLaunchUrl(
-                env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
-                data.projectId,
-                data.kind,
-                ticket
-            ),
+            url: projectPathMode
+                ? buildProjectDemoLaunchUrl(
+                      env.SERVER_DEMO_GATEWAY_PUBLIC_ORIGIN,
+                      data.projectId,
+                      data.kind,
+                      ticket
+                  )
+                : buildDemoLaunchUrl(
+                      env.SERVER_DEMO_GATEWAY_SOURCE_ORIGIN,
+                      data.projectId,
+                      data.kind,
+                      ticket
+                  ),
             expiresAt
         };
     });

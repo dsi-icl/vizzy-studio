@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
     consumeDemoLaunch,
     getDemoSession,
+    getDemoSessionRouteId,
     issueDemoLaunch,
     issueDemoSession,
     revokeDemoSessionsForScope,
@@ -29,6 +30,7 @@ describe('demo gateway tickets and sessions', () => {
 
         const session = issueDemoSession(grant);
         expect(session.token).not.toBe(launch.ticket);
+        expect(getDemoSessionRouteId(session.token)).toBe(session.routeId);
         expect(getDemoSession(session.token)).toEqual(grant);
         expect(getDemoSession(launch.ticket)).toBeNull();
     });

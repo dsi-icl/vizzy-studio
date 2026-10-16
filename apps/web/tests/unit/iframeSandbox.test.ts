@@ -23,6 +23,12 @@ describe('resolveIframeSandbox', () => {
         }
     );
 
+    test('lets team-reviewed project demos use same-origin API and WebSocket', () => {
+        expect(sandboxFor('/demos/69fb297952b72213cf9f59b8/screen')).toBe(
+            'allow-scripts allow-same-origin'
+        );
+    });
+
     test.each([
         'https://demos.example.ac.uk/ideafast/screen?c=0&r=0',
         'http://demos.example.ac.uk/sentinel/screen',
