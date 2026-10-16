@@ -41,7 +41,7 @@ const safeDemoRedirect = (
 
 describe('host based demo gateway paths', () => {
     test('rejects invalid or ambiguous operator path rules', () => {
-        expect(parseDemoPathPolicy('')).toBeNull();
+        expect(parseDemoPathPolicy('')?.size).toBe(0);
         expect(parseDemoPathPolicy('{"bitcoin":["api","api"]}')).toBeNull();
         expect(parseDemoPathPolicy('{"bitcoin":["nightingale"],"nightingale":[]}')).toBeNull();
         expect(parseDemoPathPolicy('{"bitcoin":["screen"]}')).toBeNull();
@@ -55,6 +55,9 @@ describe('host based demo gateway paths', () => {
         ).toBe('new-demo');
         expect(checkDemoPath('/new-resource/file.json', 'new-demo', configured)).toBe(true);
         expect(checkDemoPath('/new-resource/file.json', 'other-demo', configured)).toBe(false);
+        expect(
+            parseSource(`${PUBLIC_ORIGIN}/plain-demo/control`, PUBLIC_ORIGIN, configured)?.slug
+        ).toBe('plain-demo');
     });
     test('creates a launch URL on the existing demos host', () => {
         const launch = buildDemoLaunchUrl(PUBLIC_ORIGIN, PROJECT_ID, 'screen', 'one-use-ticket');

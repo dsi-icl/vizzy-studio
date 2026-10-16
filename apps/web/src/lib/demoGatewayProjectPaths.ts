@@ -2,6 +2,7 @@ import {
     isAllowedDemoPath,
     isOtherDemoRootPath,
     isProjectDemoRootPath,
+    isValidDemoSlug,
     parseDemoSource,
     type DemoGatewayKind,
     type DemoPathPolicy
@@ -25,7 +26,7 @@ export function parseDemoProjects(raw: string, policy: DemoPathPolicy): Map<stri
             )
                 return null;
             const slug = (config as Record<string, unknown>).slug;
-            if (typeof slug !== 'string' || !policy.has(slug)) return null;
+            if (typeof slug !== 'string' || !isValidDemoSlug(slug, policy)) return null;
             projects.set(projectId.toLowerCase(), slug);
         }
         return projects;
@@ -92,7 +93,7 @@ export function upstreamDemoPath(
         resourcePath.startsWith('/_launch/')
     )
         return null;
-    if (!policy.has(slug)) return null;
+    if (!isValidDemoSlug(slug, policy)) return null;
     if (isProjectDemoRootPath(resourcePath, slug, policy)) return resourcePath;
     if (isOtherDemoRootPath(resourcePath, slug, policy)) return null;
     const path = `/${slug}${resourcePath}`;

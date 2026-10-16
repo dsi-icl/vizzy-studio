@@ -7,8 +7,9 @@ const DEMO_SLUG_PATTERN = /^[a-z\d][a-z\d_-]*$/i;
 
 const RESERVED_PATHS = new Set(['_vizzy', 'demos', 'assets', 's', 'control', 'screen']);
 
-/** Root segments outside /<slug>, declared by the operator for each demo. */
+/** Only root segments outside /<slug> need an operator declaration. */
 export function parseDemoPathPolicy(raw: string): DemoPathPolicy | null {
+    if (!raw.trim()) return new Map();
     try {
         const parsed: unknown = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
@@ -37,11 +38,19 @@ export function parseDemoPathPolicy(raw: string): DemoPathPolicy | null {
             }
             policy.set(slug, roots);
         }
-        if (!policy.size || [...policy.keys()].some((slug) => allRoots.has(slug))) return null;
+        if ([...policy.keys()].some((slug) => allRoots.has(slug))) return null;
         return policy;
     } catch {
         return null;
     }
+}
+
+export function isValidDemoSlug(slug: string, policy: DemoPathPolicy): boolean {
+    return (
+        DEMO_SLUG_PATTERN.test(slug) &&
+        !RESERVED_PATHS.has(slug) &&
+        ![...policy.values()].some((paths) => paths.has(slug))
+    );
 }
 
 export interface DirectDemoUpstream {
@@ -59,7 +68,7 @@ export function parseDirectDemoUpstreams(
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
         const routes = new Map<string, DirectDemoUpstream>();
         for (const [slug, value] of Object.entries(parsed)) {
-            if (!policy.has(slug)) {
+            if (!isValidDemoSlug(slug, policy)) {
                 return null;
             }
             if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -108,7 +117,7 @@ export function parseDemoSource(
         }
         if (entry.username || entry.password || entry.hash) return null;
         const slug = entry.pathname.split('/')[1] ?? '';
-        if (!policy.has(slug)) {
+        if (!isValidDemoSlug(slug, policy)) {
             return null;
         }
         return { entry, slug };
@@ -142,7 +151,7 @@ export function buildDemoLaunchUrl(
 
 export function isAllowedDemoPath(pathname: string, slug: string, policy: DemoPathPolicy): boolean {
     if (!pathname.startsWith('/') || pathname.startsWith('//')) return false;
-    if (!policy.has(slug)) return false;
+    if (!isValidDemoSlug(slug, policy)) return false;
     if (pathname === `/${slug}` || pathname.startsWith(`/${slug}/`)) return true;
     const first = pathname.split('/')[1] ?? '';
     return policy.get(slug)?.has(first) ?? false;
