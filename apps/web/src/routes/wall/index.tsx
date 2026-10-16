@@ -13,11 +13,12 @@ import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { imagePreviewUrl } from '~/lib/mediaUtils';
-import { signedFetch } from '~/lib/signedFetch';
+import { createSignedServerFnFetch, signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import type { LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
+import { $issueDemoGatewayLaunch } from '~/server/portal.fns';
 
 const HYDRATE_FADE_MS = 1000;
 const HYDRATE_IFRAME_TIMEOUT_MS = 2000;
@@ -46,6 +47,12 @@ export const Route = createFileRoute('/wall/')({
 function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
+    const [customRenderLaunch, setCustomRenderLaunch] = useState<{
+        url: string;
+        gateway: boolean;
+    } | null>(null);
+    const [activeProjectId, setActiveProjectId] = useState<string | undefined>();
+    const [activeCommitId, setActiveCommitId] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProxy, setCustomRenderProxy] = useState(false);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
@@ -171,7 +178,16 @@ function WallApp() {
     const applyHydrateContent = (next: HydrateStagePayload) => {
         engine?.layers.clear();
         setLayers(next.layers);
+        if (
+            next.customRenderUrl !== customRenderUrl ||
+            next.projectId !== activeProjectId ||
+            next.commitId !== activeCommitId
+        ) {
+            setCustomRenderLaunch(null);
+        }
         setCustomRenderUrl(next.customRenderUrl);
+        setActiveProjectId(next.projectId);
+        setActiveCommitId(next.commitId);
         setCustomRenderCompat(next.customRenderCompat);
         setCustomRenderProxy(next.customRenderProxy);
         setStageLayout(next.layout);
@@ -248,6 +264,29 @@ function WallApp() {
     useEffect(() => {
         stageHydrateRef.current = stageHydrate;
     });
+
+    useEffect(() => {
+        if (!customRenderUrl || !wallId || !activeProjectId) return;
+        let cancelled = false;
+        $issueDemoGatewayLaunch({
+            data: { wallId, projectId: activeProjectId, kind: 'screen' },
+            fetch: createSignedServerFnFetch({ deviceKind: 'wall', wallId })
+        })
+            .then((result) => {
+                if (cancelled) return;
+                setCustomRenderLaunch(
+                    result?.url
+                        ? { url: result.url, gateway: true }
+                        : { url: customRenderUrl, gateway: false }
+                );
+            })
+            .catch((error) => {
+                if (!cancelled) console.error('[Wall] Demo screen launch failed', error);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [customRenderUrl, activeProjectId, activeCommitId, wallId, iframeGateCycle]);
 
     useEffect(() => {
         if (window.__WALL_RELOADING__) {
@@ -815,13 +854,16 @@ function WallApp() {
 
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
-        const iframeSrc = new URL(customRenderUrl);
+        if (!customRenderLaunch) return stage;
+        const iframeSrc = new URL(customRenderLaunch.url);
         if (!customRenderCompat) {
             iframeSrc.searchParams.set('c', String(col));
             iframeSrc.searchParams.set('r', String(row));
         }
         const finalSrc =
-            customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
+            customRenderProxy &&
+            !customRenderLaunch.gateway &&
+            /^https?:\/\//i.test(iframeSrc.toString())
                 ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
                 : iframeSrc.toString();
         const worldWidth = screenWidth * columns;

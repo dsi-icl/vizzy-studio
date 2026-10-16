@@ -60,6 +60,7 @@ interface ProjectCardProps {
     onWallRebootRequest?: (wallId: string) => Promise<boolean | void> | boolean | void;
     onWallUnbindRequest?: (wallId: string) => Promise<boolean | void> | boolean | void;
     onControllerTokenRequest?: (wallId: string) => Promise<string | null | void>;
+    onControllerUrlRequest?: (wallId: string) => Promise<string | null | void>;
     onActiveWallIdChange?: (wallId: string | null) => void;
     previewHref?: string;
     previewDisabledReason?: string;
@@ -115,6 +116,7 @@ function ProjectCardDialogBody({
     onLoadProject,
     onWallRebootRequest,
     onControllerTokenRequest,
+    onControllerUrlRequest,
     onActiveWallIdChange,
     availableWalls = [],
     presetWallId,
@@ -129,6 +131,7 @@ function ProjectCardDialogBody({
     const [activeWallId, setActiveWallId] = useState<string | null>(null);
     const [controllerReloadNonce, setControllerReloadNonce] = useState(0);
     const [controllerPortalToken, setControllerPortalToken] = useState<string | null>(null);
+    const [controllerLaunchUrl, setControllerLaunchUrl] = useState<string | null>(null);
     const [isRefreshingController, setIsRefreshingController] = useState(false);
     const [refreshRebootDone, setRefreshRebootDone] = useState(false);
     const [refreshIframeLoaded, setRefreshIframeLoaded] = useState(false);
@@ -142,18 +145,30 @@ function ProjectCardDialogBody({
     useEffect(() => {
         if (!activeWallId) {
             setControllerPortalToken(null);
+            setControllerLaunchUrl(null);
             return;
         }
-        if (!onControllerTokenRequest) {
+        if (!onControllerTokenRequest && !onControllerUrlRequest) {
             setControllerPortalToken(null);
+            setControllerLaunchUrl(null);
             return;
         }
 
         let cancelled = false;
         setControllerPortalToken(null);
+        setControllerLaunchUrl(null);
 
         (async () => {
             try {
+                if (onControllerUrlRequest) {
+                    const url = await onControllerUrlRequest(activeWallId);
+                    if (cancelled) return;
+                    if (url) {
+                        setControllerLaunchUrl(url);
+                        return;
+                    }
+                }
+                if (!onControllerTokenRequest) return;
                 const token = await onControllerTokenRequest(activeWallId);
                 if (cancelled) return;
                 setControllerPortalToken(token ?? null);
@@ -166,7 +181,7 @@ function ProjectCardDialogBody({
         return () => {
             cancelled = true;
         };
-    }, [activeWallId, controllerReloadNonce, onControllerTokenRequest]);
+    }, [activeWallId, controllerReloadNonce, onControllerTokenRequest, onControllerUrlRequest]);
 
     const handleSelectWall = async (wallId: string) => {
         if (!onLoadProject) return;
@@ -237,6 +252,9 @@ function ProjectCardDialogBody({
 
     const controllerUrl = useMemo(() => {
         if (!activeWallId) return '';
+        if (controllerLaunchUrl) {
+            return `${controllerLaunchUrl}${controllerLaunchUrl.includes('?') ? '&' : '?'}_r=${controllerReloadNonce}`;
+        }
         if (onControllerTokenRequest && !controllerPortalToken) return '';
         const baseUrl = buildControllerUrl(
             project.customControlUrl,
@@ -246,6 +264,7 @@ function ProjectCardDialogBody({
         return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_r=${controllerReloadNonce}`;
     }, [
         activeWallId,
+        controllerLaunchUrl,
         controllerPortalToken,
         project.customControlUrl,
         controllerReloadNonce,
@@ -517,6 +536,7 @@ export function ProjectCard({
     onWallRebootRequest,
     onWallUnbindRequest,
     onControllerTokenRequest,
+    onControllerUrlRequest,
     availableWalls,
     presetWallId,
     hideWallPicker,
@@ -677,6 +697,7 @@ export function ProjectCard({
                         onLoadProject={onLoadProject}
                         onWallRebootRequest={onWallRebootRequest}
                         onControllerTokenRequest={onControllerTokenRequest}
+                        onControllerUrlRequest={onControllerUrlRequest}
                         onActiveWallIdChange={handleActiveWallIdChange}
                     />
                 </MorphingDialogContent>

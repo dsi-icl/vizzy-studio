@@ -52,14 +52,24 @@ jobs:
                     echo "enabled=false" >> "$GITHUB_OUTPUT"
                   fi
 
+            - name: Select image tags
+              id: tags
+              run: |
+                  {
+                    echo 'tags<<EOF'
+                    echo "sha-${GITHUB_SHA}"
+                    if [[ "${GITHUB_REF_NAME}" == "main" || "${GITHUB_REF_NAME}" == "develop" || "${GITHUB_REF_TYPE}" == "tag" ]]; then
+                      echo latest
+                    fi
+                    echo EOF
+                  } >> "$GITHUB_OUTPUT"
+
             - name: Build OCI image with Buildah
               id: build
               uses: redhat-actions/buildah-build@v2
               with:
                   image: ${{ steps.prep.outputs.owner_lc }}/vizzy-studio
-                  tags: |
-                      sha-${{ github.sha }}
-                      latest
+                  tags: ${{ steps.tags.outputs.tags }}
                   containerfiles: |
                       ./Dockerfile
                   build-args: |

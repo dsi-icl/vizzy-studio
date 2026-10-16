@@ -1,0 +1,10 @@
+# Import this site block into the Vizzy VM's Caddyfile. The certificate is
+# provisioned before DNS moves away from the shared load balancer. The Vizzy
+# app remains one HTTP process on port 3670 for both the main site and demos.
+https://vizzy-studio-demos.dsi.ic.ac.uk {
+    tls /etc/vizzy-demo-gateway/fullchain.pem /etc/vizzy-demo-gateway/privkey.pem
+
+    # Caddy preserves Host, path, query, cookies and WebSocket upgrades.
+    # Vizzy's server.ts validates the demo session and forwards to demos VM.
+    reverse_proxy 127.0.0.1:3670
+}

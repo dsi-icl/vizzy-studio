@@ -7,8 +7,8 @@ const TRUSTED_SAME_ORIGIN = 'allow-scripts allow-same-origin';
 /** A genuinely remote document, isolated from us by the same-origin policy. */
 const REMOTE_ORIGIN = 'allow-scripts allow-same-origin allow-forms';
 
-/** Our own pages used as wall fallbacks, which are safe to let hydrate. */
-const TRUSTED_PATH_PREFIXES = ['/web-nonet', '/web-corsissue', '/web-placeholder'];
+/** Vizzy fallbacks and team-reviewed demos need same-origin API and WebSocket access. */
+const TRUSTED_PATH_PREFIXES = ['/web-nonet', '/web-corsissue', '/web-placeholder', '/demos/'];
 
 /** The app's own origin, or an empty string during server rendering. */
 function currentAppOrigin(): string {

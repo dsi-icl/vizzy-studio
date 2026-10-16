@@ -9,6 +9,7 @@ import { MongoClient } from 'mongodb';
 import { startMediaWorker } from '~/lib/jobs/mediaWorker';
 import { UPLOAD_DIR, TMP_DIR, ASSET_DIR } from '~/lib/serverVariables';
 import { getBootstrapStatus } from '~/server/bootstrap';
+import { handleDemoGatewayRequest } from '~/server/demoGateway';
 import { startSignageRunner } from '~/server/signageRunner';
 
 const bootIssues: string[] = [...bootHealth.issues];
@@ -208,6 +209,8 @@ export default createServerEntry({
                 headers: { 'Content-Type': 'text/html; charset=utf-8' }
             });
         }
+        const demoResponse = await handleDemoGatewayRequest(request);
+        if (demoResponse) return demoResponse;
         return handler.fetch(request);
     }
 });
