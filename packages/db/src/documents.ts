@@ -56,12 +56,12 @@ export interface ProjectDocument {
     visibility: ProjectVisibility;
     heroImages: string[];
     customPort?: number | null;
-    /** @deprecated Pre-`/serve` public demo URL. Retained as a reference for the demo's identity. */
+    /** @deprecated */
     customControlUrl?: string | null;
-    /** @deprecated Pre-`/serve` public demo URL; read only via `isCustomProject()`'s fallback. */
+    /** @deprecated */
     customRenderUrl?: string | null;
     customRenderCompat: boolean;
-    /** @deprecated Proxying is mandatory for custom projects; no longer written. */
+    /** @deprecated */
     customRenderProxy?: boolean;
     collaborators: Array<{ email: string; role: CollaboratorRole }>;
     /** Shared palette of recently picked colours, most recent first. */

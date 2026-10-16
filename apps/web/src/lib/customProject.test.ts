@@ -6,20 +6,16 @@ import { isCustomProject, withoutLegacyCustomUrls } from './customProject';
 describe('isCustomProject', () => {
     test('a configured port makes a project custom', () => {
         assert.equal(isCustomProject({ customPort: 3008 }), true);
-        assert.equal(isCustomProject({ customPort: null }), false);
     });
 
-    test('falls back to the legacy URL so a pre-/serve project is not silently normal', () => {
-        assert.equal(isCustomProject({ customRenderUrl: 'https://demos/x' }), true);
-        assert.equal(isCustomProject({ customRenderUrl: '  ' }), false);
-        assert.equal(isCustomProject({ customRenderUrl: null }), false);
+    test('anything else is a normal project', () => {
+        assert.equal(isCustomProject({ customPort: null }), false);
         assert.equal(isCustomProject({}), false);
     });
 });
 
 describe('withoutLegacyCustomUrls', () => {
     test('strips every pre-/serve demo URL from a client payload', () => {
-        // Bound to a variable first: a fresh literal would trip excess property checking.
         const stored = {
             id: 'p1',
             name: 'Custom demo',
@@ -30,22 +26,13 @@ describe('withoutLegacyCustomUrls', () => {
         };
         const projected = withoutLegacyCustomUrls(stored);
 
-        assert.deepEqual(projected, {
-            id: 'p1',
-            name: 'Custom demo',
-            isCustom: true,
-            customPort: 3008
-        });
-        assert.equal(JSON.stringify(projected).includes('demos'), false);
+        assert.deepEqual(projected, { id: 'p1', name: 'Custom demo', customPort: 3008 });
+        assert.equal(JSON.stringify(projected).includes('demos/x'), false);
     });
 
-    test('resolves isCustom for a project configured before /serve', () => {
-        assert.equal(
-            withoutLegacyCustomUrls({ customRenderUrl: 'https://demos/x/screen' }).isCustom,
-            true
-        );
-        assert.equal(withoutLegacyCustomUrls({ customRenderUrl: '' }).isCustom, false);
-        assert.equal(withoutLegacyCustomUrls({}).isCustom, false);
+    test('keeps customPort so the client resolves customness the same way the server does', () => {
+        const stored = { customPort: 3008, customRenderUrl: 'https://demos/x/screen' };
+        assert.equal(isCustomProject(withoutLegacyCustomUrls(stored)), true);
     });
 
     test('leaves a non-custom project otherwise untouched', () => {
@@ -53,8 +40,7 @@ describe('withoutLegacyCustomUrls', () => {
         assert.deepEqual(withoutLegacyCustomUrls(stored), {
             id: 'p2',
             name: 'Normal',
-            tags: ['a'],
-            isCustom: false
+            tags: ['a']
         });
     });
 });
