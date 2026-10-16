@@ -36,7 +36,10 @@ export function getAngleDelta(current: number, previous: number): number {
     return ((current - previous + 540) % 360) - 180;
 }
 
-export function touchToStagePoint(stage: Konva.Stage, touch: Touch): { x: number; y: number } {
+export function touchToStagePoint(
+    stage: Konva.Stage,
+    touch: Pick<Touch, 'clientX' | 'clientY'>
+): { x: number; y: number } {
     const rect = stage.container().getBoundingClientRect();
     const pointer = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
     const transform = stage.getAbsoluteTransform().copy();
@@ -88,4 +91,68 @@ export function getCullingPadding(
     const strokePadding =
         layer.type === 'line' || layer.type === 'shape' ? (layer.strokeWidth / 2) * scale : 0;
     return 20 + blurPadding + strokePadding;
+}
+
+export type ImagePinchPoint = { x: number; y: number };
+export type ImagePinchTransform = {
+    cx: number;
+    cy: number;
+    scaleX: number;
+    scaleY: number;
+    rotation: number;
+};
+
+// Reuse do-image's cursor/midpoint anchored model and limits. Vizzy also permits
+// mirrored layers, so clamp the magnitudes together without changing their signs.
+function scaleFactor(base: ImagePinchTransform, ratio: number) {
+    const x = Math.abs(base.scaleX),
+        y = Math.abs(base.scaleY);
+    if (!Number.isFinite(ratio) || ratio <= 0 || !x || !y) return 1;
+    return Math.max(Math.max(0.1 / x, 0.1 / y), Math.min(Math.min(1000 / x, 1000 / y), ratio));
+}
+
+export function scaleImageAroundPoint(
+    base: ImagePinchTransform,
+    pivot: ImagePinchPoint,
+    ratio: number
+): ImagePinchTransform {
+    const factor = scaleFactor(base, ratio);
+    return {
+        ...base,
+        cx: pivot.x + (base.cx - pivot.x) * factor,
+        cy: pivot.y + (base.cy - pivot.y) * factor,
+        scaleX: base.scaleX * factor,
+        scaleY: base.scaleY * factor
+    };
+}
+
+export function pinchImageTransform(
+    base: ImagePinchTransform,
+    start: [ImagePinchPoint, ImagePinchPoint],
+    current: [ImagePinchPoint, ImagePinchPoint]
+): ImagePinchTransform {
+    const initialDistance = getDistance(...start),
+        distance = getDistance(...current);
+    if (initialDistance < 1 || distance < 1) return base;
+    const factor = scaleFactor(base, distance / initialDistance);
+    const turn = getAngleDelta(getAngle(...current), getAngle(...start));
+    const radians = (turn * Math.PI) / 180;
+    const dx = base.cx - (start[0].x + start[1].x) / 2;
+    const dy = base.cy - (start[0].y + start[1].y) / 2;
+    return {
+        cx:
+            (current[0].x + current[1].x) / 2 +
+            (dx * Math.cos(radians) - dy * Math.sin(radians)) * factor,
+        cy:
+            (current[0].y + current[1].y) / 2 +
+            (dx * Math.sin(radians) + dy * Math.cos(radians)) * factor,
+        scaleX: base.scaleX * factor,
+        scaleY: base.scaleY * factor,
+        rotation: base.rotation + turn
+    };
+}
+
+export function imagePinchWheelFactor(deltaY: number, deltaMode: number, height: number) {
+    const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? height || 1 : 1;
+    return Math.exp(Math.max(-1, Math.min(1, (-deltaY * unit) / 100)));
 }

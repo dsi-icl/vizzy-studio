@@ -1,5 +1,7 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 
+import { isAssetProcessing } from '~/lib/mediaUtils';
+
 import {
     $getAudits,
     $getAuditsPage,
@@ -45,7 +47,10 @@ export const projectsQueryOptions = (includeArchived = false) =>
 export const projectAssetsQueryOptions = (projectId: string) =>
     queryOptions({
         queryKey: ['projects', projectId, 'assets'],
-        queryFn: () => $listAssets({ data: { projectId } })
+        queryFn: () => $listAssets({ data: { projectId } }),
+        refetchInterval: (query) => (query.state.data?.some(isAssetProcessing) ? 2000 : false),
+        refetchOnWindowFocus: 'always',
+        refetchOnReconnect: 'always'
     });
 
 export const projectPickerSelectedAssetsQueryOptions = (projectId: string, urls: string[]) => {

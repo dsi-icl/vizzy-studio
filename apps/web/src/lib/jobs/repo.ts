@@ -1,11 +1,90 @@
-import { ObjectId } from 'mongodb';
+import { createHash } from 'node:crypto';
+import { copyFile, link, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 
-import { collections } from '~/server/collections';
+import { db } from '@repo/db';
+import type { AssetDocument } from '@repo/db/documents';
+import type { ImageDeepZoomAsset } from '@repo/db/schema';
+import { ObjectId, type ClientSession } from 'mongodb';
 
-import type { JobDocument, JobPayload, JobResult, JobType } from './types';
+import { logAudit, type AuditLogInput } from '~/server/audit';
+import { dbCol, collections } from '~/server/collections';
+
+import { PUBLIC_ASSET_PROJECT_ID } from '../constants';
+import { ASSET_DIR } from '../serverVariables';
+import type { ImageTileUploadSettings } from './imageTileRuntime';
+import type {
+    JobDocument,
+    JobPayload,
+    JobResult,
+    JobType,
+    ProcessImageTilesPayload,
+    ProcessImageTilesResult
+} from './types';
 
 const LEASE_MS = 30_000;
 const RETRY_BACKOFF_MS = 5_000;
+
+async function auditImageTileJob(
+    job: JobDocument,
+    event: 'STARTED' | 'COMPLETED' | 'FAILED' | 'RETRY_SCHEDULED',
+    at: Date,
+    details: {
+        error?: string;
+        reasonCode?: string;
+        changes?: AuditLogInput['changes'];
+    } = {}
+) {
+    try {
+        const payload = job.payload as ProcessImageTilesPayload;
+        const asset =
+            payload.projectId && payload.createdBy
+                ? null
+                : await dbCol.assets.findDeepZoomUpload(payload.assetId);
+        await logAudit({
+            action: `IMAGE_TILE_PROCESSING_${event}`,
+            actorId: 'system:image-worker',
+            projectId: payload.projectId ?? asset?.projectId ?? null,
+            resourceType: 'asset',
+            resourceId: payload.assetId,
+            outcome: event === 'FAILED' || event === 'RETRY_SCHEDULED' ? 'failure' : 'success',
+            reasonCode: details.reasonCode,
+            error: details.error,
+            changes: {
+                status: {
+                    STARTED: 'running',
+                    COMPLETED: 'completed',
+                    FAILED: 'failed',
+                    RETRY_SCHEDULED: 'queued'
+                }[event],
+                sourceId: payload.sourceId,
+                width: payload.width,
+                height: payload.height,
+                startedAt: job.startedAt?.getTime() ?? null,
+                // Recovery measures time until detection, including the missed heartbeat window.
+                durationMs: job.startedAt
+                    ? Math.max(0, at.getTime() - job.startedAt.getTime())
+                    : null,
+                ...details.changes
+            },
+            executionContext: {
+                surface: 'job',
+                operation: 'process_image_tiles',
+                details: {
+                    jobId: String(job._id),
+                    nodeId: job.nodeId,
+                    workerId: job.leaseOwner ?? null,
+                    createdBy: payload.createdBy ?? asset?.createdBy ?? null,
+                    attempt: job.attempts,
+                    maxAttempts: job.maxAttempts
+                }
+            }
+        });
+    } catch (error) {
+        // Context lookup failures, like audit writes, must not change job outcomes.
+        console.error('[ImageTiles] Failed to write job audit:', error);
+    }
+}
 
 let indexesReady = false;
 
@@ -26,16 +105,20 @@ export async function enqueueJob({
     nodeId,
     type,
     payload,
-    maxAttempts = 3
+    maxAttempts = 3,
+    id = new ObjectId(),
+    session
 }: {
     nodeId: string;
     type: JobType;
     payload: JobPayload;
     maxAttempts?: number;
+    id?: ObjectId;
+    session?: ClientSession;
 }) {
     const now = new Date();
     const doc: JobDocument = {
-        _id: new ObjectId(),
+        _id: id,
         nodeId,
         type,
         status: 'queued' as const,
@@ -46,7 +129,7 @@ export async function enqueueJob({
         createdAt: now,
         updatedAt: now
     };
-    const inserted = await collections.jobs.insertOne(doc);
+    const inserted = await collections.jobs.insertOne(doc, { session });
     return inserted.insertedId;
 }
 
@@ -54,11 +137,16 @@ export async function getJobById(jobId: ObjectId) {
     return collections.jobs.findOne({ _id: jobId });
 }
 
-export async function claimNextJob(workerId: string, nodeId: string) {
+export async function claimNextJob(
+    workerId: string,
+    nodeId: string,
+    types: JobType[] = ['process_image_asset', 'process_video_asset']
+) {
     const now = new Date();
     const claimed = await collections.jobs.findOneAndUpdate(
         {
             nodeId,
+            type: { $in: types },
             status: 'queued',
             runAfter: { $lte: now }
         },
@@ -81,10 +169,20 @@ export async function claimNextJob(workerId: string, nodeId: string) {
     return claimed;
 }
 
-export async function heartbeatJob(jobId: ObjectId, workerId: string, progress?: number) {
+export async function heartbeatJob(
+    jobId: ObjectId,
+    workerId: string,
+    progress?: number,
+    requireLiveLease = false
+) {
     const now = new Date();
-    await collections.jobs.updateOne(
-        { _id: jobId, status: 'running', leaseOwner: workerId },
+    const result = await collections.jobs.updateOne(
+        {
+            _id: jobId,
+            status: 'running',
+            leaseOwner: workerId,
+            ...(requireLiveLease ? { leaseUntil: { $gt: now } } : {})
+        },
         {
             $set: {
                 leaseUntil: new Date(now.getTime() + LEASE_MS),
@@ -94,6 +192,7 @@ export async function heartbeatJob(jobId: ObjectId, workerId: string, progress?:
             }
         }
     );
+    return result.matchedCount === 1;
 }
 
 export async function completeJob(jobId: ObjectId, workerId: string, result: JobResult) {
@@ -142,17 +241,28 @@ export async function failJob(jobId: ObjectId, workerId: string, error: string) 
     );
 }
 
-export async function markStalledRunningJobs(staleMs: number) {
+export async function markStalledRunningJobs(
+    staleMs: number,
+    scope: { nodeId?: string; types?: JobType[] } = {}
+) {
     const cutoff = new Date(Date.now() - staleMs);
     const cursor = collections.jobs.find({
+        ...(scope.nodeId ? { nodeId: scope.nodeId } : {}),
+        ...(scope.types ? { type: { $in: scope.types } } : {}),
         status: 'running',
         $or: [{ lastHeartbeatAt: { $lt: cutoff } }, { leaseUntil: { $lt: new Date() } }]
     });
     for await (const job of cursor) {
         const shouldRetry = job.attempts < job.maxAttempts;
         const now = new Date();
-        await collections.jobs.updateOne(
-            { _id: job._id, status: 'running' },
+        const result = await collections.jobs.updateOne(
+            {
+                _id: job._id,
+                status: 'running',
+                leaseOwner: job.leaseOwner,
+                attempts: job.attempts,
+                $or: [{ lastHeartbeatAt: { $lt: cutoff } }, { leaseUntil: { $lt: now } }]
+            },
             shouldRetry
                 ? {
                       $set: {
@@ -173,5 +283,324 @@ export async function markStalledRunningJobs(staleMs: number) {
                       $unset: { leaseOwner: '', leaseUntil: '' }
                   }
         );
+        if (result.matchedCount && job.type === 'process_image_tiles') {
+            await auditImageTileJob(job, shouldRetry ? 'RETRY_SCHEDULED' : 'FAILED', now, {
+                reasonCode: 'WORKER_HEARTBEAT_STALLED',
+                error: 'Job heartbeat stalled',
+                changes: shouldRetry ? { nextRetryAt: now.getTime() + RETRY_BACKOFF_MS } : undefined
+            });
+        }
     }
+}
+
+export function imageTileUploadId(projectId: string, uploadId: string) {
+    return createHash('sha256')
+        .update(`image-tiles:${projectId}:${uploadId}`)
+        .digest('hex')
+        .slice(0, 24);
+}
+
+export class ImageTileLeaseLost extends Error {
+    constructor() {
+        super('Image tile job lease was lost.');
+    }
+}
+
+export async function acceptImageTileUpload(input: {
+    id: string;
+    nodeId: string;
+    asset: Omit<AssetDocument, '_id' | 'id' | 'createdAt' | 'updatedAt'>;
+    payload: ProcessImageTilesPayload;
+}) {
+    return db.client.withSession((session) =>
+        session.withTransaction(async () => {
+            const existing = await dbCol.assets.findDeepZoomUpload(input.id, session);
+            if (existing) {
+                if (
+                    existing.projectId !== input.asset.projectId ||
+                    existing.createdBy !== input.asset.createdBy ||
+                    existing.url !== input.asset.url
+                ) {
+                    throw new Error('Conflicting image upload identity.');
+                }
+                return existing;
+            }
+            const asset = await dbCol.assets.insertDeepZoomUpload(input.id, input.asset, session);
+            await enqueueJob({
+                id: new ObjectId(input.id),
+                nodeId: input.nodeId,
+                type: 'process_image_tiles',
+                payload: {
+                    ...input.payload,
+                    projectId: input.asset.projectId,
+                    createdBy: input.asset.createdBy
+                },
+                session
+            });
+            return asset;
+        })
+    );
+}
+
+async function fenceLease(job: JobDocument, owner: string, session: ClientSession) {
+    const now = new Date();
+    const result = await collections.jobs.updateOne(
+        {
+            _id: job._id,
+            status: 'running',
+            leaseOwner: owner,
+            attempts: job.attempts,
+            leaseUntil: { $gt: now }
+        },
+        { $set: { updatedAt: now } },
+        { session }
+    );
+    if (result.matchedCount !== 1) throw new ImageTileLeaseLost();
+}
+
+export async function updateImageTileAsset(
+    job: JobDocument,
+    owner: string,
+    state: ImageDeepZoomAsset,
+    fields: { previewUrl?: string; blurhash?: string } = {}
+) {
+    return db.client.withSession((session) =>
+        session.withTransaction(async () => {
+            await fenceLease(job, owner, session);
+            const payload = job.payload as ProcessImageTilesPayload;
+            if (!(await dbCol.assets.updateDeepZoomJob(payload.assetId, state, fields, session))) {
+                throw new Error('Image asset is no longer available for processing.');
+            }
+        })
+    );
+}
+
+export async function startImageTileJob(job: JobDocument, owner: string) {
+    const payload = job.payload as ProcessImageTilesPayload;
+    await updateImageTileAsset(job, owner, {
+        schemaVersion: 1,
+        width: payload.width,
+        height: payload.height,
+        status: 'processing'
+    });
+    await auditImageTileJob(job, 'STARTED', job.startedAt ?? new Date());
+}
+
+export async function completeImageTileJob(
+    job: JobDocument,
+    owner: string,
+    state: ImageDeepZoomAsset,
+    result: ProcessImageTilesResult
+) {
+    const now = new Date();
+    await db.client.withSession((session) =>
+        session.withTransaction(async () => {
+            await fenceLease(job, owner, session);
+            const payload = job.payload as ProcessImageTilesPayload;
+            if (
+                !(await dbCol.assets.updateDeepZoomJob(
+                    payload.assetId,
+                    state,
+                    { previewUrl: result.previewFilename },
+                    session
+                ))
+            ) {
+                throw new Error('Image asset is no longer available for processing.');
+            }
+            await collections.jobs.updateOne(
+                { _id: job._id },
+                {
+                    $set: {
+                        status: 'completed',
+                        result,
+                        completedAt: now,
+                        updatedAt: now
+                    },
+                    $unset: { leaseOwner: '', leaseUntil: '', error: '' }
+                },
+                { session }
+            );
+        })
+    );
+    await auditImageTileJob(job, 'COMPLETED', now, {
+        changes: {
+            result: {
+                ...result,
+                ...(state.status === 'ready' ? state.tiles : {})
+            }
+        }
+    });
+}
+
+export async function failImageTileJob(
+    job: JobDocument,
+    owner: string,
+    error: string,
+    interrupted = false
+) {
+    const now = new Date();
+    const retry = interrupted || job.attempts < job.maxAttempts;
+    const runAfter = new Date(now.getTime() + RETRY_BACKOFF_MS * job.attempts);
+    await db.client.withSession((session) =>
+        session.withTransaction(async () => {
+            await fenceLease(job, owner, session);
+            const payload = job.payload as ProcessImageTilesPayload;
+            const dimensions = {
+                schemaVersion: 1 as const,
+                width: payload.width,
+                height: payload.height
+            };
+            await dbCol.assets.updateDeepZoomJob(
+                payload.assetId,
+                retry
+                    ? { ...dimensions, status: 'queued' }
+                    : {
+                          ...dimensions,
+                          status: 'failed',
+                          error: 'Image processing failed. Please contact the project administrator.'
+                      },
+                {},
+                session
+            );
+            await collections.jobs.updateOne(
+                { _id: job._id },
+                {
+                    $set: {
+                        status: retry ? 'queued' : 'failed',
+                        error,
+                        runAfter,
+                        updatedAt: now,
+                        ...(!retry ? { completedAt: now } : {})
+                    },
+                    $unset: { leaseOwner: '', leaseUntil: '', startedAt: '' },
+                    // A controlled deployment restart must not exhaust the retry budget.
+                    ...(interrupted ? { $inc: { attempts: -1 } } : {})
+                },
+                { session }
+            );
+        })
+    );
+    await auditImageTileJob(job, retry ? 'RETRY_SCHEDULED' : 'FAILED', now, {
+        error,
+        reasonCode: interrupted ? 'WORKER_SHUTDOWN' : 'IMAGE_PROCESSING_FAILED',
+        changes: retry
+            ? { nextRetryAt: runAfter.getTime(), retryBudgetPreserved: interrupted }
+            : undefined
+    });
+}
+
+/** A reaped final attempt must not leave the library permanently "processing". */
+export async function reconcileStalledImageTiles(nodeId: string) {
+    for await (const job of collections.jobs.find({
+        nodeId,
+        type: 'process_image_tiles',
+        status: 'stalled',
+        assetStateReconciled: { $ne: true }
+    })) {
+        await db.client.withSession((session) =>
+            session.withTransaction(async () => {
+                const current = await collections.jobs.updateOne(
+                    { _id: job._id, status: 'stalled', assetStateReconciled: { $ne: true } },
+                    { $set: { assetStateReconciled: true } },
+                    { session }
+                );
+                if (!current.matchedCount) return;
+                const payload = job.payload as ProcessImageTilesPayload;
+                await dbCol.assets.updateDeepZoomJob(
+                    payload.assetId,
+                    {
+                        schemaVersion: 1,
+                        width: payload.width,
+                        height: payload.height,
+                        status: 'failed',
+                        error: 'Image processing stopped after repeated worker interruptions.'
+                    },
+                    {},
+                    session
+                );
+            })
+        );
+    }
+}
+
+export async function findAcceptedImageTileUpload(
+    projectId: string,
+    uploadId: string,
+    createdBy: string
+) {
+    const asset = await dbCol.assets.findDeepZoomUpload(imageTileUploadId(projectId, uploadId));
+    if (asset && (asset.projectId !== projectId || asset.createdBy !== createdBy))
+        throw new Error('Conflicting image upload identity.');
+    return asset;
+}
+
+export async function finalizeImageTileUpload(input: {
+    uploadId: string;
+    projectId: string;
+    createdBy: string;
+    name: string;
+    filename: string;
+    sourcePath: string;
+    mimeType: string;
+    width: number;
+    height: number;
+    maxPixels: number;
+    settings: ImageTileUploadSettings;
+}) {
+    const existing = await findAcceptedImageTileUpload(
+        input.projectId,
+        input.uploadId,
+        input.createdBy
+    );
+    if (existing) return existing;
+    if (basename(input.filename) !== input.filename)
+        throw new Error('Invalid image source filename.');
+    await mkdir(ASSET_DIR, { recursive: true });
+    const temporary = await mkdtemp(join(ASSET_DIR, '.image-upload-'));
+    const destination = join(ASSET_DIR, input.filename);
+    try {
+        const copied = join(temporary, 'source');
+        await copyFile(input.sourcePath, copied);
+        await link(copied, destination).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'EEXIST') throw error;
+        });
+    } catch (error) {
+        const accepted = await findAcceptedImageTileUpload(
+            input.projectId,
+            input.uploadId,
+            input.createdBy
+        );
+        if (accepted) return accepted;
+        throw error;
+    } finally {
+        await rm(temporary, { recursive: true, force: true });
+    }
+    const id = imageTileUploadId(input.projectId, input.uploadId);
+    return acceptImageTileUpload({
+        id,
+        nodeId: input.settings.nodeId,
+        asset: {
+            projectId: input.projectId,
+            name: input.name,
+            url: input.filename,
+            size: (await stat(destination)).size,
+            mimeType: input.mimeType,
+            public: input.projectId === PUBLIC_ASSET_PROJECT_ID,
+            createdBy: input.createdBy,
+            deepZoom: {
+                schemaVersion: 1,
+                width: input.width,
+                height: input.height,
+                status: 'queued'
+            }
+        },
+        payload: {
+            assetId: id,
+            sourceFilename: input.filename,
+            sourceId: `img_${id}_v1`,
+            width: input.width,
+            height: input.height,
+            maxPixels: input.maxPixels
+        }
+    });
 }

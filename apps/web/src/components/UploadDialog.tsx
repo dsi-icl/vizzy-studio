@@ -92,12 +92,22 @@ export function UploadDialog({
     useEffect(() => {
         if (!open) return;
 
+        let cancelled = false;
+        let issuedToken: string | undefined;
         const create = createTokenFn
             ? createTokenFn(projectId)
             : $createUploadToken({ data: { projectId } });
 
         create
             .then((result) => {
+                issuedToken = result.token;
+                if (cancelled) {
+                    const revoke = revokeTokenFn
+                        ? revokeTokenFn(result.token)
+                        : $revokeUploadToken({ data: { token: result.token } });
+                    void revoke.catch(() => {});
+                    return null;
+                }
                 setToken(result.token);
                 setTokenExpiresAt(result.expiresAt);
 
@@ -112,13 +122,20 @@ export function UploadDialog({
                     }
                 });
             })
-            .then((dataUrl) => setQrDataUrl(dataUrl))
+            .then((dataUrl) => {
+                if (!cancelled) setQrDataUrl(dataUrl);
+            })
             .catch((error: any) => {
+                if (cancelled) return;
                 toast.error(error?.message ?? 'Failed to create upload token');
                 setToken(null);
                 setQrDataUrl(null);
             });
-    }, [open, projectId, createTokenFn]);
+        return () => {
+            cancelled = true;
+            resetDialogState(issuedToken);
+        };
+    }, [open, projectId, createTokenFn, revokeTokenFn, resetDialogState]);
 
     // Countdown timer
     useEffect(() => {
@@ -195,6 +212,7 @@ export function UploadDialog({
                 uppy.on('complete', (result) => {
                     const failed = result.failed?.length ?? 0;
                     const successful = result.successful?.length ?? 0;
+                    if (successful > 0) onUploadCompleteRef.current?.();
                     if (failed > 0) {
                         toast.error(
                             successful > 0
@@ -204,7 +222,6 @@ export function UploadDialog({
                         return;
                     }
                     toast.success('Upload complete');
-                    if (successful > 0) onUploadCompleteRef.current?.();
                 });
             }
 
@@ -258,15 +275,7 @@ export function UploadDialog({
     );
 
     return (
-        <Dialog
-            open={open}
-            onOpenChange={(nextOpen) => {
-                if (!nextOpen) {
-                    resetDialogState(token);
-                }
-                setOpen(nextOpen);
-            }}
-        >
+        <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger nativeButton={false} render={<div />}>
                 {trigger}
             </DialogTrigger>

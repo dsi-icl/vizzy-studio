@@ -1,4 +1,9 @@
-import { StageLayout as StageLayoutSchema, type StageLayout } from '@repo/db/schema';
+import {
+    ImageDeepZoomAsset,
+    ImageDeepZoomLayer,
+    StageLayout as StageLayoutSchema,
+    type StageLayout
+} from '@repo/db/schema';
 
 import { z } from '~/lib/zod';
 
@@ -114,7 +119,8 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('image'),
             url: z.string(),
-            blurhash: z.string().optional()
+            blurhash: z.string().optional(),
+            deepZoom: ImageDeepZoomLayer.optional()
         })
         .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
@@ -434,6 +440,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
             mimeType: z.string().optional(),
             blurhash: z.string().optional(),
             previewUrl: z.string().optional(),
+            deepZoom: ImageDeepZoomAsset.optional(),
             sizes: OptionalSizesSchema,
             createdAt: z.string(),
             createdBy: z.string()
