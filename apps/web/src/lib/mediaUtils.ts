@@ -149,7 +149,7 @@ export async function canPreviewImageLocally(file: Blob): Promise<boolean> {
         width = view.getUint32(16);
         height = view.getUint32(20);
     } else if (bytes.length >= 4 && view.getUint16(0) === 0xffd8) {
-        for (let offset = 2; offset + 4 <= bytes.length; ) {
+        for (let offset = 2; offset + 4 <= bytes.length;) {
             if (bytes[offset++] !== 0xff) break;
             while (bytes[offset] === 0xff) offset++;
             const marker = bytes[offset++];
