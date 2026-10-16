@@ -6,11 +6,9 @@ import { isCustomProject } from '~/lib/customProject';
 import { parseServePath } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { getProject } from '~/server/projects';
+import { isWallBoundToProject } from '~/server/serveAuthz';
 import { resolveServeCookieActor } from '~/server/serveCookie';
 
-/**
- * Relays a custom project's own WebSocket. Each demo runs its own socket server.
- */
 const UPSTREAM_CONTEXT_KEY = 'serveUpstreamUrl';
 
 const UPGRADE_CONNECT_TIMEOUT_MS = Number(process.env.SERVE_WS_CONNECT_TIMEOUT_MS ?? 10_000);
@@ -34,10 +32,11 @@ async function resolveUpstream(request: Request): Promise<string | null> {
         request
     };
 
-    if (!resolveServeCookieActor(request, projectId)) {
+    const actor = resolveServeCookieActor(request, projectId);
+    if (!actor || !isWallBoundToProject(actor.wallId, projectId, actor.scopeId)) {
         await logAuditDenied({
             action: 'SERVE_WS_DENIED',
-            reasonCode: 'NO_SERVE_COOKIE',
+            reasonCode: actor ? 'WALL_NOT_BOUND_TO_PROJECT' : 'NO_SERVE_COOKIE',
             resourceType: 'project',
             resourceId: projectId,
             authContext: { guest: true },

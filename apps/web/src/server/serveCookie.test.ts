@@ -28,7 +28,7 @@ describe('serve cookie', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PID,
-            actor: { surface: 'wall', wallId: 'wall-a' }
+            actor: { surface: 'wall', wallId: 'wall-a', scopeId: 7 }
         });
 
         const resolved = resolveServeCookieActor(request(asRequestCookie(setCookie)), PID);
@@ -40,7 +40,7 @@ describe('serve cookie', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PID,
-            actor: { surface: 'control', wallId: 'wall-a' }
+            actor: { surface: 'control', wallId: 'wall-a', scopeId: 7 }
         });
 
         assert.ok(setCookie.startsWith(`${serveCookieName(PID)}=`));
@@ -53,7 +53,7 @@ describe('serve cookie', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PID,
-            actor: { surface: 'wall', wallId: 'wall-a' }
+            actor: { surface: 'wall', wallId: 'wall-a', scopeId: 7 }
         });
         // Replay project A's payload under project B's cookie name.
         const forged = `${serveCookieName(OTHER_PID)}=${asRequestCookie(setCookie).split('=').slice(1).join('=')}`;
@@ -65,7 +65,7 @@ describe('serve cookie', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PID,
-            actor: { surface: 'wall', wallId: 'wall-a' }
+            actor: { surface: 'wall', wallId: 'wall-a', scopeId: 7 }
         });
         const [name, value] = asRequestCookie(setCookie).split('=');
         const [payload, signature] = (value ?? '').split('.');
@@ -91,7 +91,7 @@ describe('serve cookie', () => {
     test('re-issues once a cookie is past its half-life', () => {
         const ttlMs = SERVE_COOKIE_MAX_AGE_SECONDS * 1000;
         const now = Date.now();
-        const actor = { surface: 'wall' as const, wallId: 'wall-a' };
+        const actor = { surface: 'wall' as const, wallId: 'wall-a', scopeId: 7 };
 
         // A cookie just minted has most of its life left.
         assert.equal(shouldRefreshServeCookie({ ...actor, expiresAt: now + ttlMs }, now), false);
@@ -114,7 +114,7 @@ describe('serve cookie', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PID,
-            actor: { surface: 'wall', wallId: 'wall-a' }
+            actor: { surface: 'wall', wallId: 'wall-a', scopeId: 7 }
         });
         const resolved = resolveServeCookieActor(request(asRequestCookie(setCookie)), PID);
 

@@ -5,10 +5,6 @@ import { env } from '@repo/env';
 
 import { serveBasePath } from '~/lib/serveUrls';
 
-/**
- * Authorises the hundreds of subresource requests a demo makes after its document loads.
- * Scoped per project by both name and `Path`.
- */
 export const SERVE_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
 
 export type ServeSurface = 'wall' | 'control';
@@ -18,6 +14,7 @@ interface ServeCookiePayload {
     projectId: string;
     surface: ServeSurface;
     wallId: string;
+    scopeId: number;
     iat: number;
     exp: number;
 }
@@ -25,6 +22,7 @@ interface ServeCookiePayload {
 export interface ServeActor {
     surface: ServeSurface;
     wallId: string;
+    scopeId: number;
     expiresAt?: number;
 }
 
@@ -77,6 +75,8 @@ function isServeCookiePayload(value: unknown): value is ServeCookiePayload {
         typeof payload.projectId === 'string' &&
         payload.projectId.length > 0 &&
         typeof payload.wallId === 'string' &&
+        typeof payload.scopeId === 'number' &&
+        Number.isFinite(payload.scopeId) &&
         typeof payload.iat === 'number' &&
         Number.isFinite(payload.iat) &&
         typeof payload.exp === 'number' &&
@@ -102,6 +102,7 @@ export function createServeCookie(input: {
         projectId: input.projectId,
         surface: input.actor.surface,
         wallId: input.actor.wallId,
+        scopeId: input.actor.scopeId,
         iat: now,
         exp: now + SERVE_COOKIE_MAX_AGE_SECONDS * 1000
     };
@@ -135,5 +136,10 @@ export function resolveServeCookieActor(request: Request, projectId: string): Se
     if (parsed.projectId !== projectId) return null;
     if (parsed.exp <= Date.now()) return null;
 
-    return { surface: parsed.surface, wallId: parsed.wallId, expiresAt: parsed.exp };
+    return {
+        surface: parsed.surface,
+        wallId: parsed.wallId,
+        scopeId: parsed.scopeId,
+        expiresAt: parsed.exp
+    };
 }

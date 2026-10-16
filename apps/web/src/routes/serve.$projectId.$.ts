@@ -1,12 +1,14 @@
 import { env } from '@repo/env';
 import { createFileRoute } from '@tanstack/react-router';
 
+import { wallBindings } from '~/lib/busState';
 import { isCustomProject } from '~/lib/customProject';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { buildServeUpstreamUrl, parseServePath } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
+import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
     createServeCookie,
     resolveServeCookieActor,
@@ -48,17 +50,29 @@ function bearerOrQueryToken(request: Request): string | null {
     return queryToken && queryToken.length > 0 ? queryToken : null;
 }
 
-async function authorizeFreshRequest(request: Request): Promise<ServeActor | null> {
+async function authorizeFreshRequest(
+    request: Request,
+    projectId: string
+): Promise<ServeActor | null> {
     const token = bearerOrQueryToken(request);
     if (token) {
         const validated = validatePortalToken(token, 'control');
-        if (validated) return { surface: 'control', wallId: validated.wallId };
+        if (validated && isWallBoundToProject(validated.wallId, projectId, validated.scopeId)) {
+            return {
+                surface: 'control',
+                wallId: validated.wallId,
+                scopeId: validated.scopeId
+            };
+        }
     }
 
     const { authContext } = await resolveRequestAuthContext(request);
     const device = authContext.device;
     if (device?.kind === 'wall' && device.wallId) {
-        return { surface: 'wall', wallId: device.wallId };
+        const scopeId = wallBindings.get(device.wallId);
+        if (scopeId !== undefined && isWallBoundToProject(device.wallId, projectId, scopeId)) {
+            return { surface: 'wall', wallId: device.wallId, scopeId };
+        }
     }
 
     return null;
@@ -135,11 +149,15 @@ async function handler({ request }: { request: Request }): Promise<Response> {
     }
 
     let actor = resolveServeCookieActor(request, projectId);
+    if (actor && !isWallBoundToProject(actor.wallId, projectId, actor.scopeId)) {
+        actor = null;
+    }
+
     let mintCookie = actor !== null && shouldRefreshServeCookie(actor);
     const freshlyAuthorized = actor === null;
 
     if (!actor) {
-        actor = await authorizeFreshRequest(request);
+        actor = await authorizeFreshRequest(request, projectId);
         if (!actor) {
             await logAuditDenied({
                 action: 'SERVE_DENIED',

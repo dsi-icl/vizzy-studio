@@ -1,10 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router';
 
+import { wallBindings } from '~/lib/busState';
 import { isCustomProject } from '~/lib/customProject';
 import { z } from '~/lib/zod';
 import { logAuditDenied, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
+import { isWallBoundToProject } from '~/server/serveAuthz';
 import { createServeCookie } from '~/server/serveCookie';
 
 const requestSchema = z.object({ projectId: z.string() });
@@ -59,12 +61,25 @@ export const Route = createFileRoute('/api/wall/serve-cookie')({
                     });
                 }
 
+                const scopeId = wallBindings.get(device.wallId);
+                if (
+                    scopeId === undefined ||
+                    !isWallBoundToProject(device.wallId, body.projectId, scopeId)
+                ) {
+                    return deny({
+                        request,
+                        authContext,
+                        reasonCode: 'WALL_NOT_BOUND_TO_PROJECT',
+                        projectId: body.projectId
+                    });
+                }
+
                 await logAuditSuccess({
                     action: 'SERVE_COOKIE_ISSUED',
                     actorId: `device:${device.id}`,
                     resourceType: 'project',
                     resourceId: body.projectId,
-                    changes: { wallId: device.wallId },
+                    changes: { wallId: device.wallId, scopeId },
                     authContext,
                     executionContext: {
                         surface: 'http',
@@ -79,7 +94,7 @@ export const Route = createFileRoute('/api/wall/serve-cookie')({
                         'Set-Cookie': createServeCookie({
                             request,
                             projectId: body.projectId,
-                            actor: { surface: 'wall', wallId: device.wallId }
+                            actor: { surface: 'wall', wallId: device.wallId, scopeId }
                         }),
                         'Cache-Control': 'no-store'
                     }
