@@ -4,6 +4,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { wallBindings } from '~/lib/busState';
 import { isCustomProject } from '~/lib/customProject';
 import { validatePortalToken } from '~/lib/portalTokens';
+import { buildForwardedHeaders, buildRelayedHeaders } from '~/lib/serveHeaders';
 import {
     buildServeUpstreamUrl,
     parseServePath,
@@ -23,26 +24,6 @@ import {
 import { isWebSocketUpgrade, serveWebSocketHooks } from '~/server/serveWebSocket';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
-
-const FORWARDED_REQUEST_HEADERS = [
-    'accept',
-    'accept-language',
-    'content-type',
-    'range',
-    'if-none-match',
-    'if-modified-since',
-    'user-agent'
-];
-
-const RELAYED_RESPONSE_HEADERS = [
-    'content-type',
-    'cache-control',
-    'etag',
-    'last-modified',
-    'content-range',
-    'accept-ranges',
-    'vary'
-];
 
 function bearerOrQueryToken(request: Request): string | null {
     const auth = request.headers.get('authorization');
@@ -81,31 +62,6 @@ async function authorizeFreshRequest(
     }
 
     return null;
-}
-
-function buildForwardedHeaders(request: Request): Headers {
-    const headers = new Headers();
-    for (const name of FORWARDED_REQUEST_HEADERS) {
-        const value = request.headers.get(name);
-        if (value !== null) headers.set(name, value);
-    }
-
-    const forwardedFor = request.headers.get('x-forwarded-for');
-    const url = new URL(request.url);
-    if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
-    headers.set('x-forwarded-proto', url.protocol.replace(':', ''));
-    headers.set('x-forwarded-host', request.headers.get('host') ?? url.host);
-
-    return headers;
-}
-
-function buildRelayedHeaders(upstream: Response): Headers {
-    const headers = new Headers();
-    for (const name of RELAYED_RESPONSE_HEADERS) {
-        const value = upstream.headers.get(name);
-        if (value !== null) headers.set(name, value);
-    }
-    return headers;
 }
 
 function notFound(): Response {
@@ -182,7 +138,7 @@ async function handler({ request }: { request: Request }): Promise<Response> {
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
-            headers: buildForwardedHeaders(request),
+            headers: buildForwardedHeaders(request, actor),
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
