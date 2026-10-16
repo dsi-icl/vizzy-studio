@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
     buildServeUpstreamUrl,
     parseServePath,
+    rewriteServeLocation,
     serveBasePath,
     serveBusPath,
     serveControlPath,
@@ -51,6 +52,47 @@ describe('serve paths', () => {
                 search: '?v=2'
             }),
             `http://demos.com:3008/serve/${PID}/assets/app.js?v=2`
+        );
+    });
+});
+
+describe('rewriteServeLocation', () => {
+    const UPSTREAM = `http://demos.example:3008/serve/${PID}/screen`;
+    const BASE = `/serve/${PID}`;
+
+    test('keeps a redirect that already carries the base path', () => {
+        assert.equal(
+            rewriteServeLocation(`/serve/${PID}/control`, UPSTREAM, BASE),
+            `/serve/${PID}/control`
+        );
+    });
+
+    test('prefixes a root-absolute redirect that escaped the subtree', () => {
+        assert.equal(rewriteServeLocation('/control', UPSTREAM, BASE), `/serve/${PID}/control`);
+        assert.equal(rewriteServeLocation('/', UPSTREAM, BASE), `/serve/${PID}/`);
+    });
+
+    test('resolves a relative redirect against the request URL, not just the origin', () => {
+        assert.equal(rewriteServeLocation('control', UPSTREAM, BASE), `/serve/${PID}/control`);
+    });
+
+    test('never discloses the demos host', () => {
+        assert.equal(
+            rewriteServeLocation(`http://demos.example:3008/serve/${PID}/x?a=1#f`, UPSTREAM, BASE),
+            `/serve/${PID}/x?a=1#f`
+        );
+    });
+
+    test('refuses anything but the demo redirecting within itself', () => {
+        assert.equal(rewriteServeLocation('https://cdn.example/asset.js', UPSTREAM, BASE), null);
+        assert.equal(rewriteServeLocation('//evil.example/x', UPSTREAM, BASE), null);
+        assert.equal(rewriteServeLocation('http://', UPSTREAM, BASE), null);
+    });
+
+    test('cannot redirect the iframe at one of our own routes', () => {
+        assert.equal(
+            rewriteServeLocation('/api/portal/v1/bind', UPSTREAM, BASE),
+            `/serve/${PID}/api/portal/v1/bind`
         );
     });
 });

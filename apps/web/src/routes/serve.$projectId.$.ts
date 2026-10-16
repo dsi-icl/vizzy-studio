@@ -4,7 +4,12 @@ import { createFileRoute } from '@tanstack/react-router';
 import { wallBindings } from '~/lib/busState';
 import { isCustomProject } from '~/lib/customProject';
 import { validatePortalToken } from '~/lib/portalTokens';
-import { buildServeUpstreamUrl, parseServePath } from '~/lib/serveUrls';
+import {
+    buildServeUpstreamUrl,
+    parseServePath,
+    rewriteServeLocation,
+    serveBasePath
+} from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure, logAuditSuccess } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import { resolveRequestAuthContext } from '~/server/requestAuthContext';
@@ -101,16 +106,6 @@ function buildRelayedHeaders(upstream: Response): Headers {
         if (value !== null) headers.set(name, value);
     }
     return headers;
-}
-
-function rewriteLocation(location: string, upstreamOrigin: string): string {
-    try {
-        const resolved = new URL(location, upstreamOrigin);
-        if (resolved.origin !== upstreamOrigin) return '/';
-        return `${resolved.pathname}${resolved.search}${resolved.hash}`;
-    } catch {
-        return '/';
-    }
 }
 
 function notFound(): Response {
@@ -212,7 +207,22 @@ async function handler({ request }: { request: Request }): Promise<Response> {
 
     const location = upstream.headers.get('location');
     if (location) {
-        headers.set('location', rewriteLocation(location, `http://${env.DEMOS_FQDN}:${port}`));
+        const rewritten = rewriteServeLocation(location, upstreamUrl, serveBasePath(projectId));
+        if (rewritten === null) {
+            await logAuditFailure({
+                action: 'SERVE_PROXY_FAILED',
+                reasonCode: 'INVALID_UPSTREAM_LOCATION',
+                resourceType: 'project',
+                resourceId: projectId,
+                executionContext: {
+                    surface: 'http',
+                    operation: `${request.method} /serve/$projectId/$`,
+                    request
+                }
+            });
+            return new Response('Demo sent an invalid redirect', { status: 502 });
+        }
+        headers.set('location', rewritten);
     }
 
     if (mintCookie) {

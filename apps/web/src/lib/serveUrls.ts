@@ -54,3 +54,26 @@ export function buildServeUpstreamUrl(input: {
 }): string {
     return `http://${input.host}:${input.port}${input.pathname}${input.search}`;
 }
+
+export function rewriteServeLocation(
+    location: string,
+    upstreamUrl: string,
+    basePath: string
+): string | null {
+    let resolved: URL;
+    let upstreamOrigin: string;
+    try {
+        resolved = new URL(location, upstreamUrl);
+        upstreamOrigin = new URL(upstreamUrl).origin;
+    } catch {
+        return null;
+    }
+
+    if (resolved.origin !== upstreamOrigin) return null;
+
+    const pathname =
+        resolved.pathname === basePath || resolved.pathname.startsWith(`${basePath}/`)
+            ? resolved.pathname
+            : `${basePath}${resolved.pathname}`;
+    return `${pathname}${resolved.search}${resolved.hash}`;
+}
