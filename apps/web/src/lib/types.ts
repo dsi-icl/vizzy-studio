@@ -162,6 +162,7 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('line'),
             line: z.array(z.number()),
+            linePaths: z.array(z.array(z.number())).optional(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number()
@@ -197,6 +198,12 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
 const LayerSchema = z.preprocess(migrateLegacyLayer, LayerVariantSchema);
 
 export type Layer = z.infer<typeof LayerSchema>;
+
+type LineLayer = Extract<Layer, { type: 'line' }>;
+
+export function getLinePaths(layer: LineLayer): number[][] {
+    return layer.linePaths ?? (layer.line.length === 0 ? [] : [layer.line]);
+}
 
 // ── Hello schema (exported separately for handshake-only validation) ─────────
 
@@ -341,7 +348,14 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string(),
         recentColours: z.array(z.string())
     }),
-    z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('delete_layer'),
+        numericId: z.number(),
+        origin: z
+            .string()
+            .regex(/^(editor|controller|yjs):[a-z0-9_]+$/)
+            .optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),
