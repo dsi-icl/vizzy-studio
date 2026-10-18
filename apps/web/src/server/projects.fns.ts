@@ -1,7 +1,9 @@
 import { authMiddleware, freshAuthMiddleware } from '@repo/auth/tanstack/middleware';
 import { Collaborator, ProjectVisibility, StageLayout } from '@repo/db/schema';
+import { env } from '@repo/env';
 import { createServerFn } from '@tanstack/react-start';
 
+import { readImageUploadPolicy } from '~/lib/serverAssetUtils';
 import { createUploadToken, validateUploadToken } from '~/lib/uploadTokens';
 import { z } from '~/lib/zod';
 import { logAuditDenied, logAuditSuccess } from '~/server/audit';
@@ -1089,7 +1091,7 @@ export const $createUploadToken = createServerFn({ method: 'POST' })
             resourceId: `project:${data.projectId}`,
             ...buildProjectFnAuditContext(context, '$createUploadToken')
         });
-        return token;
+        return { ...token, deferImagePlacement: readImageUploadPolicy(env).enabled };
     });
 
 export const $revokeUploadToken = createServerFn({ method: 'POST' })

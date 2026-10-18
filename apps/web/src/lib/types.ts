@@ -1,4 +1,9 @@
-import { StageLayout as StageLayoutSchema, type StageLayout } from '@repo/db/schema';
+import {
+    ImageDeepZoomAsset,
+    ImageDeepZoomLayer,
+    StageLayout as StageLayoutSchema,
+    type StageLayout
+} from '@repo/db/schema';
 
 import { z } from '~/lib/zod';
 
@@ -67,7 +72,37 @@ const OptionalSizesSchema = z
     }, z.array(z.number()))
     .optional();
 
-const LayerSchema = z.discriminatedUnion('type', [
+/**
+ * Oval replaces Circle, so legacy circle layers need their discriminator
+ * renamed and `cx`/`cy` pulled back onto that centre.
+ * Idempotent — a migrated layer no longer says 'circle'.
+ */
+export const migrateLegacyLayer = (layer: unknown): unknown => {
+    if (!layer || typeof layer !== 'object') return layer;
+    const candidate = layer as Record<string, unknown>;
+    if (candidate.type !== 'shape' || candidate.shape !== 'circle') return layer;
+
+    const config = (candidate.config ?? {}) as Record<string, unknown>;
+    const width = typeof config.width === 'number' ? config.width : 0;
+    const height = typeof config.height === 'number' ? config.height : 0;
+
+    // Only the name and the centre move. Every other field — fill, strokeColor,
+    // strokeDash, strokeWidth, and the rest of config — carries over untouched.
+    return {
+        ...candidate,
+        shape: 'oval',
+        config: {
+            ...config,
+            cx: typeof config.cx === 'number' ? config.cx - width / 2 : config.cx,
+            cy: typeof config.cy === 'number' ? config.cy - height / 2 : config.cy
+        }
+    };
+};
+
+export const migrateLegacyLayers = <T>(layers: T[]): T[] =>
+    layers.map((layer) => migrateLegacyLayer(layer) as T);
+
+const LayerVariantSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('video'),
@@ -84,7 +119,8 @@ const LayerSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('image'),
             url: z.string(),
-            blurhash: z.string().optional()
+            blurhash: z.string().optional(),
+            deepZoom: ImageDeepZoomLayer.optional()
         })
         .extend(MediaLayerBaseSchema.shape),
     z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
@@ -135,7 +171,7 @@ const LayerSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('shape'),
-            shape: z.enum(['rectangle', 'circle']),
+            shape: z.enum(['rectangle', 'oval']),
             fill: z.string(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
@@ -158,6 +194,8 @@ const LayerSchema = z.discriminatedUnion('type', [
         })
         .extend(LayerBaseSchema.shape)
 ]);
+
+const LayerSchema = z.preprocess(migrateLegacyLayer, LayerVariantSchema);
 
 export type Layer = z.infer<typeof LayerSchema>;
 
@@ -416,6 +454,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
             mimeType: z.string().optional(),
             blurhash: z.string().optional(),
             previewUrl: z.string().optional(),
+            deepZoom: ImageDeepZoomAsset.optional(),
             sizes: OptionalSizesSchema,
             createdAt: z.string(),
             createdBy: z.string()

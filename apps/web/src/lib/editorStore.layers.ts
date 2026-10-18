@@ -7,9 +7,10 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
+import { preserveImageDeepZoom } from './mediaUtils';
 import { getLineBounds } from './stageGeometry';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import type { Layer, LayerWithEditorState } from './types';
+import { migrateLegacyLayers, type Layer, type LayerWithEditorState } from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -51,7 +52,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         hydrate: (layers: LayerWithEditorState[]) => {
             const engine = EditorEngine.getInstance();
             set((s) => {
-                const mergedLayers = layers.map((layer) => {
+                const mergedLayers = migrateLegacyLayers(layers).map((layer) => {
                     if (layer.type !== 'video') return layer;
                     const existing = s.layers.get(layer.numericId);
                     if (existing?.type === 'video') {
@@ -60,6 +61,16 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     const livePlayback = engine.getPlayback(layer.numericId);
                     return livePlayback ? { ...layer, playback: livePlayback } : layer;
                 });
+                // Reconnecting to the same slide must not discard local uploads.
+                // Navigating clears the store first; a real remote id collision
+                // wins and cancels that draft instead of overwriting a peer's work.
+                if (!s.loading) {
+                    const ids = new Set(mergedLayers.map((layer) => layer.numericId));
+                    for (const layer of s.layers.values()) {
+                        if (layer.isUploading && !ids.has(layer.numericId))
+                            mergedLayers.push(layer);
+                    }
+                }
 
                 helpers.setNextId(
                     mergedLayers.reduce((max, l) => Math.max(max, l.numericId), 0) + 5
@@ -82,7 +93,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 const nextLayer =
                     existingLayer?.type === 'video' && layer.type === 'video'
                         ? { ...layer, playback: existingLayer.playback ?? layer.playback }
-                        : layer;
+                        : preserveImageDeepZoom(existingLayer, layer);
 
                 if (nextLayer.numericId >= helpers.peekNextId())
                     helpers.setNextId(nextLayer.numericId + 5);
@@ -100,6 +111,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             }),
 
         removeLayer: (numericId: number) => {
+            const wasUploading = get().layers.get(numericId)?.isUploading;
             set((s) => {
                 const newLayers = new Map(s.layers);
                 newLayers.delete(numericId);
@@ -113,7 +125,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 };
             });
             const engine = EditorEngine.getInstance();
-            engine.sendJSON({ type: 'delete_layer', numericId });
+            if (!wasUploading) engine.sendJSON({ type: 'delete_layer', numericId });
             get().markDirty();
         },
 
@@ -577,7 +589,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             get().markDirty();
         },
 
-        addShapeLayer: (shape: 'rectangle' | 'circle') => {
+        addShapeLayer: (shape: 'rectangle' | 'oval') => {
             const {
                 allocateId,
                 allocateZIndex,
@@ -767,7 +779,12 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         clearStage: () => {
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'clear_stage' });
-            set({ layers: new Map(), selectedLayerIds: [], hoveredLayerId: null });
+            set((state) => ({
+                layers: new Map(),
+                selectedLayerIds: [],
+                hoveredLayerId: null,
+                placementEpoch: state.placementEpoch + 1
+            }));
             get().markDirty();
         },
 

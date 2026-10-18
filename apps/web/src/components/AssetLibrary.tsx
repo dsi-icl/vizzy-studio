@@ -19,7 +19,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState, type DragEvent } from 'react';
 import { toast } from 'sonner';
 
-import { isFontAsset } from '~/lib/mediaUtils';
+import {
+    assetPickerFilename,
+    assetPreviewFilename,
+    assetProcessingLabel,
+    canPlaceAsset,
+    toLibraryAsset,
+    type AssetLibraryAsset,
+    isFontAsset
+} from '~/lib/mediaUtils';
 import { $deleteAsset } from '~/server/projects.fns';
 import {
     projectAssetsQueryOptions,
@@ -39,16 +47,7 @@ interface AssetLibraryProps {
     onDeleteAsset?: (asset: AssetLibraryAsset) => Promise<void> | void;
 }
 
-export type AssetLibraryAsset = {
-    id: string;
-    name: string;
-    url: string;
-    public?: boolean;
-    mimeType?: string;
-    blurhash?: string;
-    sizes?: number[];
-    previewUrl?: string;
-};
+export type { AssetLibraryAsset } from '~/lib/mediaUtils';
 
 const ASSET_DRAG_MIME = 'application/x-vizzy-asset';
 
@@ -86,16 +85,7 @@ export function AssetLibrary({
             if (isFontAsset(asset)) fonts.push(asset);
             else media.push(asset);
         }
-        const sorted = [...media, ...fonts].map((asset) => ({
-            id: asset.id,
-            name: asset.name,
-            url: asset.url,
-            public: asset.public ?? false,
-            mimeType: asset.mimeType ?? undefined,
-            blurhash: asset.blurhash ?? undefined,
-            sizes: asset.sizes ?? undefined,
-            previewUrl: asset.previewUrl ?? undefined
-        }));
+        const sorted = [...media, ...fonts].map(toLibraryAsset);
         if (!isPicker) return sorted;
         const filteredSorted =
             pickerFilter === 'image'
@@ -111,21 +101,14 @@ export function AssetLibrary({
         }
 
         const mergedByUrl = new Map(
-            filteredSorted.map((asset) => [normalizeAssetUrl(asset.url), asset] as const)
+            filteredSorted.map(
+                (asset) => [normalizeAssetUrl(assetPickerFilename(asset)), asset] as const
+            )
         );
         const fallbackByUrl = new Map(
             selectedFallbackAssets.map((asset) => [
-                normalizeAssetUrl(asset.url),
-                {
-                    id: asset.id,
-                    name: asset.name,
-                    url: asset.url,
-                    public: asset.public ?? false,
-                    mimeType: asset.mimeType ?? undefined,
-                    blurhash: asset.blurhash ?? undefined,
-                    sizes: asset.sizes ?? undefined,
-                    previewUrl: asset.previewUrl ?? undefined
-                } satisfies AssetLibraryAsset
+                normalizeAssetUrl(assetPickerFilename(toLibraryAsset(asset))),
+                toLibraryAsset(asset)
             ])
         );
         for (const selectedUrl of normalizedSelectedUrls) {
@@ -199,6 +182,10 @@ export function AssetLibrary({
     }, [projectId, queryClient]);
 
     const handleAssetDragStart = (e: DragEvent<HTMLDivElement>, asset: AssetLibraryAsset) => {
+        if (!canPlaceAsset(asset, { allowProcessing: true })) {
+            e.preventDefault();
+            return;
+        }
         e.dataTransfer.effectAllowed = 'copy';
         e.dataTransfer.setData(ASSET_DRAG_MIME, JSON.stringify(asset));
         // Fallback for environments that strip custom MIME types.
@@ -256,14 +243,19 @@ export function AssetLibrary({
                                     asset.mimeType?.startsWith('video/') ||
                                     /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.name);
                                 const isFont = isFontAsset(asset);
+                                const canPlace = canPlaceAsset(asset, {
+                                    allowProcessing: !isPicker
+                                });
+                                const processingLabel = assetProcessingLabel(asset);
+                                const previewFilename = assetPreviewFilename(asset);
                                 const isSelected =
                                     isPicker &&
                                     selectedAssetUrls
                                         .map(normalizeAssetUrl)
-                                        .includes(normalizeAssetUrl(asset.url));
+                                        .includes(normalizeAssetUrl(assetPickerFilename(asset)));
                                 const thumbIdentifier = isVideo
                                     ? (asset.previewUrl ?? asset.url)
-                                    : asset.url;
+                                    : previewFilename;
 
                                 const cardContent = (
                                     <>
@@ -281,6 +273,7 @@ export function AssetLibrary({
                                                 src={thumbIdentifier}
                                                 blurhash={asset.blurhash}
                                                 sizes={asset.sizes}
+                                                forceOriginal={Boolean(asset.deepZoom)}
                                                 alt={asset.name}
                                                 className="aspect-square w-full [--checker-size:10px]"
                                                 imgClassName="object-cover"
@@ -293,6 +286,11 @@ export function AssetLibrary({
                                                 />
                                             </div>
                                         )}
+                                        {processingLabel ? (
+                                            <output className="absolute inset-x-0 bottom-0 z-20 bg-black/75 px-1 py-1 text-center text-[10px] text-white">
+                                                {processingLabel}
+                                            </output>
+                                        ) : null}
                                         <div className="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black/60 to-transparent px-1 pt-3 pb-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100">
                                             <span className="block truncate text-[10px] text-white">
                                                 {asset.name}
@@ -310,8 +308,9 @@ export function AssetLibrary({
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
+                                                            if (!previewFilename) return;
                                                             setPreview({
-                                                                src: `/api/assets/${asset.url}`,
+                                                                src: `/api/assets/${previewFilename}`,
                                                                 name: asset.name,
                                                                 isVideo: isVideoAsset(asset),
                                                                 blurhash: asset.blurhash,
@@ -320,6 +319,7 @@ export function AssetLibrary({
                                                         }}
                                                         className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-black/80"
                                                         title="Preview"
+                                                        disabled={!previewFilename}
                                                     >
                                                         <EyeIcon size={12} />
                                                     </button>
@@ -371,12 +371,13 @@ export function AssetLibrary({
                                     <div
                                         key={asset.id}
                                         onClick={() => {
-                                            onSelectAsset?.(asset);
+                                            if (canPlace || isSelected) onSelectAsset?.(asset);
                                         }}
                                         onKeyDown={(e) => {
+                                            if (e.target !== e.currentTarget) return;
                                             if (e.key === 'Enter' || e.key === ' ') {
                                                 e.preventDefault();
-                                                onSelectAsset?.(asset);
+                                                if (canPlace || isSelected) onSelectAsset?.(asset);
                                             }
                                         }}
                                         className={`bg-checkerboard group relative max-w-25 cursor-pointer overflow-hidden rounded-md border bg-background transition-colors hover:border-primary ${
@@ -384,11 +385,17 @@ export function AssetLibrary({
                                                 ? 'border-primary ring-2 ring-primary/40'
                                                 : 'border-border'
                                         }`}
-                                        title={asset.name}
+                                        title={
+                                            asset.deepZoom?.status === 'failed'
+                                                ? `${asset.name}: ${asset.deepZoom.error}`
+                                                : `${asset.name}${processingLabel ? ` — ${processingLabel}` : ''}`
+                                        }
                                         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
                                         role="button"
+                                        data-asset-id={asset.id}
+                                        aria-disabled={!canPlace && !isSelected}
                                         tabIndex={idx}
-                                        draggable={!isPicker}
+                                        draggable={!isPicker && canPlace}
                                         onDragStart={(e) => {
                                             if (isPicker) return;
                                             handleAssetDragStart(e, asset);

@@ -8,7 +8,9 @@ import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
-export function ReadOnlyMediaLayer({
+import { KonvaTiledImage } from './KonvaStaticImage';
+
+function LegacyReadOnlyMediaLayer({
     layer
 }: {
     layer: Extract<LayerWithEditorState, { type: 'image' | 'video' | 'web' }>;
@@ -165,5 +167,13 @@ export function ReadOnlyTextLayer({
             rotation={layer.config.rotation}
             listening={false}
         />
+    );
+}
+
+export function ReadOnlyMediaLayer(props: Parameters<typeof LegacyReadOnlyMediaLayer>[0]) {
+    return props.layer.type === 'image' && props.layer.deepZoom ? (
+        <KonvaTiledImage layer={props.layer} listening={false} />
+    ) : (
+        <LegacyReadOnlyMediaLayer {...props} />
     );
 }

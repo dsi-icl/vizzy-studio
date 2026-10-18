@@ -98,6 +98,7 @@ export const useEditorStore =
                   connectionStatus: 'connecting' as ConnectionStatus,
                   commitId: null,
                   loading: true,
+                  placementEpoch: 0,
                   saveStatus: 'idle',
                   headCommitId: null,
                   insertionCenter: {

@@ -56,6 +56,8 @@ export interface EditorState {
 
     // ── Save pipeline state ──
     loading: boolean;
+    /** Local cancellation generation for pending media placement, never persisted. */
+    placementEpoch: number;
     saveStatus: SaveStatus;
     headCommitId: string | null;
     insertionCenter: { x: number; y: number };
@@ -85,7 +87,7 @@ export interface EditorState {
     ) => void;
     addTextLayer: () => void;
     addMapLayer: () => void;
-    addShapeLayer: (shape: 'rectangle' | 'circle') => void;
+    addShapeLayer: (shape: 'rectangle' | 'oval') => void;
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
     addLineLayer: (line: Array<number>) => void;

@@ -1,6 +1,6 @@
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
-import { Circle, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
+import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
@@ -95,15 +95,15 @@ export function SlatePreview({
                                     />
                                 );
                             if (shape.type === 'shape') {
-                                if (shape.shape === 'circle')
+                                if (shape.shape === 'oval')
                                     return (
-                                        <Circle
+                                        <Ellipse
                                             key={shape.numericId}
                                             x={shape.config.cx}
                                             y={shape.config.cy}
-                                            offsetX={shape.config.width / 2}
-                                            offsetY={shape.config.height / 2}
-                                            radius={shape.config.width / 2}
+                                            radiusX={shape.config.width / 2}
+                                            radiusY={shape.config.height / 2}
+                                            rotation={shape.config.rotation}
                                             fill={shape.fill}
                                             stroke={shape.strokeColor}
                                             strokeWidth={shape.strokeWidth * 2}

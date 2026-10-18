@@ -10,7 +10,7 @@ import { createFileRoute, useLocation } from '@tanstack/react-router';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import QRCode from 'qrcode';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer as KonvaLayer, Rect, Circle, Line } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Rect, Ellipse, Line, Circle } from 'react-konva';
 import { useShallow } from 'zustand/react/shallow';
 
 import { ControllerToolbar } from '~/components/ControllerToolbar';
@@ -26,7 +26,7 @@ import { MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import { eraseLinePaths } from '~/lib/lineEraser';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getLineBounds } from '~/lib/stageGeometry';
-import { getLinePaths, type LayerWithEditorState } from '~/lib/types';
+import { getLinePaths, migrateLegacyLayers, type LayerWithEditorState } from '~/lib/types';
 
 const DEFAULT_STAGE_SCALE_FACTOR = 0.15;
 const BINDING_SIGNAL_TIMEOUT_MS = 1500;
@@ -535,7 +535,7 @@ function Controller() {
 
     const activeLayers = useMemo(() => {
         const slide = slides.find((s) => s.id === activeSlideId);
-        return (slide?.layers ?? []) as LayerWithEditorState[];
+        return migrateLegacyLayers((slide?.layers ?? []) as LayerWithEditorState[]);
     }, [slides, activeSlideId]);
 
     const sortedLayers = useMemo(
@@ -1185,16 +1185,15 @@ function Controller() {
                                                                 />
                                                             );
                                                         }
-                                                        if (layer.shape === 'circle') {
+                                                        if (layer.shape === 'oval') {
                                                             return (
-                                                                <Circle
+                                                                <Ellipse
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
-                                                                    offsetX={layer.config.width / 2}
-                                                                    offsetY={
+                                                                    radiusX={layer.config.width / 2}
+                                                                    radiusY={
                                                                         layer.config.height / 2
                                                                     }
-                                                                    radius={layer.config.width / 2}
                                                                     dash={layer.strokeDash}
                                                                 />
                                                             );
