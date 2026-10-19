@@ -19,6 +19,7 @@ const RawEnvSchema = z.object({
     TRUSTED_ORIGINS: z.string().optional(),
 
     DEMOS_FQDN: z.string().optional(),
+    SERVER_SERVE_ORIGIN: z.string().optional(),
 
     APP_DATA_DIR: z.string().optional(),
     UPLOAD_DIR: z.string().optional(),
@@ -89,6 +90,7 @@ export const env = {
     TRUSTED_ORIGINS: raw.TRUSTED_ORIGINS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',
 
     DEMOS_FQDN: raw.DEMOS_FQDN ?? 'localhost',
+    SERVER_SERVE_ORIGIN: raw.SERVER_SERVE_ORIGIN ?? '',
 
     APP_DATA_DIR: raw.APP_DATA_DIR ?? join(process.cwd(), '.data'),
     UPLOAD_DIR: raw.UPLOAD_DIR ?? '',

@@ -4,14 +4,17 @@ import { describe, test } from 'node:test';
 import {
     buildServeUpstreamUrl,
     parseServePath,
+    parseServeSessionPath,
     rewriteServeLocation,
     serveBasePath,
     serveBusPath,
     serveControlPath,
-    serveWallPath
+    serveWallPath,
+    serveSessionBasePath
 } from './serveUrls';
 
 const PID = '507f1f77bcf86cd799439011';
+const ROUTE = 'AAAAAAAAAAAAAAAAAAAAAA';
 
 describe('serve paths', () => {
     test('derives each surface from the project id', () => {
@@ -54,6 +57,17 @@ describe('serve paths', () => {
             `http://demos.com:3008/serve/${PID}/assets/app.js?v=2`
         );
     });
+
+    test('parses only session-scoped browser paths', () => {
+        const base = serveSessionBasePath(PID, ROUTE);
+        assert.deepEqual(parseServeSessionPath(`${base}/assets/app.js`), {
+            projectId: PID,
+            routeId: ROUTE,
+            rest: '/assets/app.js'
+        });
+        assert.equal(parseServeSessionPath(`/serve/${PID}/assets/app.js`), null);
+        assert.equal(parseServeSessionPath(`/serve/${PID}/s/bad/screen`), null);
+    });
 });
 
 describe('rewriteServeLocation', () => {
@@ -93,6 +107,18 @@ describe('rewriteServeLocation', () => {
         assert.equal(
             rewriteServeLocation('/api/portal/v1/bind', UPSTREAM, BASE),
             `/serve/${PID}/api/portal/v1/bind`
+        );
+    });
+
+    test('rewrites upstream redirects into the same browser session', () => {
+        assert.equal(
+            rewriteServeLocation(
+                '/assets/app.js',
+                UPSTREAM,
+                BASE,
+                serveSessionBasePath(PID, ROUTE)
+            ),
+            `/serve/${PID}/s/${ROUTE}/assets/app.js`
         );
     });
 });

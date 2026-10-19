@@ -13,11 +13,12 @@ import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { imagePreviewUrl } from '~/lib/mediaUtils';
-import { signedFetch } from '~/lib/signedFetch';
+import { createSignedServerFnFetch, signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import type { LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
+import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
 const HYDRATE_FADE_MS = 1000;
 const HYDRATE_IFRAME_TIMEOUT_MS = 2000;
@@ -47,8 +48,12 @@ function WallApp() {
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProjectId, setCustomRenderProjectId] = useState<string | undefined>();
-    const [serveCookieProjectId, setServeCookieProjectId] = useState<string | null>(null);
-    const [serveCookieFailed, setServeCookieFailed] = useState(false);
+    const [serveLaunch, setServeLaunch] = useState<{
+        projectId: string;
+        url: string;
+        keepaliveUrl: string;
+    } | null>(null);
+    const [serveLaunchFailed, setServeLaunchFailed] = useState(false);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const [physicalViewport, setPhysicalViewport] = useState({
@@ -301,54 +306,58 @@ function WallApp() {
 
     useEffect(() => {
         if (!wallId || !customRenderProjectId) {
-            setServeCookieProjectId(null);
-            setServeCookieFailed(false);
+            setServeLaunch(null);
+            setServeLaunchFailed(false);
             return;
         }
         let cancelled = false;
-        let refreshTimer: number | null = null;
-
-        const refreshServeCookie = () => {
-            if (cancelled) return;
-            signedFetch(
-                '/api/wall/serve-cookie',
-                {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ projectId: customRenderProjectId })
-                },
-                { deviceKind: 'wall', wallId }
-            )
-                .then((res) => {
-                    if (!res.ok) throw new Error(`Serve cookie request failed: ${res.status}`);
+        let retryTimer: number | null = null;
+        let retryDelayMs = 1_000;
+        setServeLaunch(null);
+        setServeLaunchFailed(false);
+        const requestLaunch = () => {
+            void $issueBoundServeLaunch({
+                data: { projectId: customRenderProjectId, wallId, entry: 'screen' },
+                fetch: createSignedServerFnFetch({ deviceKind: 'wall', wallId })
+            })
+                .then(({ url, keepaliveUrl }) => {
                     if (!cancelled) {
-                        setServeCookieProjectId(customRenderProjectId);
-                        setServeCookieFailed(false);
+                        setServeLaunch({ projectId: customRenderProjectId, url, keepaliveUrl });
+                        setServeLaunchFailed(false);
                     }
                 })
                 .catch((error) => {
-                    console.warn('[Wall] Failed to obtain serve auth cookie', error);
+                    console.warn('[Wall] Failed to obtain demo launch', error);
                     if (!cancelled) {
-                        setServeCookieProjectId(null);
-                        setServeCookieFailed(true);
-                    }
-                })
-                .finally(() => {
-                    if (!cancelled) {
-                        refreshTimer = window.setTimeout(
-                            refreshServeCookie,
-                            WALL_MEDIA_COOKIE_REFRESH_MS
-                        );
+                        setServeLaunchFailed(true);
+                        retryTimer = window.setTimeout(requestLaunch, retryDelayMs);
+                        retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
                     }
                 });
         };
-
-        refreshServeCookie();
+        requestLaunch();
         return () => {
             cancelled = true;
-            if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+            if (retryTimer !== null) window.clearTimeout(retryTimer);
         };
-    }, [wallId, customRenderProjectId]);
+    }, [wallId, customRenderProjectId, iframeGateCycle]);
+
+    useEffect(() => {
+        if (!serveLaunch || serveLaunch.projectId !== customRenderProjectId) return;
+        let cancelled = false;
+        const keepalive = () => {
+            const image = new Image();
+            image.onerror = () => {
+                if (!cancelled) setIframeGateCycle(Date.now());
+            };
+            image.src = `${serveLaunch.keepaliveUrl}?t=${Date.now()}`;
+        };
+        const timer = window.setInterval(keepalive, 60_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [serveLaunch, customRenderProjectId]);
 
     useEffect(() => {
         const unsubscribe = engine?.subscribeToLayoutUpdates((data) => {
@@ -866,16 +875,18 @@ function WallApp() {
 
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
-        const iframeSrc = new URL(customRenderUrl, window.location.origin);
-        if (!customRenderCompat) {
-            iframeSrc.searchParams.set('c', String(col));
-            iframeSrc.searchParams.set('r', String(row));
-        }
-        const serveCookieReady =
-            !!customRenderProjectId && serveCookieProjectId === customRenderProjectId;
-        const finalSrc = serveCookieReady
-            ? `${iframeSrc.pathname}${iframeSrc.search}`
-            : serveCookieFailed
+        const serveLaunchReady =
+            !!customRenderProjectId && serveLaunch?.projectId === customRenderProjectId;
+        const finalSrc = serveLaunchReady
+            ? (() => {
+                  const launchUrl = new URL(serveLaunch.url);
+                  if (!customRenderCompat) {
+                      launchUrl.searchParams.set('c', String(col));
+                      launchUrl.searchParams.set('r', String(row));
+                  }
+                  return launchUrl.toString();
+              })()
+            : serveLaunchFailed
               ? '/web-nonet?l=wall'
               : '/web-placeholder?l=wall';
         const worldWidth = screenWidth * columns;
@@ -898,10 +909,14 @@ function WallApp() {
                 }}
                 allow="autoplay; fullscreen"
                 onLoad={() => {
-                    markIframeReady('custom-render', iframeGateCycle);
+                    if (serveLaunchReady || serveLaunchFailed) {
+                        markIframeReady('custom-render', iframeGateCycle);
+                    }
                 }}
                 onError={() => {
-                    markIframeReady('custom-render', iframeGateCycle);
+                    if (serveLaunchReady || serveLaunchFailed) {
+                        markIframeReady('custom-render', iframeGateCycle);
+                    }
                 }}
             />
         );

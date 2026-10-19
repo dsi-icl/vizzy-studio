@@ -9,6 +9,7 @@ import { MongoClient } from 'mongodb';
 import { startMediaWorker } from '~/lib/jobs/mediaWorker';
 import { UPLOAD_DIR, TMP_DIR, ASSET_DIR } from '~/lib/serverVariables';
 import { getBootstrapStatus } from '~/server/bootstrap';
+import { getServeOrigin } from '~/server/serveOrigin';
 import { startSignageRunner } from '~/server/signageRunner';
 
 const bootIssues: string[] = [...bootHealth.issues];
@@ -183,6 +184,22 @@ async function runStartupChecksOnce(): Promise<void> {
 export default createServerEntry({
     async fetch(request) {
         await runStartupChecksOnce();
+        const serveOrigin = getServeOrigin();
+        const host = request.headers.get('host') ?? new URL(request.url).host;
+        if (
+            serveOrigin &&
+            host === serveOrigin.host &&
+            !new URL(request.url).pathname.startsWith('/serve/')
+        ) {
+            return new Response('Not found', { status: 404 });
+        }
+        if (
+            serveOrigin &&
+            host !== serveOrigin.host &&
+            request.headers.get('origin') === serveOrigin.origin
+        ) {
+            return new Response('Forbidden', { status: 403 });
+        }
         if (bootIssues.length > 0) {
             console.error('[Boot] Startup checks encountered issues:', bootIssues);
             const publicIssues =

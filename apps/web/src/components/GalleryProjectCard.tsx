@@ -9,6 +9,7 @@ import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
+import { $issueBoundServeLaunch } from '~/server/serve.fns';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
 interface GalleryProjectCardProps {
@@ -139,6 +140,29 @@ export function GalleryProjectCard({
         return null;
     }, []);
 
+    const handleControllerLaunchRequest = useCallback(
+        async (wallId: string) => {
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                try {
+                    const launch = await $issueBoundServeLaunch({
+                        data: { wallId, projectId: project.id, entry: 'control' },
+                        fetch: createSignedServerFnFetch({ deviceKind: 'gallery', wallId })
+                    });
+                    return launch;
+                } catch (error) {
+                    if (attempt < 7 && String(error).includes('Wall is not bound')) {
+                        await new Promise((resolve) => setTimeout(resolve, 200));
+                        continue;
+                    }
+                    console.warn('[Gallery] Could not obtain demo controller launch', error);
+                    return null;
+                }
+            }
+            return null;
+        },
+        [project.id]
+    );
+
     const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
     // The gallery route only sets `controlPath` for custom projects.
     const isCustom = Boolean(project.controlPath);
@@ -162,7 +186,12 @@ export function GalleryProjectCard({
             onLoadProject={canLoad ? handleLoadProject : undefined}
             onWallRebootRequest={canLoad ? handleWallRebootRequest : undefined}
             onWallUnbindRequest={canLoad ? handleWallUnbindRequest : undefined}
-            onControllerTokenRequest={canLoad ? handleControllerTokenRequest : undefined}
+            onControllerTokenRequest={
+                canLoad && !isCustom ? handleControllerTokenRequest : undefined
+            }
+            onControllerLaunchRequest={
+                canLoad && isCustom ? handleControllerLaunchRequest : undefined
+            }
             presetWallId={wallId}
             hideWallPicker={canEnrolledDeviceLoad}
         />

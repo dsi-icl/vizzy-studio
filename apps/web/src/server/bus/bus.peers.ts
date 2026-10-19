@@ -2,6 +2,7 @@ import type { Peer } from 'crossws';
 
 import {
     EMPTY_HYDRATE,
+    bindWall,
     broadcastToControllersByWallRaw,
     editorsByScope,
     getEditorHydratePayload,
@@ -26,6 +27,8 @@ import {
     wallsByWallId
 } from '~/lib/busState';
 import { releaseProjectContextIfUnused } from '~/lib/busState.projectContext';
+import { isCustomProject } from '~/lib/customProject';
+import { serveWallPath } from '~/lib/serveUrls';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
@@ -42,6 +45,43 @@ import {
     sendSlidesSnapshotToControllerPeer
 } from './bus.binding';
 import type { DeviceHelloMessage } from './bus.crypto';
+
+const restoringWallBindings = new Map<string, Promise<void>>();
+
+async function restoreWallBinding(wallId: string): Promise<void> {
+    if (wallBindings.has(wallId)) return;
+    let pending = restoringWallBindings.get(wallId);
+    if (!pending) {
+        pending = (async () => {
+            const wall = await dbCol.walls.findByWallId(wallId);
+            if (!wall?.boundProjectId || !wall.boundCommitId || !wall.boundSlideId) return;
+            const [project, commit] = await Promise.all([
+                dbCol.projects.findById(wall.boundProjectId),
+                dbCol.commits.findById(wall.boundCommitId)
+            ]);
+            if (!project || !commit || commit.projectId !== project.id) return;
+            const stage = project.stages.find(({ id }) => id === commit.stageId);
+            if (!stage) return;
+            const scopeId = internScope(project.id, commit.id, wall.boundSlideId);
+            const scope = getOrCreateScope(
+                scopeId,
+                project.id,
+                commit.id,
+                wall.boundSlideId,
+                isCustomProject(project) ? serveWallPath(project.id) : undefined,
+                project.customRenderCompat,
+                stage.layout,
+                stage.id
+            );
+            if (scope.layers.size === 0) await seedScopeFromDb(scopeId);
+            if (!wallBindings.has(wallId)) {
+                bindWall(wallId, scopeId, wall.boundSource ?? 'gallery');
+            }
+        })().finally(() => restoringWallBindings.delete(wallId));
+        restoringWallBindings.set(wallId, pending);
+    }
+    await pending;
+}
 
 export async function registerEditorPeer(
     peer: Peer,
@@ -321,6 +361,12 @@ export async function completeHelloRegistration(
             row: parsed.row,
             authContext
         });
+
+        try {
+            await restoreWallBinding(effectiveWallId);
+        } catch (error) {
+            console.error(`[WS] Failed to restore binding for ${effectiveWallId}:`, error);
+        }
 
         const boundScope = wallBindings.get(effectiveWallId);
 

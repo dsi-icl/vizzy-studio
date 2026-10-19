@@ -1,6 +1,6 @@
 /**
- * A custom project's demo is built with `BASE_PATH=/serve/<projectId>/`, so the path the
- * browser requests and the path the demo expects are the same string.
+ * The gateway exposes a session-scoped public path and forwards it to the
+ * project's `/serve/<projectId>/` upstream path.
  */
 
 export const SERVE_PATH_PREFIX = '/serve';
@@ -20,6 +20,29 @@ export function serveControlPath(projectId: string): string {
 
 export function serveBusPath(projectId: string): string {
     return `${serveBasePath(projectId)}/bus`;
+}
+
+export function serveLaunchPath(projectId: string): string {
+    return `${serveBasePath(projectId)}/_launch`;
+}
+
+const ROUTE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+
+export function serveSessionBasePath(projectId: string, routeId: string): string {
+    if (!PROJECT_ID_PATTERN.test(projectId) || !ROUTE_ID_PATTERN.test(routeId)) {
+        throw new Error('Invalid serve session path');
+    }
+    return `${serveBasePath(projectId)}/s/${routeId}`;
+}
+
+export function parseServeSessionPath(
+    pathname: string
+): { projectId: string; routeId: string; rest: string } | null {
+    const parsed = parseServePath(pathname);
+    if (!parsed) return null;
+    const match = /^\/s\/([^/]+)(\/.*)?$/.exec(parsed.rest);
+    if (!match || !ROUTE_ID_PATTERN.test(match[1] ?? '')) return null;
+    return { projectId: parsed.projectId, routeId: match[1]!, rest: match[2] ?? '/' };
 }
 
 /** A project id as minted by MongoDB — 24 hex characters. */
@@ -58,7 +81,8 @@ export function buildServeUpstreamUrl(input: {
 export function rewriteServeLocation(
     location: string,
     upstreamUrl: string,
-    basePath: string
+    basePath: string,
+    publicBasePath = basePath
 ): string | null {
     let resolved: URL;
     let upstreamOrigin: string;
@@ -75,5 +99,5 @@ export function rewriteServeLocation(
         resolved.pathname === basePath || resolved.pathname.startsWith(`${basePath}/`)
             ? resolved.pathname
             : `${basePath}${resolved.pathname}`;
-    return `${pathname}${resolved.search}${resolved.hash}`;
+    return `${publicBasePath}${pathname.slice(basePath.length)}${resolved.search}${resolved.hash}`;
 }

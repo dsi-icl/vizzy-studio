@@ -5,6 +5,7 @@ import {
     buildForwardedHeaders,
     buildRelayedHeaders,
     SERVE_SURFACE_HEADER,
+    SERVE_PUBLIC_BASE_HEADER,
     SERVE_WALL_ID_HEADER
 } from './serveHeaders';
 
@@ -33,6 +34,15 @@ describe('buildForwardedHeaders', () => {
 
         assert.equal(headers.get(SERVE_WALL_ID_HEADER), 'wall-a');
         assert.equal(headers.get(SERVE_SURFACE_HEADER), 'wall');
+    });
+
+    test('public base is issued by the gateway, not accepted from the browser', () => {
+        const headers = buildForwardedHeaders(
+            request({ [SERVE_PUBLIC_BASE_HEADER]: '/forged' }),
+            ACTOR,
+            '/serve/project/s/session'
+        );
+        assert.equal(headers.get(SERVE_PUBLIC_BASE_HEADER), '/serve/project/s/session');
     });
 
     test('never forwards our own credentials to third-party demo code', () => {

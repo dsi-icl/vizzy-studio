@@ -1,5 +1,6 @@
 export const SERVE_WALL_ID_HEADER = 'x-vizzy-wall-id';
 export const SERVE_SURFACE_HEADER = 'x-vizzy-surface';
+export const SERVE_PUBLIC_BASE_HEADER = 'x-vizzy-public-base';
 
 const FORWARDED_REQUEST_HEADERS = [
     'accept',
@@ -23,7 +24,8 @@ const RELAYED_RESPONSE_HEADERS = [
 
 export function buildForwardedHeaders(
     request: Request,
-    actor: { wallId: string; surface: string }
+    actor: { wallId?: string; surface: string },
+    publicBase?: string
 ): Headers {
     const headers = new Headers();
     for (const name of FORWARDED_REQUEST_HEADERS) {
@@ -37,8 +39,9 @@ export function buildForwardedHeaders(
     headers.set('x-forwarded-proto', url.protocol.replace(':', ''));
     headers.set('x-forwarded-host', request.headers.get('host') ?? url.host);
 
-    headers.set(SERVE_WALL_ID_HEADER, actor.wallId);
+    if (actor.wallId) headers.set(SERVE_WALL_ID_HEADER, actor.wallId);
     headers.set(SERVE_SURFACE_HEADER, actor.surface);
+    if (publicBase) headers.set(SERVE_PUBLIC_BASE_HEADER, publicBase);
 
     return headers;
 }
