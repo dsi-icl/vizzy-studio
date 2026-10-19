@@ -66,6 +66,24 @@ describe('resolveIframeSandbox', () => {
         );
     });
 
+    test('keeps an absolute serve launch opaque during server rendering', () => {
+        expect(
+            resolveIframeSandbox(
+                'https://vizzy.example.ac.uk/serve/507f1f77bcf86cd799439011/_launch?ticket=x',
+                ''
+            )
+        ).toBe('allow-scripts allow-forms allow-same-site-none-cookies');
+    });
+
+    test('treats a protocol-relative serve URL on our host as untrusted', () => {
+        expect(sandboxFor('//vizzy.example.ac.uk/serve/507f1f77bcf86cd799439011/screen')).toBe(
+            'allow-scripts allow-forms allow-same-site-none-cookies'
+        );
+        expect(
+            resolveIframeSandbox('//vizzy.example.ac.uk/serve/507f1f77bcf86cd799439011/screen', '')
+        ).toBe('allow-scripts allow-forms');
+    });
+
     test('never omits allow-scripts', () => {
         for (const src of ['/api/proxy?url=x', '/web-nonet', 'https://demos.example.ac.uk/']) {
             expect(sandboxFor(src)).toContain('allow-scripts');

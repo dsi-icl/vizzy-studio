@@ -377,7 +377,7 @@ function ProjectCardDialogBody({
                             src={controllerUrl}
                             sandbox={
                                 onControllerLaunchRequest
-                                    ? 'allow-scripts allow-same-origin allow-forms'
+                                    ? 'allow-scripts allow-forms allow-same-site-none-cookies'
                                     : undefined
                             }
                             className="h-full w-full border-0 bg-background"

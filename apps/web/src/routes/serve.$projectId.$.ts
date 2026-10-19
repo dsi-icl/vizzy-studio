@@ -4,6 +4,11 @@ import { createFileRoute } from '@tanstack/react-router';
 import { isCustomProject } from '~/lib/customProject';
 import { buildForwardedHeaders, buildRelayedHeaders } from '~/lib/serveHeaders';
 import {
+    addServeCorsHeaders,
+    isAllowedServeRequest,
+    servePreflightResponse
+} from '~/lib/serveRequestPolicy';
+import {
     buildServeUpstreamUrl,
     parseServePath,
     resolveDemoHost,
@@ -96,9 +101,13 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         });
     }
 
+    if (!isAllowedServeRequest(request, serveOrigin.origin)) {
+        return new Response('Forbidden', { status: 403 });
+    }
+
     if (isWebSocketUpgrade(request)) {
         if (
-            request.headers.get('origin') !== serveOrigin.origin ||
+            !['null', serveOrigin.origin].includes(request.headers.get('origin') ?? '') ||
             !(await resolveServeWebSocketUpstream(request))
         ) {
             return new Response('Forbidden', { status: 403 });
@@ -108,12 +117,14 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         });
     }
 
+    const preflight = servePreflightResponse(request);
+    if (preflight) return preflight;
     if (
         !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+        request.headers.get('origin') !== 'null' &&
         request.headers.get('origin') !== serveOrigin.origin
-    ) {
+    )
         return new Response('Forbidden', { status: 403 });
-    }
     const { projectId } = parsed;
     const project = await getProject(projectId).catch(() => null);
     if (!project || !isCustomProject(project)) return notFound();
@@ -220,14 +231,15 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     const headers = buildRelayedHeaders(upstream);
     headers.set('Cache-Control', 'private, no-store');
-    headers.set('Referrer-Policy', 'same-origin');
+    headers.set('Referrer-Policy', 'no-referrer');
     headers.set('X-Content-Type-Options', 'nosniff');
-    if (upstream.headers.get('content-type')?.toLowerCase().includes('text/html')) {
-        headers.set(
-            'Content-Security-Policy',
-            `frame-ancestors 'self' ${new URL(env.VITE_BASE_URL).origin}; object-src 'none'; base-uri 'self'`
-        );
-    }
+    // Any upstream content that a browser treats as a document (HTML, SVG,
+    // XML, PDF) must be sandboxed, including direct admin preview tabs.
+    headers.set(
+        'Content-Security-Policy',
+        "sandbox allow-scripts allow-forms allow-same-site-none-cookies; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
+    );
+    addServeCorsHeaders(request, headers);
 
     const location = upstream.headers.get('location');
     if (location) {

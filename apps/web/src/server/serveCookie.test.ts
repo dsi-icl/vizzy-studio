@@ -21,7 +21,7 @@ const actor = {
 };
 const value = (setCookie: string) => setCookie.split(';')[0]!;
 const request = (path = `/serve/${PROJECT}/screen`, cookie?: string, referer?: string) =>
-    new Request(`https://demos.example${path}`, {
+    new Request(`https://studio.example${path}`, {
         headers: { ...(cookie ? { cookie } : {}), ...(referer ? { referer } : {}) }
     });
 
@@ -43,6 +43,7 @@ describe('serve cookie', () => {
         assert.match(setCookie, new RegExp(`Path=/serve/${PROJECT};`));
         assert.ok(setCookie.includes('HttpOnly'));
         assert.ok(setCookie.includes('Secure'));
+        assert.ok(setCookie.includes('SameSite=None'));
     });
 
     test('merges screen and control grants without overwriting the first', () => {
@@ -72,7 +73,7 @@ describe('serve cookie', () => {
                 request(
                     `/serve/${PROJECT}/assets/app.js`,
                     second,
-                    `https://demos.example/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`
+                    `https://studio.example/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`
                 ),
                 PROJECT
             )?.routeId,

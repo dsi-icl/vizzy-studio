@@ -6,7 +6,6 @@ import { describe, test } from 'node:test';
 
 process.env.NODE_ENV = 'test';
 process.env.VITE_BASE_URL = 'https://studio.example';
-process.env.SERVER_SERVE_ORIGIN = 'https://demos.example';
 process.env.SERVER_AUTH_SECRET = 'test-only-secret';
 process.env.DEMOS_HOSTS = '127.0.0.1';
 
@@ -51,6 +50,7 @@ mock.module('~/server/collections', () => ({
 const { issueServeLaunch } = await import('../../apps/web/src/server/serveLaunch');
 const { handleServeRequest } = await import('../../apps/web/src/routes/serve.$projectId.$');
 const { resolveServeWebSocketUpstream } = await import('../../apps/web/src/server/serveWebSocket');
+const { servePublicUrl } = await import('../../apps/web/src/server/serveOrigin');
 
 const forwarded: Array<{ url: string; headers: Headers }> = [];
 const realFetch = globalThis.fetch;
@@ -61,27 +61,34 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     });
 }) as typeof fetch;
 
-function request(path: string, cookie?: string, origin = 'https://demos.example'): Request {
+function request(path: string, cookie?: string, origin = 'https://studio.example'): Request {
     return new Request(`${origin}${path}`, {
         headers: { host: new URL(origin).host, ...(cookie ? { cookie } : {}) }
     });
 }
 
-describe('isolated serve gateway', () => {
-    test('rejects the Vizzy origin and direct unauthenticated demo navigation', async () => {
+describe('sandboxed same-host serve gateway', () => {
+    test('publishes demo URLs on the Vizzy FQDN', () => {
+        assert.equal(
+            servePublicUrl(`/serve/${projectId}/screen`),
+            `https://studio.example/serve/${projectId}/screen`
+        );
+    });
+
+    test('rejects another host and direct unauthenticated demo navigation', async () => {
         assert.equal(
             (
                 await handleServeRequest(
-                    request(`/serve/${projectId}/screen`, undefined, 'https://studio.example')
+                    request(`/serve/${projectId}/screen`, undefined, 'https://other.example')
                 )
             ).status,
             404
         );
         assert.equal((await handleServeRequest(request(`/serve/${projectId}/screen`))).status, 403);
-        const websocket = new Request(`https://demos.example/serve/${projectId}/bus`, {
+        const websocket = new Request(`https://studio.example/serve/${projectId}/bus`, {
             headers: {
-                host: 'demos.example',
-                origin: 'https://demos.example',
+                host: 'studio.example',
+                origin: 'null',
                 connection: 'Upgrade',
                 upgrade: 'websocket'
             }
@@ -109,6 +116,7 @@ describe('isolated serve gateway', () => {
         );
         assert.equal((await handleServeRequest(request(launchPath))).status, 401);
         const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        assert.match(launch.headers.get('set-cookie')!, /SameSite=None; Secure/);
         const page = await handleServeRequest(
             request(
                 `/serve/${projectId}/screen?__vizzySession=${routeId}`,
@@ -122,8 +130,9 @@ describe('isolated serve gateway', () => {
         );
         assert.match(
             page.headers.get('content-security-policy') ?? '',
-            /frame-ancestors 'self' https:\/\/studio\.example/
+            /sandbox allow-scripts allow-forms allow-same-site-none-cookies; frame-ancestors 'self'/
         );
+        assert.doesNotMatch(page.headers.get('content-security-policy') ?? '', /allow-same-origin/);
         assert.doesNotMatch(
             page.headers.get('content-security-policy') ?? '',
             /default-src|script-src|style-src/
@@ -263,11 +272,11 @@ describe('isolated serve gateway', () => {
         );
         const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
         const websocket = new Request(
-            `https://demos.example/serve/${projectId}/bus?__vizzySession=${routeId}&channel=1`,
+            `https://studio.example/serve/${projectId}/bus?__vizzySession=${routeId}&channel=1`,
             {
                 headers: {
-                    host: 'demos.example',
-                    origin: 'https://demos.example',
+                    host: 'studio.example',
+                    origin: 'null',
                     cookie,
                     connection: 'Upgrade',
                     upgrade: 'websocket'
@@ -278,6 +287,110 @@ describe('isolated serve gateway', () => {
             await resolveServeWebSocketUpstream(websocket),
             `ws://127.0.0.1:3008/serve/${projectId}/bus?channel=1`
         );
+    });
+
+    test('requires a selector for opaque-origin API and WebSocket requests', async () => {
+        const { ticket, routeId } = await issueServeLaunch({
+            projectId,
+            entry: 'control',
+            actor: { surface: 'preview' }
+        });
+        const launch = await handleServeRequest(
+            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
+        );
+        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const api = (path: string, origin: string) =>
+            new Request(`https://studio.example${path}`, {
+                method: 'POST',
+                headers: {
+                    host: 'studio.example',
+                    origin,
+                    cookie,
+                    'content-type': 'application/json'
+                },
+                body: '{}'
+            });
+        assert.equal(
+            (await handleServeRequest(api(`/serve/${projectId}/api`, 'null'))).status,
+            403
+        );
+        assert.equal(
+            (
+                await handleServeRequest(
+                    api(`/serve/${projectId}/api?__vizzySession=${routeId}`, 'https://evil.example')
+                )
+            ).status,
+            403
+        );
+        const allowed = await handleServeRequest(
+            api(`/serve/${projectId}/api?__vizzySession=${routeId}`, 'null')
+        );
+        assert.equal(allowed.status, 200);
+        assert.equal(allowed.headers.get('access-control-allow-origin'), 'null');
+        assert.equal(allowed.headers.get('access-control-allow-credentials'), 'true');
+        assert.equal(forwarded.at(-1)?.headers.get('cookie'), null);
+
+        const preflight = await handleServeRequest(
+            new Request(`https://studio.example/serve/${projectId}/api?__vizzySession=${routeId}`, {
+                method: 'OPTIONS',
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'access-control-request-method': 'POST',
+                    'access-control-request-headers': 'content-type'
+                }
+            })
+        );
+        assert.equal(preflight.status, 204);
+        assert.equal(preflight.headers.get('access-control-allow-origin'), 'null');
+        assert.equal(
+            (
+                await handleServeRequest(
+                    new Request(`https://studio.example/serve/${projectId}/api`, {
+                        method: 'OPTIONS',
+                        headers: {
+                            host: 'studio.example',
+                            origin: 'null',
+                            'access-control-request-method': 'POST'
+                        }
+                    })
+                )
+            ).status,
+            403
+        );
+
+        const ws = (path: string) =>
+            new Request(`https://studio.example${path}`, {
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    cookie,
+                    connection: 'Upgrade',
+                    upgrade: 'websocket'
+                }
+            });
+        assert.equal(await resolveServeWebSocketUpstream(ws(`/serve/${projectId}/bus`)), null);
+        assert.ok(
+            await resolveServeWebSocketUpstream(
+                ws(`/serve/${projectId}/bus?__vizzySession=${routeId}`)
+            )
+        );
+
+        const asset = (cookieValue?: string, destination = 'script') =>
+            new Request(`https://studio.example/serve/${projectId}/assets/app.js`, {
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'sec-fetch-site': 'cross-site',
+                    'sec-fetch-dest': destination,
+                    ...(cookieValue ? { cookie: cookieValue } : {})
+                }
+            });
+        const staticResponse = await handleServeRequest(asset(cookie));
+        assert.equal(staticResponse.status, 200);
+        assert.equal(staticResponse.headers.get('access-control-allow-origin'), 'null');
+        assert.equal((await handleServeRequest(asset())).status, 403);
+        assert.equal((await handleServeRequest(asset(cookie, 'empty'))).status, 403);
     });
 });
 

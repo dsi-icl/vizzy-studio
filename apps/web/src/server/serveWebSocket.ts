@@ -4,6 +4,7 @@ import { createWebSocketProxy, defineHooks, type Peer } from 'crossws';
 import WebSocket from 'ws';
 
 import { isCustomProject } from '~/lib/customProject';
+import { isAllowedServeRequest } from '~/lib/serveRequestPolicy';
 import {
     parseServePath,
     resolveDemoHost,
@@ -37,6 +38,13 @@ export function isWebSocketUpgrade(request: Request): boolean {
 
 export async function resolveServeWebSocketUpstream(request: Request): Promise<string | null> {
     if (!isServeOriginRequest(request)) return null;
+    const serveOrigin = getServeOrigin();
+    if (
+        !serveOrigin ||
+        !['null', serveOrigin.origin].includes(request.headers.get('origin') ?? '') ||
+        !isAllowedServeRequest(request, serveOrigin.origin)
+    )
+        return null;
     const url = new URL(request.url);
     const parsed = parseServePath(url.pathname);
     if (!parsed || parsed.rest.startsWith('/s/') || parsed.rest.startsWith('/_')) return null;

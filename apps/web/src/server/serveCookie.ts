@@ -162,14 +162,6 @@ function actorFromGrant(grant: StoredGrant): ServeActor {
     };
 }
 
-function shouldSetSecureCookie(request: Request): boolean {
-    return (
-        env.NODE_ENV === 'production' ||
-        env.SERVER_SERVE_ORIGIN.startsWith('https://') ||
-        new URL(request.url).protocol === 'https:'
-    );
-}
-
 /** Merge this launch or refresh into the other live grants for this project. */
 export function createServeCookie(input: {
     request: Request;
@@ -208,8 +200,10 @@ export function createServeCookie(input: {
         `Max-Age=${cookieAge}`,
         `Path=${serveBasePath(input.projectId)}`,
         'HttpOnly',
-        'SameSite=Lax',
-        ...(shouldSetSecureCookie(input.request) ? ['Secure'] : [])
+        // Sandboxed demo documents have an opaque origin. Their subrequests are
+        // cross-site, so Lax would silently omit this path-scoped grant.
+        'SameSite=None',
+        'Secure'
     ].join('; ');
 }
 

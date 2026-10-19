@@ -1,14 +1,12 @@
 import '@tanstack/react-start/server-only';
 import { env } from '@repo/env';
 
-/** Custom demos must never execute on Vizzy Studio's browser origin. */
+/** Demo URLs use Vizzy's public host; response sandboxing isolates demo scripts. */
 export function getServeOrigin(): URL | null {
     try {
-        const origin = new URL(env.SERVER_SERVE_ORIGIN);
-        const app = new URL(env.VITE_BASE_URL);
+        const origin = new URL(env.VITE_BASE_URL);
         if (!['http:', 'https:'].includes(origin.protocol)) return null;
         if (env.NODE_ENV === 'production' && origin.protocol !== 'https:') return null;
-        if (origin.origin === app.origin || origin.hostname === app.hostname) return null;
         if (
             origin.username ||
             origin.password ||
@@ -32,6 +30,6 @@ export function isServeOriginRequest(request: Request): boolean {
 
 export function servePublicUrl(path: string): string {
     const origin = getServeOrigin();
-    if (!origin) throw new Error('Dedicated demo origin is not configured');
+    if (!origin) throw new Error('Vizzy public origin is not configured');
     return new URL(path, origin).toString();
 }

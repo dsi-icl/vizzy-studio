@@ -1,74 +1,96 @@
 # Custom demo proxy integration
 
-This branch consolidates PR #162 and PR #163. It uses the project `customPort`,
-`customHost`, and `customStripPrefix` settings from #162 and the admin preview
-flow from #163. Demos run behind one `/serve/<projectId>/` gateway on a dedicated
-browser origin. There is no per-project JSON environment mapping or in-memory
-session registry.
+This branch consolidates PR #162 and PR #163. It keeps #162's project
+`customPort`, `customHost`, `customStripPrefix`, and `/serve/<projectId>/` proxy,
+and brings in #163's admin previews and launch flow. No second browser hostname
+or per-project JSON environment mapping is required.
 
-## Browser origin and routing
+## Routing and access
 
-Set `SERVER_SERVE_ORIGIN` to a dedicated HTTPS sibling host on the same site as
-`VITE_BASE_URL` (for example, `studio.example.com` and `demos.example.com`).
-This lets SameSite cookies work inside wall and gallery iframes while isolating
-demo code from Vizzy's browser origin. The load balancer must preserve `Host`,
-path, query, and WebSocket upgrades for `/serve/*`. The main Vizzy host remains
-at `VITE_BASE_URL` and should use host-only authentication cookies. Demo upstreams
-must only be reachable through the gateway.
+Use the same public FQDN in `VITE_BASE_URL` for Vizzy and custom demos. Route
+`/serve/*` to the Vizzy app on that host, preserving path, query, `Host`, and
+WebSocket upgrades. Production requires HTTPS. For local browser testing, use
+`http://localhost` for `VITE_BASE_URL`; Chromium accepted the Secure demo cookie
+there but rejected it on `http://127.0.0.1`.
 
 Set `DEMOS_HOSTS` to the comma-separated allowlist of upstream hosts. Configure
 `customHost` on each custom project to one of those hosts and `customPort` to its
 port. Set `customStripPrefix` when the demo process expects `/screen` and
 `/assets/...` at its own root; otherwise it receives `/serve/<projectId>/screen`
-and `/serve/<projectId>/assets/...`.
+and `/serve/<projectId>/assets/...`. Demo upstreams should only be reachable
+through the gateway.
 
 The app issues a 60-second one-use launch ticket for a bound wall or controller,
 or a signed-in admin preview. Ticket IDs are stored in MongoDB with a TTL index.
-The demo host consumes the ticket, sets an HttpOnly signed cookie at
-`Path=/serve/<projectId>`, and redirects to `/serve/<projectId>/screen` or
-`/control`. The cookie holds a bounded map of independent grants, so opening
-screen, control, or previews for the same project does not overwrite another
-grant. The URL carries a `__vizzySession` query parameter that selects the grant;
-this selector is not an authorization token. The browser sends the signed cookie
-on every project path. The gateway uses a same-origin Referer for subrequests
-that omit the selector. Shared static assets can use any current grant. Ambiguous
-API or WebSocket requests must provide the selector.
+Vizzy consumes the ticket, sets an HttpOnly, Secure, SameSite=None signed cookie
+at `Path=/serve/<projectId>`, and redirects to `/screen` or `/control` below that
+path. The cookie holds a bounded map of independent grants, so tabs for the same
+project do not overwrite each other. `__vizzySession` in the entry URL selects a
+grant; the cookie is still required. The gateway removes the selector before
+forwarding a request upstream.
 
 Wall and controller grants last up to two hours and are checked against the live
-wall binding on every HTTP request and WebSocket handshake. Admin previews last
+wall binding on each HTTP request and WebSocket handshake. Admin previews last
 at most 15 minutes. Signed cookies survive a web process restart. A wall
 reconnect restores its binding from the wall record and obtains a new launch.
 Each bind has a random generation that invalidates grants from an earlier bind.
-Wall and gallery clients refresh their grants every minute with a small image
-request to `/_keepalive`. If it fails, they obtain a fresh launch and reload the
-iframe. Admin previews do not refresh.
+Wall and gallery clients refresh grants every minute with `/_keepalive`; a
+failed refresh starts a new launch.
 
-The proxy strips browser cookies and authorization headers before contacting the
-demo process. It supplies verified `X-Vizzy-Wall-Id`, `X-Vizzy-Surface`, and
-`X-Vizzy-Public-Base` headers. It applies a narrow HTML CSP for framing,
-objects, and base URLs; it does not block the demo's inline scripts or styles.
+## Same-host script isolation
+
+Vizzy keeps the wall and custom controller iframes in an opaque origin with
+`sandbox="allow-scripts allow-forms allow-same-site-none-cookies"`. Every proxied
+response also carries the same CSP `sandbox` policy, which protects direct admin
+preview tabs and other document types. Chromium's extra token keeps the demo
+cookie available when third-party cookies are blocked; browsers that do not
+support the token ignore it. Browser cookie blocking policies still require a
+deployment pilot. Demo scripts cannot read Vizzy's `localStorage`, including
+`vizzy.device.identity.v1`, or access the parent document. Do not add
+`allow-same-origin` to either sandbox.
+
+An opaque document's asset, fetch, and WebSocket requests appear cross-site to
+the browser despite sharing Vizzy's FQDN. The path-scoped demo cookie therefore
+uses `SameSite=None; Secure`. Vizzy's main auth cookies stay separate; the proxy
+strips all browser cookies and authorization headers before contacting the demo
+process. The `/serve/*` gateway accepts `Origin: null` only with a valid signed demo grant.
+Dynamic opaque-origin requests must also carry the entry page's
+`__vizzySession` selector. The gateway allows credentialed `Origin: null` CORS
+only for those requests and for static `/assets/` or `/_next/static/`
+subresources. Requests to Vizzy's `/api/*` remain outside that CORS policy.
 
 ## Demo rebuild contract
 
-Build each demo with its browser base path fixed to `/serve/<projectId>/`. For
-example, Vite's `base` can be `/serve/<projectId>/`. Asset tags and project-root
-API calls under that path then work without a runtime path segment. The browser
-URL for entry pages includes `__vizzySession`, which the demo may copy into
-WebSocket URLs or fetch URLs that do not inherit the document Referer. For
-example, read it from `location.search` and append it as a query parameter to
-`/serve/<projectId>/bus`. The gateway removes that internal parameter before
-forwarding requests upstream.
+Build each demo with its browser base path fixed to `/serve/<projectId>/`; for
+example, use that value for Vite's `base`. Static asset tags can use that path
+directly, but module scripts, module preloads, and stylesheets need
+`crossorigin="use-credentials"` on their generated HTML tags. Vite emits
+`crossorigin` without that value by default, which omits the demo cookie from
+opaque-origin requests and makes protected assets return 403. Fonts requested
+by CSS also omit cookies; bundle them inline (for example, as data URLs) rather
+than as separate protected files. For dynamic HTTP API calls, copy
+`__vizzySession` from the entry URL
+into the URL and set `credentials: 'include'`:
+
+```js
+const session = new URL(location.href).searchParams.get('__vizzySession');
+const url = new URL(`/serve/${projectId}/api/state`, location.href);
+url.searchParams.set('__vizzySession', session);
+const response = await fetch(url, { credentials: 'include' });
+```
+
+WebSocket URLs also need the selector. HTML forms need it in their action URL.
+The gateway accepts JSON request preflights with `Content-Type`; custom request
+headers are not passed to the upstream demo. Root-relative calls to Vizzy's
+`/api/*` are not part of the demo proxy and will fail from the opaque origin.
 
 Check each rebuilt demo in a browser for document, assets, HTTP API, WebSocket,
-redirects, and both controller and wall layouts before switching traffic.
+redirects, controller, wall, and admin preview before switching traffic. The
+proxy's CSP permits inline demo scripts and styles while sandboxing documents.
 
 ## Verification
 
-Run `bun test tooling/testing/serve-merge-smoke.test.ts` for the host boundary,
-one-use launch, cookie scope, proxy rewrite, and immediate unbind behavior.
-Run `bun test apps/web/src/lib/serveUrls.test.ts apps/web/src/server/serveCookie.test.ts
-apps/web/src/lib/serveHeaders.test.ts` for URL, cookie, and header rules.
-
-Deployment still needs a real browser pilot on rebuilt demos and a restart test
-with the actual load balancer, MongoDB, and wall reconnection flow. Local tests
-and typechecks do not prove those deployment properties.
+Run `bun test tooling/testing/serve-merge-smoke.test.ts
+apps/web/src/server/serveCookie.test.ts apps/web/tests/unit/iframeSandbox.test.ts`.
+Deployment still needs a pilot with rebuilt demos and a restart test with the
+actual load balancer, MongoDB, and wall reconnection flow.
