@@ -7,8 +7,12 @@ const TRUSTED_SAME_ORIGIN = 'allow-scripts allow-same-origin';
 /** A genuinely remote document, isolated from us by the same-origin policy. */
 const REMOTE_ORIGIN = 'allow-scripts allow-same-origin allow-forms';
 
+const TRUSTED_DEMO_SANDBOX = 'allow-scripts allow-same-origin allow-forms';
+
 /** Our own pages used as wall fallbacks, which are safe to let hydrate. */
 const TRUSTED_PATH_PREFIXES = ['/web-nonet', '/web-corsissue', '/web-placeholder'];
+
+const SERVE_PATH_PREFIX = '/serve/';
 
 /** The app's own origin, or an empty string during server rendering. */
 function currentAppOrigin(): string {
@@ -25,6 +29,10 @@ export function resolveIframeSandbox(src: string, appOrigin: string = currentApp
 
     if (TRUSTED_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) {
         return TRUSTED_SAME_ORIGIN;
+    }
+
+    if (path.startsWith(SERVE_PATH_PREFIX)) {
+        return TRUSTED_DEMO_SANDBOX;
     }
 
     // Anything else on our origin is treated as untrusted

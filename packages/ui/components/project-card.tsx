@@ -306,6 +306,7 @@ function ProjectCardDialogBody({
                         <iframe
                             title={`Controller for ${project.name}`}
                             src={controllerUrl}
+                            sandbox="allow-scripts allow-same-origin allow-forms"
                             className="h-full w-full border-0 bg-background"
                             onLoad={() => {
                                 if (isRefreshingController) {

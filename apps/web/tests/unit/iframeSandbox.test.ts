@@ -79,3 +79,24 @@ describe('resolveIframeSandbox', () => {
         }
     });
 });
+
+describe('custom project demos', () => {
+    test.each([
+        '/serve/507f1f77bcf86cd799439011/screen?c=0&r=0',
+        '/serve/507f1f77bcf86cd799439011/control?l=gallery',
+        'https://example.ac.uk/serve/507f1f77bcf86cd799439011/screen'
+    ])('allows same-origin so the serve cookie is sent: %s', (src) => {
+        expect(sandboxFor(src)).toBe('allow-scripts allow-same-origin allow-forms');
+    });
+
+    test('still withholds top-level navigation, popups and downloads', () => {
+        const sandbox = sandboxFor('/serve/507f1f77bcf86cd799439011/screen');
+        expect(sandbox).not.toContain('allow-top-navigation');
+        expect(sandbox).not.toContain('allow-popups');
+        expect(sandbox).not.toContain('allow-downloads');
+    });
+
+    test('a lookalike path is still treated as untrusted', () => {
+        expect(sandboxFor('/served/elsewhere')).toBe('allow-scripts allow-forms');
+    });
+});
