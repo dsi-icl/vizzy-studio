@@ -3,24 +3,18 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { env } from '@repo/env';
 
-import { serveSessionBasePath } from '~/lib/serveUrls';
+import {
+    parseServePath,
+    serveBasePath,
+    SERVE_SESSION_ID_PATTERN,
+    SERVE_SESSION_QUERY_PARAM
+} from '~/lib/serveUrls';
 
 export const SERVE_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
+const PREVIEW_MAX_AGE_SECONDS = 15 * 60;
+const MAX_GRANTS = 12;
 
-export type ServeSurface = 'wall' | 'control' | 'preview-screen' | 'preview-control';
-
-interface ServeCookiePayload {
-    v: 1;
-    projectId: string;
-    routeId: string;
-    surface: ServeSurface;
-    wallId?: string;
-    scopeId?: number;
-    bindingId?: string;
-    iat: number;
-    exp: number;
-}
-
+export type ServeSurface = 'wall' | 'control' | 'preview';
 export type ServeActor =
     | {
           surface: 'wall' | 'control';
@@ -29,17 +23,38 @@ export type ServeActor =
           bindingId: string;
           expiresAt?: number;
       }
-    | { surface: 'preview-screen' | 'preview-control'; expiresAt?: number };
+    | { surface: 'preview'; expiresAt?: number };
+
+interface StoredGrant {
+    surface: ServeSurface;
+    wallId?: string;
+    scopeId?: number;
+    bindingId?: string;
+    iat: number;
+    exp: number;
+}
+
+interface ServeCookiePayload {
+    v: 2;
+    projectId: string;
+    iat: number;
+    grants: Record<string, StoredGrant>;
+}
+
+export interface ResolvedServeGrant {
+    routeId: string;
+    actor: ServeActor;
+}
 
 export function shouldRefreshServeCookie(actor: ServeActor, now = Date.now()): boolean {
-    if (actor.surface.startsWith('preview-')) return false;
-    if (actor.expiresAt === undefined) return false;
+    if (actor.surface === 'preview' || actor.expiresAt === undefined) return false;
     const halfLifeMs = (SERVE_COOKIE_MAX_AGE_SECONDS * 1000) / 2;
     return actor.expiresAt - now < halfLifeMs;
 }
 
-export function serveCookieName(routeId: string): string {
-    return `vizzy_serve_${routeId}`;
+export function serveCookieName(projectId: string): string {
+    if (!/^[a-f\d]{24}$/i.test(projectId)) throw new Error('Invalid project ID');
+    return `vizzy_serve_${projectId}`;
 }
 
 function getSigningSecret(): string {
@@ -49,53 +64,102 @@ function getSigningSecret(): string {
     return env.SERVER_AUTH_SECRET || 'degraded-mode-secret';
 }
 
-function sign(payload: string): string {
-    return createHmac('sha256', getSigningSecret()).update(payload).digest('base64url');
+function sign(encoded: string): string {
+    return createHmac('sha256', getSigningSecret())
+        .update('serve-cookie-v2:')
+        .update(encoded)
+        .digest('base64url');
 }
 
-function hasValidSignature(payload: string, signature: string): boolean {
-    const expectedBytes = Buffer.from(sign(payload));
-    const actualBytes = Buffer.from(signature);
-    if (expectedBytes.byteLength !== actualBytes.byteLength) return false;
-    return timingSafeEqual(expectedBytes, actualBytes);
+function hasValidSignature(encoded: string, signature: string): boolean {
+    const expected = Buffer.from(sign(encoded));
+    const actual = Buffer.from(signature);
+    return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-function parseCookieHeader(header: string | null): Record<string, string> {
-    if (!header) return {};
-    const out: Record<string, string> = {};
-    for (const part of header.split(';')) {
-        const [rawName, ...rawValue] = part.split('=');
-        const name = rawName?.trim();
-        if (!name) continue;
-        out[name] = rawValue.join('=').trim();
-    }
-    return out;
-}
-
-function isServeCookiePayload(value: unknown): value is ServeCookiePayload {
+function isStoredGrant(value: unknown): value is StoredGrant {
     if (!value || typeof value !== 'object') return false;
-    const payload = value as Partial<ServeCookiePayload>;
+    const grant = value as Partial<StoredGrant>;
     return (
-        payload.v === 1 &&
-        (payload.surface === 'wall' ||
-            payload.surface === 'control' ||
-            payload.surface === 'preview-screen' ||
-            payload.surface === 'preview-control') &&
-        typeof payload.projectId === 'string' &&
-        payload.projectId.length > 0 &&
-        typeof payload.routeId === 'string' &&
-        /^[A-Za-z\d_-]{22}$/.test(payload.routeId) &&
-        (payload.surface.startsWith('preview-') ||
-            (typeof payload.wallId === 'string' &&
-                typeof payload.scopeId === 'number' &&
-                Number.isFinite(payload.scopeId) &&
-                typeof payload.bindingId === 'string' &&
-                /^[A-Za-z\d_-]{22}$/.test(payload.bindingId))) &&
-        typeof payload.iat === 'number' &&
-        Number.isFinite(payload.iat) &&
-        typeof payload.exp === 'number' &&
-        Number.isFinite(payload.exp)
+        (grant.surface === 'wall' || grant.surface === 'control' || grant.surface === 'preview') &&
+        (grant.surface === 'preview' ||
+            (typeof grant.wallId === 'string' &&
+                grant.wallId.length > 0 &&
+                typeof grant.scopeId === 'number' &&
+                Number.isFinite(grant.scopeId) &&
+                typeof grant.bindingId === 'string' &&
+                SERVE_SESSION_ID_PATTERN.test(grant.bindingId))) &&
+        typeof grant.iat === 'number' &&
+        Number.isFinite(grant.iat) &&
+        typeof grant.exp === 'number' &&
+        Number.isFinite(grant.exp)
     );
+}
+
+function decodeCookie(token: string, projectId: string): ServeCookiePayload | null {
+    const [encoded, signature, extra] = token.split('.');
+    if (!encoded || !signature || extra || !hasValidSignature(encoded, signature)) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    } catch {
+        return null;
+    }
+    if (!parsed || typeof parsed !== 'object') return null;
+    const payload = parsed as Partial<ServeCookiePayload>;
+    if (
+        payload.v !== 2 ||
+        payload.projectId !== projectId ||
+        typeof payload.iat !== 'number' ||
+        !Number.isFinite(payload.iat) ||
+        !payload.grants ||
+        typeof payload.grants !== 'object' ||
+        Array.isArray(payload.grants)
+    ) {
+        return null;
+    }
+    const entries = Object.entries(payload.grants);
+    if (
+        entries.length > MAX_GRANTS ||
+        entries.some(([id, grant]) => !SERVE_SESSION_ID_PATTERN.test(id) || !isStoredGrant(grant))
+    ) {
+        return null;
+    }
+    return payload as ServeCookiePayload;
+}
+
+function readServeCookie(request: Request, projectId: string): ServeCookiePayload | null {
+    const header = request.headers.get('cookie');
+    if (!header) return null;
+    const name = serveCookieName(projectId);
+    let newest: ServeCookiePayload | null = null;
+    for (const part of header.split(';')) {
+        const boundary = part.indexOf('=');
+        if (boundary < 0 || part.slice(0, boundary).trim() !== name) continue;
+        const decoded = decodeCookie(part.slice(boundary + 1).trim(), projectId);
+        if (decoded && (!newest || decoded.iat >= newest.iat)) newest = decoded;
+    }
+    return newest;
+}
+
+function liveGrants(
+    request: Request,
+    projectId: string,
+    now = Date.now()
+): Record<string, StoredGrant> {
+    const grants = readServeCookie(request, projectId)?.grants ?? {};
+    return Object.fromEntries(Object.entries(grants).filter(([, grant]) => grant.exp > now));
+}
+
+function actorFromGrant(grant: StoredGrant): ServeActor {
+    if (grant.surface === 'preview') return { surface: 'preview', expiresAt: grant.exp };
+    return {
+        surface: grant.surface,
+        wallId: grant.wallId!,
+        scopeId: grant.scopeId!,
+        bindingId: grant.bindingId!,
+        expiresAt: grant.exp
+    };
 }
 
 function shouldSetSecureCookie(request: Request): boolean {
@@ -106,20 +170,23 @@ function shouldSetSecureCookie(request: Request): boolean {
     );
 }
 
+/** Merge this launch or refresh into the other live grants for this project. */
 export function createServeCookie(input: {
     request: Request;
     projectId: string;
     routeId: string;
     actor: ServeActor;
 }): string {
+    if (!SERVE_SESSION_ID_PATTERN.test(input.routeId)) throw new Error('Invalid session ID');
     const now = Date.now();
-    const maxAge = input.actor.surface.startsWith('preview-')
-        ? 15 * 60
-        : SERVE_COOKIE_MAX_AGE_SECONDS;
-    const payload: ServeCookiePayload = {
-        v: 1,
-        projectId: input.projectId,
-        routeId: input.routeId,
+    const maxAge =
+        input.actor.surface === 'preview' ? PREVIEW_MAX_AGE_SECONDS : SERVE_COOKIE_MAX_AGE_SECONDS;
+    const others = Object.entries(liveGrants(input.request, input.projectId, now))
+        .filter(([id]) => id !== input.routeId)
+        .sort(([, a], [, b]) => b.iat - a.iat)
+        .slice(0, MAX_GRANTS - 1);
+    const grants = Object.fromEntries(others) as Record<string, StoredGrant>;
+    grants[input.routeId] = {
         surface: input.actor.surface,
         ...('wallId' in input.actor
             ? {
@@ -131,49 +198,81 @@ export function createServeCookie(input: {
         iat: now,
         exp: now + maxAge * 1000
     };
+    const payload: ServeCookiePayload = { v: 2, projectId: input.projectId, iat: now, grants };
     const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-
+    const cookieAge = Math.ceil(
+        (Math.max(...Object.values(grants).map((grant) => grant.exp)) - now) / 1000
+    );
     return [
-        `${serveCookieName(input.routeId)}=${encoded}.${sign(encoded)}`,
-        `Max-Age=${maxAge}`,
-        `Path=${serveSessionBasePath(input.projectId, input.routeId)}/`,
+        `${serveCookieName(input.projectId)}=${encoded}.${sign(encoded)}`,
+        `Max-Age=${cookieAge}`,
+        `Path=${serveBasePath(input.projectId)}`,
         'HttpOnly',
         'SameSite=Lax',
         ...(shouldSetSecureCookie(input.request) ? ['Secure'] : [])
     ].join('; ');
 }
 
-export function resolveServeCookieActor(
+function routeHint(request: Request, projectId: string): string | null {
+    const url = new URL(request.url);
+    if (url.searchParams.has(SERVE_SESSION_QUERY_PARAM)) {
+        return url.searchParams.get(SERVE_SESSION_QUERY_PARAM) ?? '';
+    }
+    const referrer = request.headers.get('referer');
+    if (!referrer) return null;
+    try {
+        const source = new URL(referrer);
+        const base = serveBasePath(projectId);
+        if (
+            source.origin === url.origin &&
+            (source.pathname === base || source.pathname.startsWith(`${base}/`)) &&
+            source.searchParams.has(SERVE_SESSION_QUERY_PARAM)
+        ) {
+            return source.searchParams.get(SERVE_SESSION_QUERY_PARAM) ?? '';
+        }
+    } catch {
+        // An invalid Referer cannot identify a grant.
+    }
+    return null;
+}
+
+/** Use the document's session hint for dynamic requests; static assets are shared by every grant. */
+export function resolveServeCookieGrant(
     request: Request,
     projectId: string,
-    routeId: string
-): ServeActor | null {
-    const token = parseCookieHeader(request.headers.get('cookie'))[serveCookieName(routeId)];
-    if (!token) return null;
-
-    const [encoded, signature] = token.split('.');
-    if (!encoded || !signature || !hasValidSignature(encoded, signature)) return null;
-
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
-    } catch {
-        return null;
+    isAllowed: (actor: ServeActor) => boolean = () => true
+): ResolvedServeGrant | null {
+    const grants = liveGrants(request, projectId);
+    const hint = routeHint(request, projectId);
+    if (hint !== null) {
+        const grant = grants[hint];
+        if (!grant) return null;
+        const actor = actorFromGrant(grant);
+        return isAllowed(actor) ? { routeId: hint, actor } : null;
     }
 
-    if (!isServeCookiePayload(parsed)) return null;
-    if (parsed.projectId !== projectId) return null;
-    if (parsed.routeId !== routeId) return null;
-    if (parsed.exp <= Date.now()) return null;
-
-    if (parsed.surface === 'wall' || parsed.surface === 'control') {
-        return {
-            surface: parsed.surface,
-            wallId: parsed.wallId!,
-            scopeId: parsed.scopeId!,
-            bindingId: parsed.bindingId!,
-            expiresAt: parsed.exp
-        };
+    const parsed = parseServePath(new URL(request.url).pathname);
+    const candidates = Object.entries(grants).filter(([, grant]) => {
+        if (!isAllowed(actorFromGrant(grant))) return false;
+        if (parsed?.rest === '/screen' || parsed?.rest.startsWith('/screen/')) {
+            return grant.surface === 'wall' || grant.surface === 'preview';
+        }
+        if (parsed?.rest === '/control' || parsed?.rest.startsWith('/control/')) {
+            return grant.surface === 'control' || grant.surface === 'preview';
+        }
+        return true;
+    });
+    if (candidates.length === 0) return null;
+    if (candidates.length > 1) {
+        const staticAsset =
+            parsed?.rest.startsWith('/assets/') ||
+            parsed?.rest.startsWith('/_next/static/') ||
+            /\.(?:css|js|mjs|map|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/i.test(
+                parsed?.rest ?? ''
+            );
+        if (!staticAsset || !['GET', 'HEAD'].includes(request.method)) return null;
+        candidates.reverse().sort(([, a], [, b]) => b.iat - a.iat);
     }
-    return { surface: parsed.surface, expiresAt: parsed.exp };
+    const [routeId, grant] = candidates[0]!;
+    return { routeId, actor: actorFromGrant(grant) };
 }

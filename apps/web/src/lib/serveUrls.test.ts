@@ -4,15 +4,14 @@ import { describe, test } from 'node:test';
 import {
     buildServeUpstreamUrl,
     parseServePath,
-    parseServeSessionPath,
     resolveDemoHost,
     upstreamPathname,
     rewriteServeLocation,
     serveBasePath,
     serveBusPath,
     serveControlPath,
-    serveWallPath,
-    serveSessionBasePath
+    serveKeepalivePath,
+    serveWallPath
 } from './serveUrls';
 
 const PID = '507f1f77bcf86cd799439011';
@@ -60,15 +59,11 @@ describe('serve paths', () => {
         );
     });
 
-    test('parses only session-scoped browser paths', () => {
-        const base = serveSessionBasePath(PID, ROUTE);
-        assert.deepEqual(parseServeSessionPath(`${base}/assets/app.js`), {
-            projectId: PID,
-            routeId: ROUTE,
-            rest: '/assets/app.js'
-        });
-        assert.equal(parseServeSessionPath(`/serve/${PID}/assets/app.js`), null);
-        assert.equal(parseServeSessionPath(`/serve/${PID}/s/bad/screen`), null);
+    test('keeps the session selector out of static asset paths', () => {
+        assert.equal(
+            serveKeepalivePath(PID, ROUTE),
+            `/serve/${PID}/_keepalive?__vizzySession=${ROUTE}`
+        );
     });
 });
 
@@ -112,15 +107,10 @@ describe('rewriteServeLocation', () => {
         );
     });
 
-    test('rewrites upstream redirects into the same browser session', () => {
+    test('rewrites upstream redirects into the static project base', () => {
         assert.equal(
-            rewriteServeLocation(
-                '/assets/app.js',
-                UPSTREAM,
-                BASE,
-                serveSessionBasePath(PID, ROUTE)
-            ),
-            `/serve/${PID}/s/${ROUTE}/assets/app.js`
+            rewriteServeLocation('/assets/app.js', UPSTREAM, BASE),
+            `/serve/${PID}/assets/app.js`
         );
     });
 });

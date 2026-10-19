@@ -6,11 +6,10 @@ import { buildForwardedHeaders, buildRelayedHeaders } from '~/lib/serveHeaders';
 import {
     buildServeUpstreamUrl,
     parseServePath,
-    parseServeSessionPath,
     resolveDemoHost,
     rewriteServeLocation,
     serveBasePath,
-    serveSessionBasePath,
+    SERVE_SESSION_QUERY_PARAM,
     upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
@@ -18,7 +17,7 @@ import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
     createServeCookie,
-    resolveServeCookieActor,
+    resolveServeCookieGrant,
     shouldRefreshServeCookie,
     type ServeActor
 } from '~/server/serveCookie';
@@ -49,7 +48,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     const serveOrigin = getServeOrigin()!;
     const url = new URL(request.url);
     const parsed = parseServePath(url.pathname);
-    if (!parsed) return notFound();
+    if (!parsed || parsed.rest.startsWith('/s/')) return notFound();
 
     if (parsed.rest === '/_launch') {
         if (request.method !== 'GET' || isWebSocketUpgrade(request))
@@ -65,8 +64,11 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         }
         const project = await getProject(parsed.projectId).catch(() => null);
         if (!project || !isCustomProject(project)) return notFound();
-        const base = serveSessionBasePath(parsed.projectId, launch.routeId);
-        const destination = new URL(`${base}/${launch.entry}`, serveOrigin);
+        const destination = new URL(
+            `${serveBasePath(parsed.projectId)}/${launch.entry}`,
+            serveOrigin
+        );
+        destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, launch.routeId);
         if (launch.entry === 'screen') {
             for (const name of ['c', 'r']) {
                 const value = url.searchParams.get(name);
@@ -75,6 +77,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         } else if (launch.actor.surface === 'control') {
             destination.searchParams.set('l', 'gallery');
             destination.searchParams.set('w', launch.actor.wallId);
+        } else if (launch.actor.surface === 'preview') {
+            destination.searchParams.set('preview', '1');
         }
         return new Response(null, {
             status: 303,
@@ -110,9 +114,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     ) {
         return new Response('Forbidden', { status: 403 });
     }
-    const session = parseServeSessionPath(url.pathname);
-    if (!session) return notFound();
-    const { projectId, routeId } = session;
+    const { projectId } = parsed;
     const project = await getProject(projectId).catch(() => null);
     if (!project || !isCustomProject(project)) return notFound();
 
@@ -132,8 +134,10 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         return new Response('Custom project has no port configured', { status: 503 });
     }
 
-    const actor = resolveServeCookieActor(request, projectId, routeId);
-    if (!actor || !actorIsLive(actor, projectId)) {
+    const grant = resolveServeCookieGrant(request, projectId, (actor) =>
+        actorIsLive(actor, projectId)
+    );
+    if (!grant) {
         await logAuditDenied({
             action: 'SERVE_DENIED',
             reasonCode: 'NOT_BOUND_OR_NO_CREDENTIAL',
@@ -148,23 +152,22 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         });
         return new Response('Forbidden', { status: 403 });
     }
+    const { actor, routeId } = grant;
     const mintCookie = shouldRefreshServeCookie(actor);
 
-    if (session.rest === '/_keepalive') {
+    if (parsed.rest === '/_keepalive') {
         if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
         return new Response(KEEPALIVE_GIF, {
             headers: {
                 'Content-Type': 'image/gif',
                 'Cache-Control': 'private, no-store',
-                'Referrer-Policy': 'no-referrer',
-                ...(!actor.surface.startsWith('preview-')
+                'Referrer-Policy': 'same-origin',
+                ...(actor.surface !== 'preview'
                     ? { 'Set-Cookie': createServeCookie({ request, projectId, routeId, actor }) }
                     : {})
             }
         });
     }
-
-    const upstreamPath = `${serveBasePath(projectId)}${session.rest}`;
 
     const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
     if (!host) {
@@ -182,14 +185,11 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         return new Response('Demo host is not configured', { status: 503 });
     }
 
+    url.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
     const upstreamUrl = buildServeUpstreamUrl({
         host,
         port,
-        pathname: upstreamPathname(
-            { projectId, rest: session.rest },
-            upstreamPath,
-            project.customStripPrefix
-        ),
+        pathname: upstreamPathname(parsed, url.pathname, project.customStripPrefix),
         search: url.search
     });
 
@@ -197,11 +197,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
-            headers: buildForwardedHeaders(
-                request,
-                actor,
-                serveSessionBasePath(projectId, routeId)
-            ),
+            headers: buildForwardedHeaders(request, actor, serveBasePath(projectId)),
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
@@ -224,23 +220,18 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     const headers = buildRelayedHeaders(upstream);
     headers.set('Cache-Control', 'private, no-store');
-    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('Referrer-Policy', 'same-origin');
     headers.set('X-Content-Type-Options', 'nosniff');
     if (upstream.headers.get('content-type')?.toLowerCase().includes('text/html')) {
         headers.set(
             'Content-Security-Policy',
-            `default-src 'self' data: blob: https:; connect-src 'self' ws: wss: https:; base-uri 'self'; object-src 'none'; frame-ancestors ${new URL(env.VITE_BASE_URL).origin}`
+            `frame-ancestors 'self' ${new URL(env.VITE_BASE_URL).origin}; object-src 'none'; base-uri 'self'`
         );
     }
 
     const location = upstream.headers.get('location');
     if (location) {
-        const rewritten = rewriteServeLocation(
-            location,
-            upstreamUrl,
-            serveBasePath(projectId),
-            serveSessionBasePath(projectId, routeId)
-        );
+        const rewritten = rewriteServeLocation(location, upstreamUrl, serveBasePath(projectId));
         if (rewritten === null) {
             await logAuditFailure({
                 action: 'SERVE_PROXY_FAILED',
@@ -255,7 +246,9 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             });
             return new Response('Demo sent an invalid redirect', { status: 502 });
         }
-        headers.set('location', rewritten);
+        const destination = new URL(rewritten, serveOrigin);
+        destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, routeId);
+        headers.set('location', `${destination.pathname}${destination.search}${destination.hash}`);
     }
 
     if (mintCookie) {

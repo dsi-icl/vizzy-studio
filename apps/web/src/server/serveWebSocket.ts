@@ -5,21 +5,28 @@ import WebSocket from 'ws';
 
 import { isCustomProject } from '~/lib/customProject';
 import {
-    parseServeSessionPath,
+    parseServePath,
     resolveDemoHost,
     serveBasePath,
-    serveSessionBasePath,
+    SERVE_SESSION_QUERY_PARAM,
     upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
-import { resolveServeCookieActor } from '~/server/serveCookie';
+import { resolveServeCookieGrant, type ServeActor } from '~/server/serveCookie';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
 
 const UPSTREAM_CONTEXT_KEY = 'serveUpstreamUrl';
 
 const UPGRADE_CONNECT_TIMEOUT_MS = Number(process.env.SERVE_WS_CONNECT_TIMEOUT_MS ?? 10_000);
+
+function actorIsLive(actor: ServeActor, projectId: string): boolean {
+    return (
+        actor.surface === 'preview' ||
+        isWallBoundToProject(actor.wallId, projectId, actor.scopeId, actor.bindingId)
+    );
+}
 
 export function isWebSocketUpgrade(request: Request): boolean {
     return (
@@ -31,8 +38,8 @@ export function isWebSocketUpgrade(request: Request): boolean {
 export async function resolveServeWebSocketUpstream(request: Request): Promise<string | null> {
     if (!isServeOriginRequest(request)) return null;
     const url = new URL(request.url);
-    const parsed = parseServeSessionPath(url.pathname);
-    if (!parsed) return null;
+    const parsed = parseServePath(url.pathname);
+    if (!parsed || parsed.rest.startsWith('/s/') || parsed.rest.startsWith('/_')) return null;
 
     const { projectId } = parsed;
     const executionContext = {
@@ -41,15 +48,13 @@ export async function resolveServeWebSocketUpstream(request: Request): Promise<s
         request
     };
 
-    const actor = resolveServeCookieActor(request, projectId, parsed.routeId);
-    if (
-        !actor ||
-        ((actor.surface === 'wall' || actor.surface === 'control') &&
-            !isWallBoundToProject(actor.wallId, projectId, actor.scopeId, actor.bindingId))
-    ) {
+    const grant = resolveServeCookieGrant(request, projectId, (actor) =>
+        actorIsLive(actor, projectId)
+    );
+    if (!grant) {
         await logAuditDenied({
             action: 'SERVE_WS_DENIED',
-            reasonCode: actor ? 'WALL_NOT_BOUND_TO_PROJECT' : 'NO_SERVE_COOKIE',
+            reasonCode: 'NO_SERVE_COOKIE',
             resourceType: 'project',
             resourceId: projectId,
             authContext: { guest: true },
@@ -85,11 +90,8 @@ export async function resolveServeWebSocketUpstream(request: Request): Promise<s
         return null;
     }
 
-    const pathname = upstreamPathname(
-        { projectId, rest: parsed.rest },
-        `${serveBasePath(projectId)}${parsed.rest}`,
-        project.customStripPrefix
-    );
+    const pathname = upstreamPathname(parsed, url.pathname, project.customStripPrefix);
+    url.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
     return `ws://${host}:${port}${pathname}${url.search}`;
 }
 
@@ -102,17 +104,20 @@ const proxy = createWebSocketProxy({
     target: (peer) => resolvedUpstream(peer) ?? '',
     WebSocket: WebSocket as unknown as typeof globalThis.WebSocket,
     headers: (peer) => {
-        const parsed = parseServeSessionPath(new URL(peer.request.url).pathname);
+        const parsed = parseServePath(new URL(peer.request.url).pathname);
         if (!parsed) return {};
-        const actor = resolveServeCookieActor(peer.request, parsed.projectId, parsed.routeId);
-        if (!actor) return {};
+        const grant = resolveServeCookieGrant(peer.request, parsed.projectId, (actor) =>
+            actorIsLive(actor, parsed.projectId)
+        );
+        if (!grant) return {};
+        const { actor } = grant;
         return {
             Origin: getServeOrigin()?.origin ?? '',
             'X-Vizzy-Surface': actor.surface,
             ...(actor.surface === 'wall' || actor.surface === 'control'
                 ? { 'X-Vizzy-Wall-Id': actor.wallId }
                 : {}),
-            'X-Vizzy-Public-Base': serveSessionBasePath(parsed.projectId, parsed.routeId)
+            'X-Vizzy-Public-Base': serveBasePath(parsed.projectId)
         };
     },
     connectTimeout: UPGRADE_CONNECT_TIMEOUT_MS
@@ -134,20 +139,13 @@ export const serveWebSocketHooks = defineHooks({
         }
         await proxy.open?.(peer);
         const timer = setInterval(() => {
-            const parsed = parseServeSessionPath(new URL(peer.request.url).pathname);
-            const actor =
-                parsed && resolveServeCookieActor(peer.request, parsed.projectId, parsed.routeId);
-            if (
-                !parsed ||
-                !actor ||
-                ((actor.surface === 'wall' || actor.surface === 'control') &&
-                    !isWallBoundToProject(
-                        actor.wallId,
-                        parsed.projectId,
-                        actor.scopeId,
-                        actor.bindingId
-                    ))
-            ) {
+            const parsed = parseServePath(new URL(peer.request.url).pathname);
+            const grant =
+                parsed &&
+                resolveServeCookieGrant(peer.request, parsed.projectId, (actor) =>
+                    actorIsLive(actor, parsed.projectId)
+                );
+            if (!grant) {
                 peer.close(1008, 'demo session expired');
             }
         }, 5000);

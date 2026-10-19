@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 
 import { wallBindingIds, wallBindings } from '~/lib/busState';
 import { isCustomProject } from '~/lib/customProject';
-import { serveLaunchPath, serveSessionBasePath } from '~/lib/serveUrls';
+import { serveKeepalivePath, serveLaunchPath } from '~/lib/serveUrls';
 import { z } from '~/lib/zod';
 import { actorAuthContextMiddleware } from '~/server/auth-context.middleware';
 import { getProject } from '~/server/projects';
@@ -55,9 +55,7 @@ export const $issueBoundServeLaunch = createServerFn({ method: 'POST' })
         });
         return {
             url: launchUrl(data.projectId, ticket),
-            keepaliveUrl: servePublicUrl(
-                `${serveSessionBasePath(data.projectId, routeId)}/_keepalive`
-            )
+            keepaliveUrl: servePublicUrl(serveKeepalivePath(data.projectId, routeId))
         };
     });
 
@@ -72,7 +70,7 @@ export const $issueAdminServePreview = createServerFn({ method: 'POST' })
         const { ticket } = await issueServeLaunch({
             projectId: data.projectId,
             entry: data.entry,
-            actor: { surface: data.entry === 'screen' ? 'preview-screen' : 'preview-control' }
+            actor: { surface: 'preview' }
         });
         return { url: launchUrl(data.projectId, ticket) };
     });

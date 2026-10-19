@@ -193,7 +193,9 @@ function ProjectCardDialogBody({
             image.onerror = () => {
                 if (!cancelled) setControllerReloadNonce((nonce) => nonce + 1);
             };
-            image.src = `${controllerKeepaliveUrl}?t=${Date.now()}`;
+            const url = new URL(controllerKeepaliveUrl);
+            url.searchParams.set('t', String(Date.now()));
+            image.src = url.toString();
         };
         const timer = window.setInterval(keepalive, 60_000);
         return () => {

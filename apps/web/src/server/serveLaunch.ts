@@ -58,7 +58,7 @@ function isLaunchPayload(value: unknown): value is LaunchPayload {
               typeof actor.scopeId === 'number' &&
               typeof actor.bindingId === 'string' &&
               /^[A-Za-z\d_-]{22}$/.test(actor.bindingId)
-            : actor.surface === 'preview-screen' || actor.surface === 'preview-control')
+            : actor.surface === 'preview')
     );
 }
 

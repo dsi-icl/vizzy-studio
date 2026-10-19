@@ -350,7 +350,9 @@ function WallApp() {
             image.onerror = () => {
                 if (!cancelled) setIframeGateCycle(Date.now());
             };
-            image.src = `${serveLaunch.keepaliveUrl}?t=${Date.now()}`;
+            const url = new URL(serveLaunch.keepaliveUrl);
+            url.searchParams.set('t', String(Date.now()));
+            image.src = url.toString();
         };
         const timer = window.setInterval(keepalive, 60_000);
         return () => {

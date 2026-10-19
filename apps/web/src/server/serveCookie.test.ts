@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 
 import {
     createServeCookie,
-    resolveServeCookieActor,
+    resolveServeCookieGrant,
     serveCookieName,
     shouldRefreshServeCookie,
     SERVE_COOKIE_MAX_AGE_SECONDS
@@ -17,87 +17,110 @@ const actor = {
     surface: 'wall' as const,
     wallId: 'wall-a',
     scopeId: 7,
-    bindingId: 'AAAAAAAAAAAAAAAAAAAAAA'
+    bindingId: ROUTE_A
 };
-const request = (cookie?: string) =>
-    new Request('https://demos.example/serve/x/screen', {
-        headers: cookie ? { cookie } : undefined
-    });
 const value = (setCookie: string) => setCookie.split(';')[0]!;
+const request = (path = `/serve/${PROJECT}/screen`, cookie?: string, referer?: string) =>
+    new Request(`https://demos.example${path}`, {
+        headers: { ...(cookie ? { cookie } : {}), ...(referer ? { referer } : {}) }
+    });
 
 describe('serve cookie', () => {
-    test('round-trips a signed wall actor through its own route', () => {
+    test('signs a grant and scopes its cookie to the static project base', () => {
         const setCookie = createServeCookie({
             request: request(),
             projectId: PROJECT,
             routeId: ROUTE_A,
             actor
         });
-        assert.equal(
-            resolveServeCookieActor(request(value(setCookie)), PROJECT, ROUTE_A)?.surface,
-            'wall'
+        const resolved = resolveServeCookieGrant(
+            request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, value(setCookie)),
+            PROJECT
         );
-        const resolved = resolveServeCookieActor(request(value(setCookie)), PROJECT, ROUTE_A);
-        assert.equal(resolved && 'wallId' in resolved ? resolved.wallId : null, 'wall-a');
-        assert.match(setCookie, new RegExp('Path=/serve/' + PROJECT + '/s/' + ROUTE_A + '/;'));
+        assert.equal(resolved?.routeId, ROUTE_A);
+        assert.equal(resolved?.actor.surface, 'wall');
+        assert.equal(resolved?.actor.surface === 'wall' && resolved.actor.wallId, 'wall-a');
+        assert.match(setCookie, new RegExp(`Path=/serve/${PROJECT};`));
         assert.ok(setCookie.includes('HttpOnly'));
         assert.ok(setCookie.includes('Secure'));
     });
 
-    test('independent sessions in one browser do not collide', () => {
-        const a = value(
+    test('merges screen and control grants without overwriting the first', () => {
+        const first = value(
             createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
         );
-        const b = value(
+        const second = value(
             createServeCookie({
-                request: request(),
+                request: request(`/serve/${PROJECT}/_launch`, first),
                 projectId: PROJECT,
                 routeId: ROUTE_B,
-                actor: {
-                    surface: 'control',
-                    wallId: 'wall-b',
-                    scopeId: 8,
-                    bindingId: 'BBBBBBBBBBBBBBBBBBBBBB'
-                }
+                actor: { surface: 'control', wallId: 'wall-b', scopeId: 8, bindingId: ROUTE_B }
             })
         );
-        const both = request(a + '; ' + b);
-        assert.notEqual(serveCookieName(ROUTE_A), serveCookieName(ROUTE_B));
-        const resolvedA = resolveServeCookieActor(both, PROJECT, ROUTE_A);
-        const resolvedB = resolveServeCookieActor(both, PROJECT, ROUTE_B);
-        assert.equal(resolvedA && 'wallId' in resolvedA ? resolvedA.wallId : null, 'wall-a');
-        assert.equal(resolvedB && 'wallId' in resolvedB ? resolvedB.wallId : null, 'wall-b');
-        assert.equal(resolveServeCookieActor(both, OTHER_PROJECT, ROUTE_A), null);
+        const screen = resolveServeCookieGrant(
+            request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, second),
+            PROJECT
+        );
+        const control = resolveServeCookieGrant(
+            request(`/serve/${PROJECT}/control?__vizzySession=${ROUTE_B}`, second),
+            PROJECT
+        );
+        assert.equal(screen?.actor.surface === 'wall' && screen.actor.wallId, 'wall-a');
+        assert.equal(control?.actor.surface === 'control' && control.actor.wallId, 'wall-b');
+        assert.equal(
+            resolveServeCookieGrant(
+                request(
+                    `/serve/${PROJECT}/assets/app.js`,
+                    second,
+                    `https://demos.example/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`
+                ),
+                PROJECT
+            )?.routeId,
+            ROUTE_A
+        );
+        assert.equal(
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/assets/app.js`, second), PROJECT)
+                ?.routeId,
+            ROUTE_B
+        );
+        assert.equal(
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/bus`, second), PROJECT),
+            null
+        );
+        assert.equal(
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/screen`, second), OTHER_PROJECT),
+            null
+        );
     });
 
-    test('rejects a cookie replayed under another route and a tampered payload', () => {
+    test('rejects tampering and stale binding grants', () => {
         const cookie = value(
             createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
         );
-        const [, token] = cookie.split('=');
-        assert.equal(
-            resolveServeCookieActor(
-                request(serveCookieName(ROUTE_B) + '=' + token),
-                PROJECT,
-                ROUTE_B
-            ),
-            null
-        );
+        const [name, token] = cookie.split('=');
         const [payload, signature] = token!.split('.');
         const changed = Buffer.from(
             JSON.stringify({
                 ...JSON.parse(Buffer.from(payload!, 'base64url').toString()),
-                wallId: 'wall-b'
+                projectId: OTHER_PROJECT
             })
         ).toString('base64url');
         assert.equal(
-            resolveServeCookieActor(
-                request(serveCookieName(ROUTE_A) + '=' + changed + '.' + signature),
-                PROJECT,
-                ROUTE_A
+            resolveServeCookieGrant(
+                request(`/serve/${PROJECT}/screen`, `${name}=${changed}.${signature}`),
+                PROJECT
             ),
             null
         );
+        assert.equal(
+            resolveServeCookieGrant(
+                request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, cookie),
+                PROJECT,
+                () => false
+            ),
+            null
+        );
+        assert.equal(name, serveCookieName(PROJECT));
     });
 
     test('preview expires after 15 minutes and does not refresh', () => {
@@ -105,11 +128,14 @@ describe('serve cookie', () => {
             request: request(),
             projectId: PROJECT,
             routeId: ROUTE_A,
-            actor: { surface: 'preview-screen' }
+            actor: { surface: 'preview' }
         });
         assert.ok(setCookie.includes('Max-Age=900'));
-        const preview = resolveServeCookieActor(request(value(setCookie)), PROJECT, ROUTE_A);
-        assert.equal(preview?.surface, 'preview-screen');
+        const preview = resolveServeCookieGrant(
+            request(`/serve/${PROJECT}/screen`, value(setCookie)),
+            PROJECT
+        )?.actor;
+        assert.equal(preview?.surface, 'preview');
         assert.equal(shouldRefreshServeCookie(preview!, Date.now() + 14 * 60_000), false);
     });
 

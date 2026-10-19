@@ -1,9 +1,7 @@
-/**
- * The gateway exposes a session-scoped public path and forwards it to the
- * project's `/serve/<projectId>/` upstream path.
- */
+/** Browser and upstream paths share the project's static `/serve/<projectId>/` base. */
 
 export const SERVE_PATH_PREFIX = '/serve';
+export const SERVE_SESSION_QUERY_PARAM = '__vizzySession';
 
 /** Entry points, matching the route names every demo exposes. */
 export function serveBasePath(projectId: string): string {
@@ -26,23 +24,13 @@ export function serveLaunchPath(projectId: string): string {
     return `${serveBasePath(projectId)}/_launch`;
 }
 
-const ROUTE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+export const SERVE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
-export function serveSessionBasePath(projectId: string, routeId: string): string {
-    if (!PROJECT_ID_PATTERN.test(projectId) || !ROUTE_ID_PATTERN.test(routeId)) {
-        throw new Error('Invalid serve session path');
+export function serveKeepalivePath(projectId: string, routeId: string): string {
+    if (!PROJECT_ID_PATTERN.test(projectId) || !SERVE_SESSION_ID_PATTERN.test(routeId)) {
+        throw new Error('Invalid serve session');
     }
-    return `${serveBasePath(projectId)}/s/${routeId}`;
-}
-
-export function parseServeSessionPath(
-    pathname: string
-): { projectId: string; routeId: string; rest: string } | null {
-    const parsed = parseServePath(pathname);
-    if (!parsed) return null;
-    const match = /^\/s\/([^/]+)(\/.*)?$/.exec(parsed.rest);
-    if (!match || !ROUTE_ID_PATTERN.test(match[1] ?? '')) return null;
-    return { projectId: parsed.projectId, routeId: match[1]!, rest: match[2] ?? '/' };
+    return `${serveBasePath(projectId)}/_keepalive?${SERVE_SESSION_QUERY_PARAM}=${routeId}`;
 }
 
 /** A project id as minted by MongoDB — 24 hex characters. */
