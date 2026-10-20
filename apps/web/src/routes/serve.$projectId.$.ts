@@ -229,7 +229,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         return new Response('Demo unavailable', { status: 502 });
     }
 
-    const headers = buildRelayedHeaders(upstream);
+    const headers = buildRelayedHeaders(upstream, request);
     headers.set('Cache-Control', 'private, no-store');
     headers.set('Referrer-Policy', 'no-referrer');
     headers.set('X-Content-Type-Options', 'nosniff');

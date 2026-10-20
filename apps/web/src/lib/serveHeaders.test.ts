@@ -72,6 +72,36 @@ describe('buildForwardedHeaders', () => {
         assert.equal(headers.get('x-forwarded-proto'), 'https');
         assert.equal(headers.get('x-forwarded-host'), 'studio.example');
     });
+
+    test('forwards Tus upload headers only to the upload route', () => {
+        const upload = new Request(
+            'https://studio.example/serve/507f1f77bcf86cd799439011/api/uploads/',
+            { headers: { 'Tus-Resumable': '1.0.0', 'Upload-Length': '12' } }
+        );
+        const forwarded = buildForwardedHeaders(upload, ACTOR);
+        assert.equal(forwarded.get('tus-resumable'), '1.0.0');
+        assert.equal(forwarded.get('upload-length'), '12');
+        assert.equal(
+            buildForwardedHeaders(request({ 'Tus-Resumable': '1.0.0' }), ACTOR).get(
+                'tus-resumable'
+            ),
+            null
+        );
+    });
+
+    test('forwards the wall control header only to media operations', () => {
+        const media = new Request(
+            'https://studio.example/serve/507f1f77bcf86cd799439011/api/media/asset-1',
+            { headers: { 'X-Wall-Control': 'peer-1' } }
+        );
+        assert.equal(buildForwardedHeaders(media, ACTOR).get('x-wall-control'), 'peer-1');
+        assert.equal(
+            buildForwardedHeaders(request({ 'X-Wall-Control': 'peer-1' }), ACTOR).get(
+                'x-wall-control'
+            ),
+            null
+        );
+    });
 });
 
 describe('buildRelayedHeaders', () => {
@@ -99,5 +129,17 @@ describe('buildRelayedHeaders', () => {
         assert.equal(headers.get('x-frame-options'), null);
         assert.equal(headers.get('content-encoding'), null);
         assert.equal(headers.get('content-length'), null);
+    });
+
+    test('relays Tus upload offsets for authenticated upload requests', () => {
+        const request = new Request(
+            'https://studio.example/serve/507f1f77bcf86cd799439011/api/uploads/file-1'
+        );
+        const headers = buildRelayedHeaders(
+            new Response(null, { headers: { 'Tus-Resumable': '1.0.0', 'Upload-Offset': '12' } }),
+            request
+        );
+        assert.equal(headers.get('tus-resumable'), '1.0.0');
+        assert.equal(headers.get('upload-offset'), '12');
     });
 });
