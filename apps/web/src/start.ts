@@ -97,7 +97,7 @@ const cspMiddleware = createMiddleware().server(({ next, request }) => {
     const requestUrl = new URL(request.url);
     // Proxied third-party HTML should not inherit the app's CSP policy.
     // The proxy route applies its own controls (allowlist, timeout, size caps, authz).
-    if (requestUrl.pathname.startsWith('/api/proxy')) {
+    if (requestUrl.pathname.startsWith('/api/proxy') || requestUrl.pathname.startsWith('/serve/')) {
         return next();
     }
 

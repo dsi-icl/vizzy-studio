@@ -25,9 +25,11 @@ import { AnimatePresence, motion } from 'motion/react';
 import { toast } from 'sonner';
 
 import { canPublishProject, canViewProjectAudits, isAdmin } from '~/lib/authz';
+import { isCustomProject } from '~/lib/customProject';
 import { SubHeaderSlotOutlet, SubHeaderSlotProvider } from '~/lib/subHeaderSlot';
 import { $publishCommit, $publishCustomRenderProject } from '~/server/projects.fns';
 import { projectQueryOptions } from '~/server/projects.queries';
+import { $issueAdminServePreview } from '~/server/serve.fns';
 
 export const Route = createFileRoute('/_auth/quarry/projects/$projectId')({
     loader: async ({ context, params }) => {
@@ -124,7 +126,7 @@ function ProjectLayout() {
     const location = useLocation();
     const navigate = useNavigate();
     const currentTab = getTabFromPath(location.pathname);
-    const hasCustomRender = !!project.customRenderUrl;
+    const hasCustomRender = isCustomProject(project);
     const defaultStage =
         project.stages.find(({ id }) => id === project.defaultStageId) ?? project.stages[0];
     const canPublish = canPublishProject(user);
@@ -140,6 +142,23 @@ function ProjectLayout() {
             ? (sessionData.session as { impersonatedBy?: unknown }).impersonatedBy
             : null;
     const isImpersonating = typeof impersonatedBy === 'string' && impersonatedBy.length > 0;
+
+    const openDemoPreview = async (entry: 'screen' | 'control') => {
+        const tab = window.open('about:blank', '_blank');
+        if (!tab) {
+            toast.error('Allow pop-ups to open the demo preview');
+            return;
+        }
+        tab.opener = null;
+        tab.document.title = 'Opening demo preview…';
+        try {
+            const { url } = await $issueAdminServePreview({ data: { projectId, entry } });
+            tab.location.replace(url);
+        } catch (error) {
+            tab.close();
+            toast.error(error instanceof Error ? error.message : 'Could not open demo preview');
+        }
+    };
 
     const publishCustomRender = useMutation({
         mutationFn: () => $publishCustomRenderProject({ data: { projectId } }),
@@ -187,6 +206,24 @@ function ProjectLayout() {
                             <Badge variant="default" className="text-xs">
                                 Default stage published
                             </Badge>
+                        )}
+                        {hasCustomRender && isAdmin(user?.role) && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void openDemoPreview('control')}
+                                >
+                                    Preview controller
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void openDemoPreview('screen')}
+                                >
+                                    Preview screen
+                                </Button>
+                            </>
                         )}
                         {hasCustomRender &&
                             canPublish &&

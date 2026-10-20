@@ -18,6 +18,8 @@ const RawEnvSchema = z.object({
     ALLOWED_HOSTS: z.string().optional(),
     TRUSTED_ORIGINS: z.string().optional(),
 
+    DEMOS_HOSTS: z.string().optional(),
+
     APP_DATA_DIR: z.string().optional(),
     UPLOAD_DIR: z.string().optional(),
     TMP_DIR: z.string().optional(),
@@ -85,6 +87,8 @@ export const env = {
 
     ALLOWED_HOSTS: raw.ALLOWED_HOSTS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',
     TRUSTED_ORIGINS: raw.TRUSTED_ORIGINS ?? raw.VITE_BASE_URL ?? 'http://localhost:3000',
+
+    DEMOS_HOSTS: splitCsv(raw.DEMOS_HOSTS ?? ''),
 
     APP_DATA_DIR: raw.APP_DATA_DIR ?? join(process.cwd(), '.data'),
     UPLOAD_DIR: raw.UPLOAD_DIR ?? '',

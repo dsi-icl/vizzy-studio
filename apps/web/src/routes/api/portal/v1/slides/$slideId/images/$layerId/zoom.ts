@@ -47,7 +47,7 @@ export const Route = createFileRoute('/api/portal/v1/slides/$slideId/images/$lay
                     return json(request, 401, { error: 'Missing bearer token' });
                 }
 
-                const session = validatePortalToken(token);
+                const session = validatePortalToken(token, 'control');
                 if (!session) {
                     await logAuditDenied({
                         action: 'PORTAL_IMAGE_ZOOM_DENIED',

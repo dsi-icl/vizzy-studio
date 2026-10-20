@@ -1,9 +1,12 @@
+import { randomBytes } from 'node:crypto';
+
 import { cancelScopeCleanup, scheduleScopeCleanup } from './busState.persistence';
 import {
     clearControllerTransientForWall,
     scopeWatchers,
     signageBlankWalls,
     wallBindings,
+    wallBindingIds,
     wallBindingSources,
     wallPeersByScope,
     wallsByWallId,
@@ -43,6 +46,7 @@ export function bindWall(
     }
 
     wallBindings.set(wallId, scopeId);
+    wallBindingIds.set(wallId, randomBytes(16).toString('base64url'));
     wallBindingSources.set(wallId, source);
     signageBlankWalls.delete(wallId);
     cancelScopeCleanup(scopeId);
@@ -88,6 +92,7 @@ export function unbindWall(wallId: string) {
         scheduleScopeCleanup(oldScopeId);
     }
     wallBindings.delete(wallId);
+    wallBindingIds.delete(wallId);
     wallBindingSources.delete(wallId);
     signageBlankWalls.delete(wallId);
 }

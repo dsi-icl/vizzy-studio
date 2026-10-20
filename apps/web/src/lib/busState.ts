@@ -14,6 +14,7 @@ export {
     allGalleries,
     allEditors,
     wallBindings,
+    wallBindingIds,
     wallBindingSources,
     signageBlankWalls,
     scopeWatchers,
