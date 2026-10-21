@@ -1,6 +1,21 @@
 import { parseServePath, SERVE_SESSION_ID_PATTERN, SERVE_SESSION_QUERY_PARAM } from './serveUrls';
 
-const STATIC_DESTINATIONS = new Set(['script', 'style', 'font', 'image']);
+const STATIC_DESTINATIONS: Record<string, RegExp> = {
+    script: /\.(?:js|mjs)$/i,
+    style: /\.css$/i,
+    font: /\.(?:woff2?|ttf|otf)$/i,
+    image: /\.(?:svg|png|jpe?g|gif|webp|avif|ico)$/i,
+    audio: /\.(?:m4a|mp3|ogg|wav)$/i,
+    video: /\.(?:mp4|webm|ogg)$/i
+};
+const STATIC_PUBLIC_PATHS = [
+    '/assets/',
+    '/_next/static/',
+    '/observatory/src/',
+    '/observatory/assets/',
+    '/rio-tinto/assets/',
+    '/pages/'
+];
 const PREFLIGHT_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
 const PREFLIGHT_HEADERS = new Set(['accept', 'content-type']);
 const TUS_HEADERS = new Set([
@@ -33,10 +48,15 @@ function hasSessionSelector(request: Request): boolean {
 function isStaticSubresource(request: Request): boolean {
     if (request.method !== 'GET' && request.method !== 'HEAD') return false;
     const rest = parseServePath(new URL(request.url).pathname)?.rest;
+    if (!rest) return false;
+    const destination = request.headers.get('sec-fetch-dest') ?? '';
+    const extension = STATIC_DESTINATIONS[destination];
+    // These demo public directories contain scripts, media and images. Keep
+    // arbitrary routes and data files bound to the document's session selector.
     return (
-        !!rest &&
-        (rest.startsWith('/assets/') || rest.startsWith('/_next/static/')) &&
-        STATIC_DESTINATIONS.has(request.headers.get('sec-fetch-dest') ?? '')
+        (STATIC_PUBLIC_PATHS.some((path) => rest.startsWith(path)) ||
+            rest === '/rio-tinto/base-do-canvas.svg') &&
+        (extension?.test(rest) ?? false)
     );
 }
 

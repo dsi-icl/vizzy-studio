@@ -261,7 +261,7 @@ export function resolveServeCookieGrant(
         const staticAsset =
             parsed?.rest.startsWith('/assets/') ||
             parsed?.rest.startsWith('/_next/static/') ||
-            /\.(?:css|js|mjs|map|svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$/i.test(
+            /\.(?:css|js|mjs|map|svg|png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|m4a|mp3|ogg|wav|mp4|webm)$/i.test(
                 parsed?.rest ?? ''
             );
         if (!staticAsset || !['GET', 'HEAD'].includes(request.method)) return null;
