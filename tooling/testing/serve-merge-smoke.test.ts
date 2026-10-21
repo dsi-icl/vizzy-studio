@@ -192,6 +192,61 @@ describe('sandboxed same-host serve gateway', () => {
         assert.equal(keepalive.headers.get('set-cookie'), null);
     });
 
+    test('allows only session-bound nested HTML iframes through the framing policy', async () => {
+        const { ticket, routeId } = await issueServeLaunch({
+            projectId,
+            entry: 'screen',
+            actor: { surface: 'preview' }
+        });
+        const launch = await handleServeRequest(
+            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
+        );
+        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const nestedPath = `/serve/${projectId}/rio-tinto/index.html?__vizzySession=${routeId}`;
+        const nestedRequest = (path: string, destination: string, sessionCookie = cookie) =>
+            new Request(`https://studio.example${path}`, {
+                headers: {
+                    host: 'studio.example',
+                    cookie: sessionCookie,
+                    'sec-fetch-site': 'cross-site',
+                    'sec-fetch-dest': destination
+                }
+            });
+
+        const nested = await handleServeRequest(nestedRequest(nestedPath, 'iframe'));
+        assert.equal(nested.status, 200);
+        assert.match(nested.headers.get('content-security-policy') ?? '', /sandbox allow-scripts/);
+        assert.doesNotMatch(
+            nested.headers.get('content-security-policy') ?? '',
+            /allow-same-origin/
+        );
+        assert.doesNotMatch(nested.headers.get('content-security-policy') ?? '', /frame-ancestors/);
+        assert.equal(
+            (
+                await handleServeRequest(
+                    nestedRequest(`/serve/${projectId}/rio-tinto/index.html`, 'iframe')
+                )
+            ).status,
+            403
+        );
+        assert.equal(
+            (await handleServeRequest(nestedRequest(nestedPath, 'iframe', ''))).status,
+            403
+        );
+        for (const [path, destination] of [
+            [nestedPath, 'document'],
+            [`/serve/${projectId}/screen?__vizzySession=${routeId}`, 'iframe'],
+            [`/serve/${projectId}/rio-tinto/image.svg?__vizzySession=${routeId}`, 'iframe']
+        ]) {
+            const response = await handleServeRequest(nestedRequest(path, destination));
+            assert.equal(response.status, 200);
+            assert.match(
+                response.headers.get('content-security-policy') ?? '',
+                /frame-ancestors 'self'/
+            );
+        }
+    });
+
     test('keeps two preview tabs and their static assets on the same project path', async () => {
         const screenLaunch = await issueServeLaunch({
             projectId,

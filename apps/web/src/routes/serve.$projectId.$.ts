@@ -36,6 +36,8 @@ import {
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
 const KEEPALIVE_GIF = Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64');
+const SERVE_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-same-site-none-cookies';
+const SERVE_CONTENT_RESTRICTIONS = "object-src 'none'; base-uri 'self'";
 
 function actorIsLive(actor: ServeActor, projectId: string): boolean {
     if (actor.surface === 'wall' || actor.surface === 'control') {
@@ -235,9 +237,20 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     headers.set('X-Content-Type-Options', 'nosniff');
     // Any upstream content that a browser treats as a document (HTML, SVG,
     // XML, PDF) must be sandboxed, including direct admin preview tabs.
+    // A nested HTML iframe has an opaque-origin demo document as an ancestor.
+    // `frame-ancestors 'self'` blocks that iframe, even though it is served
+    // from this host. Only relax framing for a session-bound HTML iframe;
+    // keep the sandbox and the top-level entry documents unchanged.
+    const isNestedHtmlIframe =
+        request.method === 'GET' &&
+        request.headers.get('sec-fetch-dest') === 'iframe' &&
+        parsed.rest.toLowerCase().endsWith('.html') &&
+        new URL(request.url).searchParams.get(SERVE_SESSION_QUERY_PARAM) === routeId;
     headers.set(
         'Content-Security-Policy',
-        "sandbox allow-scripts allow-forms allow-same-site-none-cookies; frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
+        isNestedHtmlIframe
+            ? `${SERVE_SANDBOX_CSP}; ${SERVE_CONTENT_RESTRICTIONS}`
+            : `${SERVE_SANDBOX_CSP}; frame-ancestors 'self'; ${SERVE_CONTENT_RESTRICTIONS}`
     );
     addServeCorsHeaders(request, headers);
 

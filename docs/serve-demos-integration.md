@@ -49,6 +49,13 @@ deployment pilot. Demo scripts cannot read Vizzy's `localStorage`, including
 `vizzy.device.identity.v1`, or access the parent document. Do not add
 `allow-same-origin` to either sandbox.
 
+For a demo that places another HTML page inside its screen iframe, copy the
+`__vizzySession` selector into that inner iframe's URL. The gateway keeps the
+CSP sandbox on the inner page but omits `frame-ancestors 'self'` for a
+session-bound `.html` iframe request. Its parent has an opaque origin, so
+`'self'` would otherwise block the nested page. Entry pages, direct document
+loads, and non-HTML responses keep the framing restriction.
+
 An opaque document's asset, fetch, and WebSocket requests appear cross-site to
 the browser despite sharing Vizzy's FQDN. The path-scoped demo cookie therefore
 uses `SameSite=None; Secure`. Vizzy's main auth cookies stay separate; the proxy
