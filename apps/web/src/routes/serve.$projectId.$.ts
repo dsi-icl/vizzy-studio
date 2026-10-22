@@ -10,10 +10,12 @@ import {
 } from '~/lib/serveRequestPolicy';
 import {
     buildServeUpstreamUrl,
+    isPublicServePath,
     parseServePath,
     resolveDemoHost,
     rewriteServeLocation,
     serveBasePath,
+    servePublicBasePath,
     SERVE_SESSION_QUERY_PARAM,
     upstreamPathname
 } from '~/lib/serveUrls';
@@ -56,6 +58,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parsed = parseServePath(url.pathname);
     if (!parsed || parsed.rest.startsWith('/s/')) return notFound();
+    const publicRequest = isPublicServePath(parsed);
 
     if (parsed.rest === '/_launch') {
         if (request.method !== 'GET' || isWebSocketUpgrade(request))
@@ -147,10 +150,10 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         return new Response('Custom project has no port configured', { status: 503 });
     }
 
-    const grant = resolveServeCookieGrant(request, projectId, (actor) =>
-        actorIsLive(actor, projectId)
-    );
-    if (!grant) {
+    const grant = publicRequest
+        ? null
+        : resolveServeCookieGrant(request, projectId, (actor) => actorIsLive(actor, projectId));
+    if (!publicRequest && !grant) {
         await logAuditDenied({
             action: 'SERVE_DENIED',
             reasonCode: 'NOT_BOUND_OR_NO_CREDENTIAL',
@@ -165,10 +168,9 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         });
         return new Response('Forbidden', { status: 403 });
     }
-    const { actor, routeId } = grant;
-    const mintCookie = shouldRefreshServeCookie(actor);
-
     if (parsed.rest === '/_keepalive') {
+        if (!grant) return new Response('Forbidden', { status: 403 });
+        const { actor, routeId } = grant;
         if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
         return new Response(KEEPALIVE_GIF, {
             headers: {
@@ -181,6 +183,9 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             }
         });
     }
+
+    const publicBase = publicRequest ? servePublicBasePath(projectId) : serveBasePath(projectId);
+    const actor = grant?.actor ?? { surface: 'public' as const };
 
     const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
     if (!host) {
@@ -210,7 +215,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
-            headers: buildForwardedHeaders(request, actor, serveBasePath(projectId)),
+            headers: buildForwardedHeaders(request, actor, publicBase),
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
@@ -239,13 +244,14 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     // XML, PDF) must be sandboxed, including direct admin preview tabs.
     // A nested HTML iframe has an opaque-origin demo document as an ancestor.
     // `frame-ancestors 'self'` blocks that iframe, even though it is served
-    // from this host. Only relax framing for a session-bound HTML iframe;
+    // from this host. Only relax framing for an authorized HTML iframe;
     // keep the sandbox and the top-level entry documents unchanged.
     const isNestedHtmlIframe =
         request.method === 'GET' &&
         request.headers.get('sec-fetch-dest') === 'iframe' &&
         parsed.rest.toLowerCase().endsWith('.html') &&
-        new URL(request.url).searchParams.get(SERVE_SESSION_QUERY_PARAM) === routeId;
+        (publicRequest ||
+            new URL(request.url).searchParams.get(SERVE_SESSION_QUERY_PARAM) === grant?.routeId);
     headers.set(
         'Content-Security-Policy',
         isNestedHtmlIframe
@@ -256,7 +262,12 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     const location = upstream.headers.get('location');
     if (location) {
-        const rewritten = rewriteServeLocation(location, upstreamUrl, serveBasePath(projectId));
+        const rewritten = rewriteServeLocation(
+            location,
+            upstreamUrl,
+            serveBasePath(projectId),
+            publicBase
+        );
         if (rewritten === null) {
             await logAuditFailure({
                 action: 'SERVE_PROXY_FAILED',
@@ -272,12 +283,13 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             return new Response('Demo sent an invalid redirect', { status: 502 });
         }
         const destination = new URL(rewritten, serveOrigin);
-        destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, routeId);
+        if (grant) destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, grant.routeId);
+        else destination.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
         headers.set('location', `${destination.pathname}${destination.search}${destination.hash}`);
     }
 
-    if (mintCookie) {
-        headers.append('set-cookie', createServeCookie({ request, projectId, routeId, actor }));
+    if (grant && shouldRefreshServeCookie(grant.actor)) {
+        headers.append('set-cookie', createServeCookie({ request, projectId, ...grant }));
     }
 
     return new Response(upstream.body, { status: upstream.status, headers });

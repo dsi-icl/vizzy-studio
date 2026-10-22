@@ -6,9 +6,11 @@ import WebSocket from 'ws';
 import { isCustomProject } from '~/lib/customProject';
 import { isAllowedServeRequest } from '~/lib/serveRequestPolicy';
 import {
+    isPublicServePath,
     parseServePath,
     resolveDemoHost,
     serveBasePath,
+    servePublicBasePath,
     SERVE_SESSION_QUERY_PARAM,
     upstreamPathname
 } from '~/lib/serveUrls';
@@ -50,16 +52,17 @@ export async function resolveServeWebSocketUpstream(request: Request): Promise<s
     if (!parsed || parsed.rest.startsWith('/s/') || parsed.rest.startsWith('/_')) return null;
 
     const { projectId } = parsed;
+    const publicRequest = isPublicServePath(parsed);
     const executionContext = {
         surface: 'ws' as const,
         operation: 'UPGRADE /serve/$projectId/$',
         request
     };
 
-    const grant = resolveServeCookieGrant(request, projectId, (actor) =>
-        actorIsLive(actor, projectId)
-    );
-    if (!grant) {
+    const grant = publicRequest
+        ? null
+        : resolveServeCookieGrant(request, projectId, (actor) => actorIsLive(actor, projectId));
+    if (!publicRequest && !grant) {
         await logAuditDenied({
             action: 'SERVE_WS_DENIED',
             reasonCode: 'NO_SERVE_COOKIE',
@@ -113,11 +116,18 @@ const proxy = createWebSocketProxy({
     WebSocket: WebSocket as unknown as typeof globalThis.WebSocket,
     headers: (peer) => {
         const parsed = parseServePath(new URL(peer.request.url).pathname);
-        if (!parsed) return {};
+        if (!parsed) return;
+        if (isPublicServePath(parsed)) {
+            return {
+                Origin: getServeOrigin()?.origin ?? '',
+                'X-Vizzy-Surface': 'public',
+                'X-Vizzy-Public-Base': servePublicBasePath(parsed.projectId)
+            };
+        }
         const grant = resolveServeCookieGrant(peer.request, parsed.projectId, (actor) =>
             actorIsLive(actor, parsed.projectId)
         );
-        if (!grant) return {};
+        if (!grant) return;
         const { actor } = grant;
         return {
             Origin: getServeOrigin()?.origin ?? '',
@@ -146,6 +156,7 @@ export const serveWebSocketHooks = defineHooks({
             return;
         }
         await proxy.open?.(peer);
+        if (isPublicServePath(parseServePath(new URL(peer.request.url).pathname))) return;
         const timer = setInterval(() => {
             const parsed = parseServePath(new URL(peer.request.url).pathname);
             const grant =

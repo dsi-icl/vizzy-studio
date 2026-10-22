@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 
 import {
     buildServeUpstreamUrl,
+    isPublicServePath,
     parseServePath,
     resolveDemoHost,
     upstreamPathname,
@@ -11,6 +12,7 @@ import {
     serveBusPath,
     serveControlPath,
     serveKeepalivePath,
+    servePublicBasePath,
     serveWallPath
 } from './serveUrls';
 
@@ -23,6 +25,7 @@ describe('serve paths', () => {
         assert.equal(serveWallPath(PID), `/serve/${PID}/screen`);
         assert.equal(serveControlPath(PID), `/serve/${PID}/control`);
         assert.equal(serveBusPath(PID), `/serve/${PID}/bus`);
+        assert.equal(servePublicBasePath(PID), `/serve/${PID}/control/public`);
     });
 
     test('splits a serve path into project id and remainder', () => {
@@ -45,6 +48,29 @@ describe('serve paths', () => {
         assert.equal(parseServePath('/serve/not-an-object-id/screen'), null);
         assert.equal(parseServePath(`/serve/${PID}x/screen`), null);
         assert.equal(parseServePath(`/serve/${PID}/../../etc/passwd`), null);
+    });
+
+    test('recognizes only the control/public path segment', () => {
+        for (const path of [
+            '/control/public',
+            '/control/public/',
+            '/control/public/mini',
+            '/control/public/api/mini/session'
+        ]) {
+            assert.equal(isPublicServePath(parseServePath(`/serve/${PID}${path}`)), true, path);
+        }
+        for (const path of [
+            '/public',
+            '/public/mini',
+            '/control',
+            '/screen',
+            '/control/publicity/mini',
+            '/control/public-mini',
+            '/mini/public',
+            '/assets/public.js'
+        ]) {
+            assert.equal(isPublicServePath(parseServePath(`/serve/${PID}${path}`)), false, path);
+        }
     });
 
     test('builds the upstream URL without touching the path', () => {
@@ -76,6 +102,19 @@ describe('rewriteServeLocation', () => {
             rewriteServeLocation(`/serve/${PID}/control`, UPSTREAM, BASE),
             `/serve/${PID}/control`
         );
+    });
+
+    test('keeps public redirects inside the public namespace', () => {
+        const publicBase = `${BASE}/control/public`;
+        const upstream = `${UPSTREAM.replace('/screen', '/control/public/mini')}`;
+        for (const [location, expected] of [
+            [`${publicBase}/next?a=1`, `${publicBase}/next?a=1`],
+            [`${BASE}/next?a=1`, `${publicBase}/next?a=1`],
+            ['/control/public/next?a=1', `${publicBase}/next?a=1`],
+            ['/next?a=1', `${publicBase}/next?a=1`]
+        ]) {
+            assert.equal(rewriteServeLocation(location, upstream, BASE, publicBase), expected);
+        }
     });
 
     test('prefixes a root-absolute redirect that escaped the subtree', () => {

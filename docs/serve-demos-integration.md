@@ -37,6 +37,25 @@ Each bind has a random generation that invalidates grants from an earlier bind.
 Wall and gallery clients refresh grants every minute with `/_keepalive`; a
 failed refresh starts a new launch.
 
+### Public demo paths
+
+Every custom project has a public namespace at `/serve/<projectId>/control/public`.
+Requests to that path and its descendants do not require a Vizzy launch ticket,
+`__vizzySession`, or serve cookie. There is no project setting or gateway route
+allowlist for this namespace. Vizzy still requires a configured custom project,
+an allowed upstream host, and an allowed request origin. It strips browser
+cookies and authorization headers before forwarding and marks the request with
+`X-Vizzy-Surface: public` and `X-Vizzy-Public-Base: /serve/<projectId>/control/public`.
+
+Vizzy preserves `/control/public` when forwarding the request. A demo must implement
+its own `/control/public/...` routes; this namespace never aliases the private
+`/control` route. A public mini controller must generate its QR URL inside this
+namespace and load its assets, API requests, and WebSocket connection through
+the same namespace. Vizzy does not validate a demo's invitation token or
+authorize its control messages. Public WebSocket connections do not receive a
+Vizzy serve grant, so the demo must enforce its own permissions and expiry.
+Public redirects remain below `/serve/<projectId>/control/public`.
+
 ## Same-host script isolation
 
 Vizzy keeps the wall and custom controller iframes in an opaque origin with
@@ -60,11 +79,12 @@ An opaque document's asset, fetch, and WebSocket requests appear cross-site to
 the browser despite sharing Vizzy's FQDN. The path-scoped demo cookie therefore
 uses `SameSite=None; Secure`. Vizzy's main auth cookies stay separate; the proxy
 strips all browser cookies and authorization headers before contacting the demo
-process. The `/serve/*` gateway accepts `Origin: null` only with a valid signed demo grant.
-Dynamic opaque-origin requests must also carry the entry page's
+process. Private `/serve/*` paths accept `Origin: null` only with a valid signed
+demo grant. Dynamic private opaque-origin requests must also carry the entry page's
 `__vizzySession` selector. The gateway allows credentialed `Origin: null` CORS
-only for those requests and for static `/assets/` or `/_next/static/`
-subresources. Requests to Vizzy's `/api/*` remain outside that CORS policy.
+for those requests, static `/assets/` or `/_next/static/` subresources, and
+requests below a project's `/control/public` namespace. Requests to Vizzy's `/api/*`
+remain outside that CORS policy.
 
 ## Demo rebuild contract
 

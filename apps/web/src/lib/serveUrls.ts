@@ -8,6 +8,10 @@ export function serveBasePath(projectId: string): string {
     return `${SERVE_PATH_PREFIX}/${projectId}`;
 }
 
+export function servePublicBasePath(projectId: string): string {
+    return `${serveControlPath(projectId)}/public`;
+}
+
 export function serveWallPath(projectId: string): string {
     return `${serveBasePath(projectId)}/screen`;
 }
@@ -40,6 +44,13 @@ export interface ParsedServePath {
     projectId: string;
     /** The path below the project's base, leading slash included. `/` for the base itself. */
     rest: string;
+}
+
+/** Only the complete `/control/public` path segment is public. */
+export function isPublicServePath(parsed: ParsedServePath | null): boolean {
+    return (
+        parsed?.rest === '/control/public' || parsed?.rest.startsWith('/control/public/') === true
+    );
 }
 
 export function parseServePath(pathname: string): ParsedServePath | null {
@@ -96,9 +107,25 @@ export function rewriteServeLocation(
 
     if (resolved.origin !== upstreamOrigin) return null;
 
+    if (
+        publicBasePath !== basePath &&
+        (resolved.pathname === publicBasePath || resolved.pathname.startsWith(`${publicBasePath}/`))
+    ) {
+        return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    }
+
+    const publicRest = publicBasePath.startsWith(`${basePath}/`)
+        ? publicBasePath.slice(basePath.length)
+        : '';
+    const upstreamPath =
+        publicRest &&
+        (resolved.pathname === publicRest || resolved.pathname.startsWith(`${publicRest}/`))
+            ? resolved.pathname.slice(publicRest.length) || '/'
+            : resolved.pathname;
+
     const pathname =
-        resolved.pathname === basePath || resolved.pathname.startsWith(`${basePath}/`)
-            ? resolved.pathname
-            : `${basePath}${resolved.pathname}`;
+        upstreamPath === basePath || upstreamPath.startsWith(`${basePath}/`)
+            ? upstreamPath
+            : `${basePath}${upstreamPath}`;
     return `${publicBasePath}${pathname.slice(basePath.length)}${resolved.search}${resolved.hash}`;
 }

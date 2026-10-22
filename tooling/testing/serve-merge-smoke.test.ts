@@ -96,6 +96,110 @@ describe('sandboxed same-host serve gateway', () => {
         assert.equal((await handleServeRequest(websocket)).status, 403);
     });
 
+    test('proxies the public namespace without a Vizzy grant and keeps private siblings closed', async () => {
+        const base = `/serve/${projectId}`;
+        const publicBase = `${base}/control/public`;
+        const page = await handleServeRequest(
+            request(
+                `${publicBase}/mini?token=demo-invitation&__vizzySession=invalid`,
+                'vizzy_main_auth=must-not-leak'
+            )
+        );
+        assert.equal(page.status, 200);
+        assert.equal(page.headers.get('location'), `${publicBase}/assets/app.js`);
+        assert.equal(page.headers.get('set-cookie'), null);
+        assert.equal(
+            forwarded.at(-1)?.url,
+            `http://127.0.0.1:3008${publicBase}/mini?token=demo-invitation`
+        );
+        assert.equal(forwarded.at(-1)?.headers.get('x-vizzy-surface'), 'public');
+        assert.equal(forwarded.at(-1)?.headers.get('x-vizzy-public-base'), publicBase);
+        assert.equal(forwarded.at(-1)?.headers.get('x-vizzy-wall-id'), null);
+        assert.equal(forwarded.at(-1)?.headers.get('cookie'), null);
+
+        const asset = await handleServeRequest(
+            new Request(`https://studio.example${publicBase}/assets/app.js`, {
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'sec-fetch-site': 'cross-site',
+                    'sec-fetch-dest': 'script'
+                }
+            })
+        );
+        assert.equal(asset.status, 200);
+        assert.equal(asset.headers.get('access-control-allow-origin'), 'null');
+
+        const api = await handleServeRequest(
+            new Request(`https://studio.example${publicBase}/api/mini/session`, {
+                method: 'POST',
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'content-type': 'application/json'
+                },
+                body: '{}'
+            })
+        );
+        assert.equal(api.status, 200);
+        assert.equal(api.headers.get('access-control-allow-origin'), 'null');
+        assert.equal(forwarded.at(-1)?.url, `http://127.0.0.1:3008${publicBase}/api/mini/session`);
+
+        const preflight = await handleServeRequest(
+            new Request(`https://studio.example${publicBase}/api/mini/session`, {
+                method: 'OPTIONS',
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'access-control-request-method': 'POST',
+                    'access-control-request-headers': 'content-type'
+                }
+            })
+        );
+        assert.equal(preflight.status, 204);
+
+        const websocket = new Request(`https://studio.example${publicBase}/bus`, {
+            headers: {
+                host: 'studio.example',
+                origin: 'null',
+                connection: 'Upgrade',
+                upgrade: 'websocket'
+            }
+        });
+        assert.equal(
+            await resolveServeWebSocketUpstream(websocket),
+            `ws://127.0.0.1:3008${publicBase}/bus`
+        );
+        assert.equal((await handleServeRequest(websocket)).status, 426);
+
+        for (const path of [
+            `${base}/mini`,
+            `${base}/public/mini`,
+            `${base}/control/publicity/mini`,
+            `${base}/control`,
+            `${base}/screen`
+        ]) {
+            assert.equal((await handleServeRequest(request(path))).status, 403, path);
+        }
+        assert.equal(
+            (
+                await handleServeRequest(
+                    new Request(`https://studio.example${publicBase}/mini`, {
+                        headers: { host: 'studio.example', origin: 'https://other.example' }
+                    })
+                )
+            ).status,
+            403
+        );
+
+        projectSettings.customHost = 'not-allowed.example';
+        try {
+            assert.equal((await handleServeRequest(request(`${publicBase}/mini`))).status, 503);
+        } finally {
+            projectSettings.customHost = '127.0.0.1';
+        }
+    });
+
     test('consumes a launch once and proxies the static project path', async () => {
         const { ticket, routeId } = await issueServeLaunch({
             projectId,
@@ -311,6 +415,15 @@ describe('sandboxed same-host serve gateway', () => {
             );
             assert.equal(response.status, 200);
             assert.equal(forwarded.at(-1)?.url, 'http://127.0.0.1:3008/control?x=1');
+
+            const publicResponse = await handleServeRequest(
+                request(`/serve/${projectId}/control/public/mini?token=demo-invitation`)
+            );
+            assert.equal(publicResponse.status, 200);
+            assert.equal(
+                forwarded.at(-1)?.url,
+                'http://127.0.0.1:3008/control/public/mini?token=demo-invitation'
+            );
         } finally {
             projectSettings.customStripPrefix = false;
         }

@@ -1,4 +1,9 @@
-import { parseServePath, SERVE_SESSION_ID_PATTERN, SERVE_SESSION_QUERY_PARAM } from './serveUrls';
+import {
+    isPublicServePath,
+    parseServePath,
+    SERVE_SESSION_ID_PATTERN,
+    SERVE_SESSION_QUERY_PARAM
+} from './serveUrls';
 
 const STATIC_DESTINATIONS: Record<string, RegExp> = {
     script: /\.(?:js|mjs)$/i,
@@ -45,6 +50,10 @@ function hasSessionSelector(request: Request): boolean {
     return selector !== null && SERVE_SESSION_ID_PATTERN.test(selector);
 }
 
+function isPublicRequest(request: Request): boolean {
+    return isPublicServePath(parseServePath(new URL(request.url).pathname));
+}
+
 function isStaticSubresource(request: Request): boolean {
     if (request.method !== 'GET' && request.method !== 'HEAD') return false;
     const rest = parseServePath(new URL(request.url).pathname)?.rest;
@@ -60,12 +69,14 @@ function isStaticSubresource(request: Request): boolean {
     );
 }
 
-/** Opaque-origin demo fetches need a selector; static tags can use any live grant. */
+/** Opaque-origin private fetches need a selector; public paths do not. */
 export function isAllowedServeRequest(request: Request, appOrigin: string): boolean {
     const origin = request.headers.get('origin');
     if (origin && origin !== 'null' && origin !== appOrigin) return false;
     if (origin === 'null' || request.headers.get('sec-fetch-site') === 'cross-site') {
-        return hasSessionSelector(request) || isStaticSubresource(request);
+        return (
+            isPublicRequest(request) || hasSessionSelector(request) || isStaticSubresource(request)
+        );
     }
     return true;
 }
@@ -80,7 +91,7 @@ export function servePreflightResponse(request: Request): Response | null {
         .filter(Boolean);
     const allowedHeaders = allowedPreflightHeaders(request);
     if (
-        !hasSessionSelector(request) ||
+        (!isPublicRequest(request) && !hasSessionSelector(request)) ||
         !PREFLIGHT_METHODS.has(method) ||
         requestedHeaders.some((header) => !allowedHeaders.has(header))
     ) {
@@ -102,7 +113,8 @@ export function servePreflightResponse(request: Request): Response | null {
 
 export function addServeCorsHeaders(request: Request, headers: Headers): void {
     if (request.headers.get('origin') !== 'null') return;
-    if (!hasSessionSelector(request) && !isStaticSubresource(request)) return;
+    if (!isPublicRequest(request) && !hasSessionSelector(request) && !isStaticSubresource(request))
+        return;
     headers.set('Access-Control-Allow-Origin', 'null');
     headers.set('Access-Control-Allow-Credentials', 'true');
     if (parseServePath(new URL(request.url).pathname)?.rest.startsWith('/api/uploads/')) {
