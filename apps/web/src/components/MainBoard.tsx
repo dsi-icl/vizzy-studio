@@ -1,5 +1,6 @@
 import { CircleNotchIcon } from '@phosphor-icons/react';
 
+import { useFonts } from '~/hooks/useFonts';
 import { useEditorStore } from '~/lib/editorStore';
 
 import { ConnectionBanner } from './ConnectionBanner';
@@ -8,6 +9,7 @@ import { TextEditorDialog } from './TextEditorDialog';
 
 export function MainBoard() {
     const loading = useEditorStore((s) => s.loading);
+    useFonts(useEditorStore((s) => s.projectId));
 
     return (
         <main className="relative flex h-full min-h-0 flex-col overflow-hidden bg-card/20">
