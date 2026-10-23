@@ -9,7 +9,7 @@ export function serveBasePath(projectId: string): string {
 }
 
 export function servePublicBasePath(projectId: string): string {
-    return `${serveControlPath(projectId)}/public`;
+    return `${serveBasePath(projectId)}/public`;
 }
 
 export function serveWallPath(projectId: string): string {
@@ -46,11 +46,9 @@ export interface ParsedServePath {
     rest: string;
 }
 
-/** Only the complete `/control/public` path segment is public. */
+/** Only the complete `/public` path segment is public. */
 export function isPublicServePath(parsed: ParsedServePath | null): boolean {
-    return (
-        parsed?.rest === '/control/public' || parsed?.rest.startsWith('/control/public/') === true
-    );
+    return parsed?.rest === '/public' || parsed?.rest.startsWith('/public/') === true;
 }
 
 export function parseServePath(pathname: string): ParsedServePath | null {

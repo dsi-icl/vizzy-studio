@@ -98,7 +98,7 @@ describe('sandboxed same-host serve gateway', () => {
 
     test('proxies the public namespace without a Vizzy grant and keeps private siblings closed', async () => {
         const base = `/serve/${projectId}`;
-        const publicBase = `${base}/control/public`;
+        const publicBase = `${base}/public`;
         const page = await handleServeRequest(
             request(
                 `${publicBase}/mini?token=demo-invitation&__vizzySession=invalid`,
@@ -172,10 +172,33 @@ describe('sandboxed same-host serve gateway', () => {
         );
         assert.equal((await handleServeRequest(websocket)).status, 426);
 
+        const oldPublicBase = `${base}/control/public`;
+        const oldWebsocket = new Request(`https://studio.example${oldPublicBase}/bus`, {
+            headers: {
+                host: 'studio.example',
+                origin: 'null',
+                connection: 'Upgrade',
+                upgrade: 'websocket'
+            }
+        });
+        assert.equal(await resolveServeWebSocketUpstream(oldWebsocket), null);
+        const oldPreflight = await handleServeRequest(
+            new Request(`https://studio.example${oldPublicBase}/api/mini/session`, {
+                method: 'OPTIONS',
+                headers: {
+                    host: 'studio.example',
+                    origin: 'null',
+                    'access-control-request-method': 'POST',
+                    'access-control-request-headers': 'content-type'
+                }
+            })
+        );
+        assert.equal(oldPreflight.status, 403);
+
         for (const path of [
             `${base}/mini`,
-            `${base}/public/mini`,
-            `${base}/control/publicity/mini`,
+            `${base}/control/public/mini`,
+            `${base}/publicity/mini`,
             `${base}/control`,
             `${base}/screen`
         ]) {
@@ -417,12 +440,12 @@ describe('sandboxed same-host serve gateway', () => {
             assert.equal(forwarded.at(-1)?.url, 'http://127.0.0.1:3008/control?x=1');
 
             const publicResponse = await handleServeRequest(
-                request(`/serve/${projectId}/control/public/mini?token=demo-invitation`)
+                request(`/serve/${projectId}/public/mini?token=demo-invitation`)
             );
             assert.equal(publicResponse.status, 200);
             assert.equal(
                 forwarded.at(-1)?.url,
-                'http://127.0.0.1:3008/control/public/mini?token=demo-invitation'
+                'http://127.0.0.1:3008/public/mini?token=demo-invitation'
             );
         } finally {
             projectSettings.customStripPrefix = false;
