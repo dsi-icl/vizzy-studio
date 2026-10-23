@@ -123,8 +123,10 @@ export class GalleryEngine {
     }
 
     public sendJSON = (data: GSMessage) => {
-        this.bus.sendJSON(data);
+        return this.bus.sendJSON(data);
     };
+
+    public waitUntilReady = (timeoutMs?: number) => this.bus.waitUntilReady(timeoutMs);
 
     public decideBindOverride(requestId: string, wallId: string, allow: boolean) {
         this.sendJSON({

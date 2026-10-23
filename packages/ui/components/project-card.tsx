@@ -303,6 +303,8 @@ function ProjectCardDialogBody({
     const controllerUrl = useMemo(() => {
         if (!activeWallId) return '';
         if (onControllerLaunchRequest) return controllerLaunchUrl ?? '';
+        // Private Serve controllers must never fall back to direct navigation.
+        if (project.controlPath?.startsWith('/serve/')) return '';
         if (onControllerTokenRequest && !controllerPortalToken) return '';
         const baseUrl = buildControllerUrl(
             project.controlPath,
@@ -590,6 +592,7 @@ export function ProjectCard({
     onWallRebootRequest,
     onWallUnbindRequest,
     onControllerTokenRequest,
+    onControllerLaunchRequest,
     availableWalls,
     presetWallId,
     hideWallPicker,
@@ -750,6 +753,7 @@ export function ProjectCard({
                         onLoadProject={onLoadProject}
                         onWallRebootRequest={onWallRebootRequest}
                         onControllerTokenRequest={onControllerTokenRequest}
+                        onControllerLaunchRequest={onControllerLaunchRequest}
                         onActiveWallIdChange={handleActiveWallIdChange}
                     />
                 </MorphingDialogContent>

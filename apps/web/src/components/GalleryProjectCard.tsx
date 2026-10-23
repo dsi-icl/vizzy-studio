@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { bindGalleryWallAndWait } from '~/lib/galleryBindAck';
 import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
@@ -53,22 +54,33 @@ export function GalleryProjectCard({
               }))
             : [];
 
+    const isCustom = Boolean(project.controlPath);
+
     const handleLoadProject = useCallback(
         async (wallId: string) => {
-            if (!project.publishedCommitId) {
+            const commitId = project.publishedCommitId;
+            if (!commitId) {
                 toast.error('This project has no published commit');
                 return false;
             }
 
             try {
                 const engine = GalleryEngine.getInstance();
-                engine.sendJSON({
-                    type: 'bind_wall',
-                    wallId,
-                    projectId: project.id,
-                    commitId: project.publishedCommitId,
-                    slideId: 'default'
-                });
+                if (!(await engine.waitUntilReady())) {
+                    throw new Error('Gallery connection is not ready');
+                }
+                const binding = { wallId, projectId: project.id, commitId };
+                if (isCustom) {
+                    // A serve grant is tied to the current wall binding. Wait
+                    // for this bind to finish before opening the controller;
+                    // otherwise a prior binding can issue a grant that the new
+                    // bind immediately invalidates.
+                    await bindGalleryWallAndWait(engine, binding);
+                } else {
+                    if (!engine.sendJSON({ type: 'bind_wall', ...binding, slideId: 'default' })) {
+                        throw new Error('Gallery connection is not ready');
+                    }
+                }
                 toast.success('Project loaded on wall');
                 return true;
             } catch (e: any) {
@@ -76,7 +88,7 @@ export function GalleryProjectCard({
                 return false;
             }
         },
-        [project.id, project.publishedCommitId]
+        [isCustom, project.id, project.publishedCommitId]
     );
 
     const handleWallRebootRequest = useCallback(async (_wallId: string) => {
@@ -165,7 +177,6 @@ export function GalleryProjectCard({
 
     const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
     // The gallery route only sets `controlPath` for custom projects.
-    const isCustom = Boolean(project.controlPath);
     const previewHref =
         user && project.publishedCommitId && !isCustom
             ? `/quarry/view/${encodeURIComponent(project.id)}/${encodeURIComponent(project.publishedCommitId)}`
