@@ -123,27 +123,40 @@ export function touchPing(peerId: string) {
 }
 
 // Reap zombie peers: force-close any peer that hasn't pinged in PING_TIMEOUT_MS.
-// Controllers are exempt (they don't run clock sync)
-export function reapStalePeers(): number {
+// Gallery and controller peers are exempt (they don't run clock sync).
+// Only editor and wall registration seeds lastPingSeen.
+export function reapStalePeers(onStalePeer: (peerId: string) => void): number {
     const now = Date.now();
-    let reaped = 0;
+    const stalePeerIds = new Set<string>();
+    for (const [peerId, entry] of peers) {
+        // A transport can close without delivering a close hook. Check it even
+        // after its ping timestamp has been removed by an earlier reap.
+        if (!entry.peer.peers.has(entry.peer)) stalePeerIds.add(peerId);
+    }
     for (const [peerId, lastSeen] of lastPingSeen) {
-        if (now - lastSeen > PING_TIMEOUT_MS) {
-            const entry = peers.get(peerId);
-            if (entry) {
-                console.log(
-                    `[Bus] Reaping stale peer ${peerId} (${entry.meta.specimen}, last ping ${Math.round((now - lastSeen) / 1000)}s ago)`
-                );
-                try {
-                    entry.peer.close();
-                } catch {
-                    // Already closed
-                }
-                // unregisterPeer will be called by the close handler
+        if (now - lastSeen > PING_TIMEOUT_MS) stalePeerIds.add(peerId);
+    }
+
+    let reaped = 0;
+    for (const peerId of stalePeerIds) {
+        const entry = peers.get(peerId);
+        if (entry) {
+            const lastSeen = lastPingSeen.get(peerId);
+            const reason =
+                lastSeen === undefined || entry.peer.peers.has(entry.peer) === false
+                    ? 'transport closed'
+                    : `last ping ${Math.round((now - lastSeen) / 1000)}s ago`;
+            console.log(`[Bus] Reaping stale peer ${peerId} (${entry.meta.specimen}, ${reason})`);
+            try {
+                entry.peer.close();
+            } catch {
+                // Already closed
             }
-            lastPingSeen.delete(peerId);
-            reaped++;
+            // An already-closed transport may never invoke its close hook.
+            onStalePeer(peerId);
         }
+        lastPingSeen.delete(peerId);
+        reaped++;
     }
     return reaped;
 }

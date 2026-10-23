@@ -353,6 +353,9 @@ export async function completeHelloRegistration(
             ...(deviceAuthContext ? { device: deviceAuthContext } : {})
         };
 
+        // Device lookup is async. The socket may have closed while it ran;
+        // registering it now would leave a wall peer with no future close hook.
+        if (!peer.peers.has(peer)) return { pendingEnrollment: false, rejected: true };
         registerPeer(peer, {
             specimen: 'wall',
             wallId: effectiveWallId,
