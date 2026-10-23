@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { describe, test } from 'node:test';
+
+import { env } from '@repo/env';
 
 import {
     createServeCookie,
@@ -46,7 +49,7 @@ describe('serve cookie', () => {
         assert.ok(setCookie.includes('SameSite=None'));
     });
 
-    test('merges screen and control grants without overwriting the first', () => {
+    test('keeps screen and control grants when launches are sequential', () => {
         const first = value(
             createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
         );
@@ -58,12 +61,13 @@ describe('serve cookie', () => {
                 actor: { surface: 'control', wallId: 'wall-b', scopeId: 8, bindingId: ROUTE_B }
             })
         );
+        const cookies = `${first}; ${second}`;
         const screen = resolveServeCookieGrant(
-            request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, second),
+            request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, cookies),
             PROJECT
         );
         const control = resolveServeCookieGrant(
-            request(`/serve/${PROJECT}/control?__vizzySession=${ROUTE_B}`, second),
+            request(`/serve/${PROJECT}/control?__vizzySession=${ROUTE_B}`, cookies),
             PROJECT
         );
         assert.equal(screen?.actor.surface === 'wall' && screen.actor.wallId, 'wall-a');
@@ -72,7 +76,7 @@ describe('serve cookie', () => {
             resolveServeCookieGrant(
                 request(
                     `/serve/${PROJECT}/assets/app.js`,
-                    second,
+                    cookies,
                     `https://studio.example/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`
                 ),
                 PROJECT
@@ -80,17 +84,90 @@ describe('serve cookie', () => {
             ROUTE_A
         );
         assert.equal(
-            resolveServeCookieGrant(request(`/serve/${PROJECT}/assets/app.js`, second), PROJECT)
-                ?.routeId,
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/assets/app.js`, cookies), PROJECT)
+                ?.actor.surface !== undefined,
+            true
+        );
+        assert.equal(
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/bus`, cookies), PROJECT),
+            null
+        );
+        assert.equal(
+            resolveServeCookieGrant(request(`/serve/${PROJECT}/screen`, cookies), OTHER_PROJECT),
+            null
+        );
+    });
+
+    test('concurrent launches for one project keep both grants in the browser cookie jar', () => {
+        const launchRequest = request(`/serve/${PROJECT}/_launch`);
+        const screenCookie = value(
+            createServeCookie({
+                request: launchRequest,
+                projectId: PROJECT,
+                routeId: ROUTE_A,
+                actor
+            })
+        );
+        const controlCookie = value(
+            createServeCookie({
+                request: launchRequest,
+                projectId: PROJECT,
+                routeId: ROUTE_B,
+                actor: { surface: 'control', wallId: 'wall-a', scopeId: 7, bindingId: ROUTE_A }
+            })
+        );
+        const jar = new Map<string, string>();
+        for (const cookie of [screenCookie, controlCookie]) {
+            const name = cookie.slice(0, cookie.indexOf('='));
+            jar.set(name, cookie);
+        }
+        const cookieHeader = [...jar.values()].join('; ');
+        assert.equal(
+            resolveServeCookieGrant(
+                request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, cookieHeader),
+                PROJECT
+            )?.routeId,
+            ROUTE_A
+        );
+        assert.equal(
+            resolveServeCookieGrant(
+                request(`/serve/${PROJECT}/control?__vizzySession=${ROUTE_B}`, cookieHeader),
+                PROJECT
+            )?.routeId,
             ROUTE_B
         );
+    });
+
+    test('accepts existing signed project cookies during rollout', () => {
+        const now = Date.now();
+        const encoded = Buffer.from(
+            JSON.stringify({
+                v: 2,
+                projectId: PROJECT,
+                iat: now,
+                grants: {
+                    [ROUTE_A]: {
+                        surface: 'wall',
+                        wallId: 'wall-a',
+                        scopeId: 7,
+                        bindingId: ROUTE_A,
+                        iat: now,
+                        exp: now + 60_000
+                    }
+                }
+            })
+        ).toString('base64url');
+        const signature = createHmac('sha256', env.SERVER_AUTH_SECRET || 'degraded-mode-secret')
+            .update('serve-cookie-v2:')
+            .update(encoded)
+            .digest('base64url');
+        const legacyCookie = `vizzy_serve_${PROJECT}=${encoded}.${signature}`;
         assert.equal(
-            resolveServeCookieGrant(request(`/serve/${PROJECT}/bus`, second), PROJECT),
-            null
-        );
-        assert.equal(
-            resolveServeCookieGrant(request(`/serve/${PROJECT}/screen`, second), OTHER_PROJECT),
-            null
+            resolveServeCookieGrant(
+                request(`/serve/${PROJECT}/screen?__vizzySession=${ROUTE_A}`, legacyCookie),
+                PROJECT
+            )?.routeId,
+            ROUTE_A
         );
     });
 
@@ -121,7 +198,7 @@ describe('serve cookie', () => {
             ),
             null
         );
-        assert.equal(name, serveCookieName(PROJECT));
+        assert.equal(name, serveCookieName(PROJECT, ROUTE_A));
     });
 
     test('preview expires after 15 minutes and does not refresh', () => {

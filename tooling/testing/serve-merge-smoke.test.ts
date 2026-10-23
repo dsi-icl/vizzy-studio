@@ -374,25 +374,28 @@ describe('sandboxed same-host serve gateway', () => {
         }
     });
 
-    test('keeps two preview tabs and their static assets on the same project path', async () => {
+    test('keeps concurrent preview launches and their static assets on the same project path', async () => {
         const screenLaunch = await issueServeLaunch({
             projectId,
             entry: 'screen',
             actor: { surface: 'preview' }
         });
-        const screen = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${screenLaunch.ticket}`)
-        );
-        const firstCookie = screen.headers.get('set-cookie')!.split(';')[0]!;
         const controlLaunch = await issueServeLaunch({
             projectId,
             entry: 'control',
             actor: { surface: 'preview' }
         });
-        const control = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${controlLaunch.ticket}`, firstCookie)
-        );
-        const cookie = control.headers.get('set-cookie')!.split(';')[0]!;
+        const [screen, control] = await Promise.all([
+            handleServeRequest(
+                request(`/serve/${projectId}/_launch?ticket=${screenLaunch.ticket}`)
+            ),
+            handleServeRequest(
+                request(`/serve/${projectId}/_launch?ticket=${controlLaunch.ticket}`)
+            )
+        ]);
+        const cookie = [screen, control]
+            .map((response) => response.headers.get('set-cookie')!.split(';')[0]!)
+            .join('; ');
         assert.equal(
             (
                 await handleServeRequest(

@@ -41,6 +41,13 @@ interface ServeCookiePayload {
     grants: Record<string, StoredGrant>;
 }
 
+interface ServeRouteCookiePayload {
+    v: 3;
+    projectId: string;
+    routeId: string;
+    grant: StoredGrant;
+}
+
 export interface ResolvedServeGrant {
     routeId: string;
     actor: ServeActor;
@@ -52,7 +59,13 @@ export function shouldRefreshServeCookie(actor: ServeActor, now = Date.now()): b
     return actor.expiresAt - now < halfLifeMs;
 }
 
-export function serveCookieName(projectId: string): string {
+export function serveCookieName(projectId: string, routeId: string): string {
+    if (!/^[a-f\d]{24}$/i.test(projectId)) throw new Error('Invalid project ID');
+    if (!SERVE_SESSION_ID_PATTERN.test(routeId)) throw new Error('Invalid session ID');
+    return `vizzy_serve_${projectId}_${routeId}`;
+}
+
+function legacyServeCookieName(projectId: string): string {
     if (!/^[a-f\d]{24}$/i.test(projectId)) throw new Error('Invalid project ID');
     return `vizzy_serve_${projectId}`;
 }
@@ -64,15 +77,15 @@ function getSigningSecret(): string {
     return env.SERVER_AUTH_SECRET || 'degraded-mode-secret';
 }
 
-function sign(encoded: string): string {
+function sign(encoded: string, version: 2 | 3): string {
     return createHmac('sha256', getSigningSecret())
-        .update('serve-cookie-v2:')
+        .update(`serve-cookie-v${version}:`)
         .update(encoded)
         .digest('base64url');
 }
 
-function hasValidSignature(encoded: string, signature: string): boolean {
-    const expected = Buffer.from(sign(encoded));
+function hasValidSignature(encoded: string, signature: string, version: 2 | 3): boolean {
+    const expected = Buffer.from(sign(encoded, version));
     const actual = Buffer.from(signature);
     return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
@@ -96,9 +109,9 @@ function isStoredGrant(value: unknown): value is StoredGrant {
     );
 }
 
-function decodeCookie(token: string, projectId: string): ServeCookiePayload | null {
+function decodeLegacyCookie(token: string, projectId: string): ServeCookiePayload | null {
     const [encoded, signature, extra] = token.split('.');
-    if (!encoded || !signature || extra || !hasValidSignature(encoded, signature)) return null;
+    if (!encoded || !signature || extra || !hasValidSignature(encoded, signature, 2)) return null;
     let parsed: unknown;
     try {
         parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
@@ -128,18 +141,30 @@ function decodeCookie(token: string, projectId: string): ServeCookiePayload | nu
     return payload as ServeCookiePayload;
 }
 
-function readServeCookie(request: Request, projectId: string): ServeCookiePayload | null {
-    const header = request.headers.get('cookie');
-    if (!header) return null;
-    const name = serveCookieName(projectId);
-    let newest: ServeCookiePayload | null = null;
-    for (const part of header.split(';')) {
-        const boundary = part.indexOf('=');
-        if (boundary < 0 || part.slice(0, boundary).trim() !== name) continue;
-        const decoded = decodeCookie(part.slice(boundary + 1).trim(), projectId);
-        if (decoded && (!newest || decoded.iat >= newest.iat)) newest = decoded;
+function decodeRouteCookie(
+    token: string,
+    projectId: string,
+    routeId: string
+): ServeRouteCookiePayload | null {
+    const [encoded, signature, extra] = token.split('.');
+    if (!encoded || !signature || extra || !hasValidSignature(encoded, signature, 3)) return null;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    } catch {
+        return null;
     }
-    return newest;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const payload = parsed as Partial<ServeRouteCookiePayload>;
+    if (
+        payload.v !== 3 ||
+        payload.projectId !== projectId ||
+        payload.routeId !== routeId ||
+        !isStoredGrant(payload.grant)
+    ) {
+        return null;
+    }
+    return payload as ServeRouteCookiePayload;
 }
 
 function liveGrants(
@@ -147,8 +172,41 @@ function liveGrants(
     projectId: string,
     now = Date.now()
 ): Record<string, StoredGrant> {
-    const grants = readServeCookie(request, projectId)?.grants ?? {};
-    return Object.fromEntries(Object.entries(grants).filter(([, grant]) => grant.exp > now));
+    const header = request.headers.get('cookie');
+    if (!header) return {};
+    const legacyName = legacyServeCookieName(projectId);
+    const routePrefix = `${legacyName}_`;
+    let newestLegacy: ServeCookiePayload | null = null;
+    const routeGrants = new Map<string, StoredGrant>();
+    for (const part of header.split(';')) {
+        const boundary = part.indexOf('=');
+        if (boundary < 0) continue;
+        const name = part.slice(0, boundary).trim();
+        const token = part.slice(boundary + 1).trim();
+        if (name === legacyName) {
+            const decoded = decodeLegacyCookie(token, projectId);
+            if (decoded && (!newestLegacy || decoded.iat >= newestLegacy.iat)) {
+                newestLegacy = decoded;
+            }
+            continue;
+        }
+        if (!name.startsWith(routePrefix)) continue;
+        const routeId = name.slice(routePrefix.length);
+        if (!SERVE_SESSION_ID_PATTERN.test(routeId)) continue;
+        const decoded = decodeRouteCookie(token, projectId, routeId);
+        if (!decoded || decoded.grant.exp <= now) continue;
+        const previous = routeGrants.get(routeId);
+        if (!previous || decoded.grant.iat >= previous.iat) {
+            routeGrants.set(routeId, decoded.grant);
+        }
+    }
+    const grants = Object.fromEntries(
+        Object.entries(newestLegacy?.grants ?? {}).filter(([, grant]) => grant.exp > now)
+    );
+    // New independent cookies take precedence over an older merged cookie for
+    // the same route while existing sessions continue to work during rollout.
+    for (const [routeId, grant] of routeGrants) grants[routeId] = grant;
+    return grants;
 }
 
 function actorFromGrant(grant: StoredGrant): ServeActor {
@@ -162,7 +220,7 @@ function actorFromGrant(grant: StoredGrant): ServeActor {
     };
 }
 
-/** Merge this launch or refresh into the other live grants for this project. */
+/** Each route has its own cookie so concurrent iframe launches cannot overwrite one another. */
 export function createServeCookie(input: {
     request: Request;
     projectId: string;
@@ -173,12 +231,7 @@ export function createServeCookie(input: {
     const now = Date.now();
     const maxAge =
         input.actor.surface === 'preview' ? PREVIEW_MAX_AGE_SECONDS : SERVE_COOKIE_MAX_AGE_SECONDS;
-    const others = Object.entries(liveGrants(input.request, input.projectId, now))
-        .filter(([id]) => id !== input.routeId)
-        .sort(([, a], [, b]) => b.iat - a.iat)
-        .slice(0, MAX_GRANTS - 1);
-    const grants = Object.fromEntries(others) as Record<string, StoredGrant>;
-    grants[input.routeId] = {
+    const grant: StoredGrant = {
         surface: input.actor.surface,
         ...('wallId' in input.actor
             ? {
@@ -190,14 +243,16 @@ export function createServeCookie(input: {
         iat: now,
         exp: now + maxAge * 1000
     };
-    const payload: ServeCookiePayload = { v: 2, projectId: input.projectId, iat: now, grants };
+    const payload: ServeRouteCookiePayload = {
+        v: 3,
+        projectId: input.projectId,
+        routeId: input.routeId,
+        grant
+    };
     const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-    const cookieAge = Math.ceil(
-        (Math.max(...Object.values(grants).map((grant) => grant.exp)) - now) / 1000
-    );
     return [
-        `${serveCookieName(input.projectId)}=${encoded}.${sign(encoded)}`,
-        `Max-Age=${cookieAge}`,
+        `${serveCookieName(input.projectId, input.routeId)}=${encoded}.${sign(encoded, 3)}`,
+        `Max-Age=${maxAge}`,
         `Path=${serveBasePath(input.projectId)}`,
         'HttpOnly',
         // Sandboxed demo documents have an opaque origin. Their subrequests are

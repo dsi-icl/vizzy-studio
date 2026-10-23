@@ -23,17 +23,21 @@ through the gateway.
 The app issues a 60-second one-use launch ticket for a bound wall or controller,
 or a signed-in admin preview. Ticket IDs are stored in MongoDB with a TTL index.
 Vizzy consumes the ticket, sets an HttpOnly, Secure, SameSite=None signed cookie
-at `Path=/serve/<projectId>`, and redirects to `/screen` or `/control` below that
-path. The cookie holds a bounded map of independent grants, so tabs for the same
-project do not overwrite each other. `__vizzySession` in the entry URL selects a
-grant; the cookie is still required. The gateway removes the selector before
-forwarding a request upstream.
+for that launch at `Path=/serve/<projectId>`, and redirects to `/screen` or
+`/control` below that path. Each launch uses a distinct cookie name, so
+simultaneous screen and controller launches for one project cannot overwrite
+each other's grants. `__vizzySession` in the entry URL selects a grant; its
+cookie is still required. The gateway removes the selector before forwarding a
+request upstream. Existing signed cookies containing several grants remain
+readable during the transition.
 
 Wall and controller grants last up to two hours and are checked against the live
 wall binding on each HTTP request and WebSocket handshake. Admin previews last
 at most 15 minutes. Signed cookies survive a web process restart. A wall
 reconnect restores its binding from the wall record and obtains a new launch.
 Each bind has a random generation that invalidates grants from an earlier bind.
+The Gallery waits for the server's matching wall-binding event before requesting
+a custom controller launch, so it cannot launch against the binding being replaced.
 Wall and gallery clients refresh grants every minute with `/_keepalive`; a
 failed refresh starts a new launch.
 
@@ -118,6 +122,7 @@ proxy's CSP permits inline demo scripts and styles while sandboxing documents.
 ## Verification
 
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
-apps/web/src/server/serveCookie.test.ts apps/web/tests/unit/iframeSandbox.test.ts`.
+apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts
+apps/web/tests/unit/iframeSandbox.test.ts`.
 Deployment still needs a pilot with rebuilt demos and a restart test with the
 actual load balancer, MongoDB, and wall reconnection flow.
