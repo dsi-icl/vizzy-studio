@@ -296,6 +296,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
+        bindingId: z.string().optional(),
         layout: StageLayoutSchema.optional(),
         customRender: z
             .object({

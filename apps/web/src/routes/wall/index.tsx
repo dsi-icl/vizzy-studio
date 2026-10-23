@@ -33,6 +33,7 @@ type HydrateStagePayload = {
     layers: LayerWithWallComponentState[];
     customRenderUrl?: string;
     customRenderCompat: boolean;
+    bindingId?: string;
     layout: StageLayout;
 } & HydrateScopeContext;
 
@@ -48,8 +49,11 @@ function WallApp() {
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProjectId, setCustomRenderProjectId] = useState<string | undefined>();
+    // A rebind of the same project rotates its Serve grant without changing the project ID.
+    const [customRenderBindingId, setCustomRenderBindingId] = useState<string | undefined>();
     const [serveLaunch, setServeLaunch] = useState<{
         projectId: string;
+        bindingId?: string;
         url: string;
         keepaliveUrl: string;
     } | null>(null);
@@ -180,6 +184,7 @@ function WallApp() {
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
         setCustomRenderProjectId(next.customRenderUrl ? next.projectId : undefined);
+        setCustomRenderBindingId(next.customRenderUrl ? next.bindingId : undefined);
         setStageLayout(next.layout);
         lastHydrateContextRef.current = {
             hasContent: hasHydrateContent(next),
@@ -322,7 +327,12 @@ function WallApp() {
             })
                 .then(({ url, keepaliveUrl }) => {
                     if (!cancelled) {
-                        setServeLaunch({ projectId: customRenderProjectId, url, keepaliveUrl });
+                        setServeLaunch({
+                            projectId: customRenderProjectId,
+                            bindingId: customRenderBindingId,
+                            url,
+                            keepaliveUrl
+                        });
                         setServeLaunchFailed(false);
                     }
                 })
@@ -340,7 +350,7 @@ function WallApp() {
             cancelled = true;
             if (retryTimer !== null) window.clearTimeout(retryTimer);
         };
-    }, [wallId, customRenderProjectId, iframeGateCycle]);
+    }, [wallId, customRenderProjectId, customRenderBindingId, iframeGateCycle]);
 
     useEffect(() => {
         if (!serveLaunch || serveLaunch.projectId !== customRenderProjectId) return;
@@ -379,6 +389,7 @@ function WallApp() {
                     layers: data.layers,
                     customRenderUrl: data.customRender?.url,
                     customRenderCompat: Boolean(data.customRender?.compat),
+                    bindingId: data.bindingId,
                     layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
@@ -878,7 +889,9 @@ function WallApp() {
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
         const serveLaunchReady =
-            !!customRenderProjectId && serveLaunch?.projectId === customRenderProjectId;
+            !!customRenderProjectId &&
+            serveLaunch?.projectId === customRenderProjectId &&
+            serveLaunch.bindingId === customRenderBindingId;
         const finalSrc = serveLaunchReady
             ? (() => {
                   const launchUrl = new URL(serveLaunch.url);

@@ -12,6 +12,7 @@ import {
     invalidateHydrateCache,
     removeFromIndex,
     scopedState,
+    wallBindingIds,
     wallBindingSources,
     wallBindings,
     type PeerEntry,
@@ -107,6 +108,7 @@ export function getEditorHydratePayload(scopeId: ScopeId): string {
 export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string {
     const scope = scopedState.get(scopeId);
     if (!scope) return EMPTY_HYDRATE;
+    const bindingId = wallBindingIds.get(wallId);
     const boundSource = wallBindingSources.get(wallId);
 
     const controllerTransient = controllerTransientByWallId.get(wallId);
@@ -117,6 +119,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
             projectId: scope.projectId,
             commitId: scope.commitId,
             slideId: scope.slideId,
+            ...(bindingId ? { bindingId } : {}),
             layout: scope.layout,
             ...(scope.customRenderUrl
                 ? {
@@ -144,6 +147,7 @@ export function getWallHydratePayload(scopeId: ScopeId, wallId: string): string 
         projectId: scope.projectId,
         commitId: scope.commitId,
         slideId: scope.slideId,
+        ...(bindingId ? { bindingId } : {}),
         layout: scope.layout,
         ...(scope.customRenderUrl
             ? {
