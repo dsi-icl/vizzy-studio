@@ -48,6 +48,7 @@ import { Route as AdminWallsIndexRouteImport } from './routes/admin/walls/index'
 import { Route as AdminSignageIndexRouteImport } from './routes/admin/signage/index'
 import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
+import { Route as ApiWallFontsRouteImport } from './routes/api/wall/fonts'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
@@ -268,6 +269,11 @@ const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
   path: '/api/wall/media-cookie',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWallFontsRoute = ApiWallFontsRouteImport.update({
+  id: '/api/wall/fonts',
+  path: '/api/wall/fonts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/api/uploads/$',
   path: '/api/uploads/$',
@@ -453,6 +459,7 @@ export interface FileRoutesByFullPath {
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
@@ -515,6 +522,7 @@ export interface FileRoutesByTo {
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/quarry': typeof AuthQuarryIndexRoute
   '/admin/signage': typeof AdminSignageIndexRoute
@@ -582,6 +590,7 @@ export interface FileRoutesById {
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/_auth/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
@@ -649,6 +658,7 @@ export interface FileRouteTypes {
     | '/api/assets/$uri'
     | '/api/auth/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/quarry/'
     | '/admin/signage/'
@@ -711,6 +721,7 @@ export interface FileRouteTypes {
     | '/api/assets/$uri'
     | '/api/auth/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/quarry'
     | '/admin/signage'
@@ -777,6 +788,7 @@ export interface FileRouteTypes {
     | '/api/assets/$uri'
     | '/api/auth/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/_auth/quarry/'
     | '/admin/signage/'
@@ -830,6 +842,7 @@ export interface RootRouteChildren {
   ApiAssetsUriRoute: typeof ApiAssetsUriRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
+  ApiWallFontsRoute: typeof ApiWallFontsRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
@@ -1110,6 +1123,13 @@ declare module '@tanstack/react-router' {
       path: '/api/wall/media-cookie'
       fullPath: '/api/wall/media-cookie'
       preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wall/fonts': {
+      id: '/api/wall/fonts'
+      path: '/api/wall/fonts'
+      fullPath: '/api/wall/fonts'
+      preLoaderRoute: typeof ApiWallFontsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads/$': {
@@ -1494,6 +1514,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAssetsUriRoute: ApiAssetsUriRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
+  ApiWallFontsRoute: ApiWallFontsRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
