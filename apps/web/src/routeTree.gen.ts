@@ -50,6 +50,7 @@ import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index
 import { Route as ServeProjectIdSplatRouteImport } from './routes/serve.$projectId.$'
 import { Route as ApiWallServeCookieRouteImport } from './routes/api/wall/serve-cookie'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
+import { Route as ApiWallFontsRouteImport } from './routes/api/wall/fonts'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiImageTilesSplatRouteImport } from './routes/api/image-tiles/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -281,6 +282,11 @@ const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
   path: '/api/wall/media-cookie',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWallFontsRoute = ApiWallFontsRouteImport.update({
+  id: '/api/wall/fonts',
+  path: '/api/wall/fonts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/api/uploads/$',
   path: '/api/uploads/$',
@@ -472,6 +478,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
@@ -537,6 +544,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
@@ -607,6 +615,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
   '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
   '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
@@ -677,6 +686,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
@@ -742,6 +752,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
@@ -811,6 +822,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
     | '/api/wall/serve-cookie'
     | '/serve/$projectId/$'
@@ -867,6 +879,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiImageTilesSplatRoute: typeof ApiImageTilesSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
+  ApiWallFontsRoute: typeof ApiWallFontsRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
   ApiWallServeCookieRoute: typeof ApiWallServeCookieRoute
   ServeProjectIdSplatRoute: typeof ServeProjectIdSplatRoute
@@ -1163,6 +1176,13 @@ declare module '@tanstack/react-router' {
       path: '/api/wall/media-cookie'
       fullPath: '/api/wall/media-cookie'
       preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wall/fonts': {
+      id: '/api/wall/fonts'
+      path: '/api/wall/fonts'
+      fullPath: '/api/wall/fonts'
+      preLoaderRoute: typeof ApiWallFontsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads/$': {
@@ -1555,6 +1575,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiImageTilesSplatRoute: ApiImageTilesSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
+  ApiWallFontsRoute: ApiWallFontsRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
   ApiWallServeCookieRoute: ApiWallServeCookieRoute,
   ServeProjectIdSplatRoute: ServeProjectIdSplatRoute,

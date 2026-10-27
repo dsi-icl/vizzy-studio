@@ -9,6 +9,7 @@ import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react'
 import { MapWrapper } from '~/components/MapWrapper';
 import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
+import { useWallFonts } from '~/hooks/useWallFonts';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
@@ -66,6 +67,7 @@ function WallApp() {
     });
     const [blackOverlayOpacity, setBlackOverlayOpacity] = useState(1);
     const [iframeGateCycle, setIframeGateCycle] = useState(0);
+    const [boundProjectId, setBoundProjectId] = useState<string | null>(null);
 
     const transitionPhaseRef = useRef<'visible' | 'fadingOut' | 'waitingIframes' | 'fadingIn'>(
         'visible'
@@ -93,6 +95,7 @@ function WallApp() {
         return new URLSearchParams(window.location.search);
     }, [isClient]);
     const wallId = useMemo(() => searchParams?.get('w') ?? null, [searchParams]);
+    useWallFonts(boundProjectId, wallId);
     const hasMissingParams = useMemo(() => {
         if (!searchParams) return true;
         return !searchParams.has('w') || !searchParams.has('c') || !searchParams.has('r');
@@ -181,6 +184,7 @@ function WallApp() {
     const applyHydrateContent = (next: HydrateStagePayload) => {
         engine?.layers.clear();
         setLayers(next.layers);
+        setBoundProjectId(next.projectId ?? null);
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
         setCustomRenderProjectId(next.customRenderUrl ? next.projectId : undefined);
