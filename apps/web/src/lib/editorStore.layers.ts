@@ -7,7 +7,11 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
-import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
+import {
+    TEXT_DEFAULT_FONT_SIZE_PX,
+    TEXT_DEFAULT_LAYER_HEIGHT_PX,
+    TEXT_DEFAULT_LAYER_WIDTH_PX
+} from './textRenderConfig';
 import type { Layer, LayerWithEditorState } from './types';
 
 type SliceSet = (
@@ -479,7 +483,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     zIndex,
                     visible: true
                 },
-                textHtml: '<p>New Text</p>'
+                textHtml: `<p><span style="font-size: ${TEXT_DEFAULT_FONT_SIZE_PX}px">New Text</span></p>`
             };
 
             set((s) => {
