@@ -1,9 +1,12 @@
 import '@tanstack/react-start/server-only';
 import { randomBytes } from 'node:crypto';
 
+export type PortalTokenSurface = 'wall' | 'control';
+
 interface PortalTokenEntry {
     wallId: string;
     scopeId: number;
+    surface: PortalTokenSurface;
     createdAt: number;
     expiresAt: number;
 }
@@ -61,7 +64,8 @@ function createRawPortalToken() {
 
 export function createPortalToken(
     wallId: string,
-    scopeId: number
+    scopeId: number,
+    surface: PortalTokenSurface
 ): {
     token: string;
     expiresAt: number;
@@ -72,6 +76,7 @@ export function createPortalToken(
     tokens.set(token, {
         wallId,
         scopeId,
+        surface,
         createdAt: now,
         expiresAt
     });
@@ -80,13 +85,18 @@ export function createPortalToken(
     return { token, expiresAt };
 }
 
-export function validatePortalToken(token: string): (PortalTokenEntry & { token: string }) | null {
+/** `surface` is required so a new call site cannot silently accept a token minted elsewhere. */
+export function validatePortalToken(
+    token: string,
+    surface: PortalTokenSurface
+): (PortalTokenEntry & { token: string }) | null {
     const entry = tokens.get(token);
     if (!entry) return null;
     if (Date.now() > entry.expiresAt) {
         revokeTokenInternal(token);
         return null;
     }
+    if (entry.surface !== surface) return null;
     return { token, ...entry };
 }
 

@@ -47,7 +47,10 @@ import { Route as AdminSignageRouteRouteImport } from './routes/admin/signage/ro
 import { Route as AdminWallsIndexRouteImport } from './routes/admin/walls/index'
 import { Route as AdminSignageIndexRouteImport } from './routes/admin/signage/index'
 import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index'
+import { Route as ServeProjectIdSplatRouteImport } from './routes/serve.$projectId.$'
+import { Route as ApiWallServeCookieRouteImport } from './routes/api/wall/serve-cookie'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
+import { Route as ApiWallFontsRouteImport } from './routes/api/wall/fonts'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
 import { Route as ApiImageTilesSplatRouteImport } from './routes/api/image-tiles/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -264,9 +267,24 @@ const AuthQuarryIndexRoute = AuthQuarryIndexRouteImport.update({
   path: '/quarry/',
   getParentRoute: () => AuthRouteRoute,
 } as any)
+const ServeProjectIdSplatRoute = ServeProjectIdSplatRouteImport.update({
+  id: '/serve/$projectId/$',
+  path: '/serve/$projectId/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWallServeCookieRoute = ApiWallServeCookieRouteImport.update({
+  id: '/api/wall/serve-cookie',
+  path: '/api/wall/serve-cookie',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
   id: '/api/wall/media-cookie',
   path: '/api/wall/media-cookie',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiWallFontsRoute = ApiWallFontsRouteImport.update({
+  id: '/api/wall/fonts',
+  path: '/api/wall/fonts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
@@ -460,7 +478,10 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
   '/admin/walls/': typeof AdminWallsIndexRoute
@@ -523,7 +544,10 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/quarry': typeof AuthQuarryIndexRoute
   '/admin/signage': typeof AdminSignageIndexRoute
   '/admin/walls': typeof AdminWallsIndexRoute
@@ -591,7 +615,10 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
+  '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
+  '/api/wall/serve-cookie': typeof ApiWallServeCookieRoute
+  '/serve/$projectId/$': typeof ServeProjectIdSplatRoute
   '/_auth/quarry/': typeof AuthQuarryIndexRoute
   '/admin/signage/': typeof AdminSignageIndexRoute
   '/admin/walls/': typeof AdminWallsIndexRoute
@@ -659,7 +686,10 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
+    | '/serve/$projectId/$'
     | '/quarry/'
     | '/admin/signage/'
     | '/admin/walls/'
@@ -722,7 +752,10 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
+    | '/serve/$projectId/$'
     | '/quarry'
     | '/admin/signage'
     | '/admin/walls'
@@ -789,7 +822,10 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/image-tiles/$'
     | '/api/uploads/$'
+    | '/api/wall/fonts'
     | '/api/wall/media-cookie'
+    | '/api/wall/serve-cookie'
+    | '/serve/$projectId/$'
     | '/_auth/quarry/'
     | '/admin/signage/'
     | '/admin/walls/'
@@ -843,7 +879,10 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiImageTilesSplatRoute: typeof ApiImageTilesSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
+  ApiWallFontsRoute: typeof ApiWallFontsRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
+  ApiWallServeCookieRoute: typeof ApiWallServeCookieRoute
+  ServeProjectIdSplatRoute: typeof ServeProjectIdSplatRoute
   ApiPortalV1BindRoute: typeof ApiPortalV1BindRoute
   ApiPortalV1RebootRoute: typeof ApiPortalV1RebootRoute
   ApiPortalV1SlidesRoute: typeof ApiPortalV1SlidesRouteWithChildren
@@ -1118,11 +1157,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthQuarryIndexRouteImport
       parentRoute: typeof AuthRouteRoute
     }
+    '/serve/$projectId/$': {
+      id: '/serve/$projectId/$'
+      path: '/serve/$projectId/$'
+      fullPath: '/serve/$projectId/$'
+      preLoaderRoute: typeof ServeProjectIdSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wall/serve-cookie': {
+      id: '/api/wall/serve-cookie'
+      path: '/api/wall/serve-cookie'
+      fullPath: '/api/wall/serve-cookie'
+      preLoaderRoute: typeof ApiWallServeCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/wall/media-cookie': {
       id: '/api/wall/media-cookie'
       path: '/api/wall/media-cookie'
       fullPath: '/api/wall/media-cookie'
       preLoaderRoute: typeof ApiWallMediaCookieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/wall/fonts': {
+      id: '/api/wall/fonts'
+      path: '/api/wall/fonts'
+      fullPath: '/api/wall/fonts'
+      preLoaderRoute: typeof ApiWallFontsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/uploads/$': {
@@ -1515,7 +1575,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiImageTilesSplatRoute: ApiImageTilesSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
+  ApiWallFontsRoute: ApiWallFontsRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
+  ApiWallServeCookieRoute: ApiWallServeCookieRoute,
+  ServeProjectIdSplatRoute: ServeProjectIdSplatRoute,
   ApiPortalV1BindRoute: ApiPortalV1BindRoute,
   ApiPortalV1RebootRoute: ApiPortalV1RebootRoute,
   ApiPortalV1SlidesRoute: ApiPortalV1SlidesRouteWithChildren,

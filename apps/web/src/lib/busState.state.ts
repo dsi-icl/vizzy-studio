@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import type { Peer } from 'crossws';
 
 import { makeScopeLabel, type Layer, type ScopeState } from '~/lib/types';
@@ -66,6 +68,7 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     allGalleries: new Set<PeerEntry>(),
     allEditors: new Set<PeerEntry>(),
     wallBindings: new Map<string, ScopeId>(),
+    wallBindingIds: new Map<string, string>(),
     wallBindingSources: new Map<string, 'live' | 'gallery' | 'signage'>(),
     signageBlankWalls: new Set<string>(),
     scopeWatchers: new Map<ScopeId, Set<string>>(),
@@ -99,12 +102,21 @@ if (!_hmr.wallUnbindTimers) {
 if (!_hmr.signageBlankWalls) {
     _hmr.signageBlankWalls = new Set<string>();
 }
+if (!_hmr.wallBindingIds) {
+    _hmr.wallBindingIds = new Map<string, string>();
+}
+for (const wallId of _hmr.wallBindings.keys()) {
+    if (!_hmr.wallBindingIds.has(wallId)) {
+        _hmr.wallBindingIds.set(wallId, randomBytes(16).toString('base64url'));
+    }
+}
 if (typeof _hmr.peerCounts.gallery !== 'number') {
     _hmr.peerCounts.gallery = 0;
 }
 (process as any).__BUS_HMR__ = _hmr;
 
 export const scopedState: Map<ScopeId, ScopeState> = _hmr.scopedState;
+export const wallBindingIds: Map<string, string> = _hmr.wallBindingIds;
 export const scopeKeyToId: Map<string, ScopeId> = _hmr.scopeKeyToId;
 export const scopeIdToKey: Map<ScopeId, string> = _hmr.scopeIdToKey;
 export const commitToScopeIds: Map<string, Set<ScopeId>> = _hmr.commitToScopeIds;

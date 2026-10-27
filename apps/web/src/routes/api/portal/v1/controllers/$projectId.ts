@@ -58,7 +58,7 @@ export const Route = createFileRoute('/api/portal/v1/controllers/$projectId')({
 
                 const token = getBearerToken(request);
                 if (token) {
-                    const session = validatePortalToken(token);
+                    const session = validatePortalToken(token, 'control');
                     if (session) {
                         const currentScopeId = wallBindings.get(session.wallId);
                         if (currentScopeId !== undefined && currentScopeId === session.scopeId) {

@@ -13,6 +13,7 @@ import { LayerList } from '~/components/LayerList';
 import { MainBoard } from '~/components/MainBoard';
 import { ParametersPanel } from '~/components/ParametersPanel';
 import { SlideList } from '~/components/SlideList';
+import { isCustomProject } from '~/lib/customProject';
 import { EditorColourPaletteProvider } from '~/lib/editorColourPalette';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
@@ -53,13 +54,12 @@ function SlideEditor() {
     });
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));
 
-    if (project.customRenderUrl) {
+    if (isCustomProject(project)) {
         return (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
                 <h2 className="text-xl font-semibold">Vizzy Studio Editor Unavailable</h2>
                 <p className="max-w-md text-muted-foreground">
-                    This project uses a custom render URL and cannot be edited with the built-in
-                    editor.
+                    This is a custom project and cannot be edited with the built-in editor.
                 </p>
                 <Link
                     to="/quarry/projects/$projectId"

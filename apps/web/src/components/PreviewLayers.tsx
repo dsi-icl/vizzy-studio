@@ -3,6 +3,7 @@ import Konva from 'konva';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Rect } from 'react-konva';
 
+import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
 import { textHtmlToImage } from '~/lib/textToCanvas';
@@ -120,6 +121,7 @@ export function PreviewTextLayer({
 }) {
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
+    const fontRevision = useTextFontRevision();
 
     useEffect(() => {
         let cancelled = false;
@@ -133,7 +135,7 @@ export function PreviewTextLayer({
         return () => {
             cancelled = true;
         };
-    }, [shape.textHtml, shape.config.width, shape.config.height]);
+    }, [shape.textHtml, shape.config.width, shape.config.height, fontRevision]);
 
     useEffect(() => {
         applyKonvaFilters(imageRef.current, shape.config.filters);

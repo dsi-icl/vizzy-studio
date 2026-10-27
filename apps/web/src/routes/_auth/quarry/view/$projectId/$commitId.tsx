@@ -25,6 +25,7 @@ import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
+import { useFonts } from '~/hooks/useFonts';
 import { getStageGridLines } from '~/lib/editorHelpers';
 import { migrateLegacyLayers, type LayerWithEditorState } from '~/lib/types';
 import { $createBranchHead } from '~/server/projects.fns';
@@ -50,6 +51,7 @@ export const Route = createFileRoute('/_auth/quarry/view/$projectId/$commitId')(
 
 function CommitViewer() {
     const { projectId, commitId } = Route.useParams();
+    useFonts(projectId);
     const { data: sessionData } = useQuery(authSessionQueryOptions());
     const { data: commit } = useSuspenseQuery(commitQueryOptions(commitId));
     const { data: project } = useSuspenseQuery(projectQueryOptions(projectId));

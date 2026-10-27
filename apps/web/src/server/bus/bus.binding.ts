@@ -22,6 +22,8 @@ import {
     wallBindingSources,
     wallsByWallId
 } from '~/lib/busState';
+import { isCustomProject } from '~/lib/customProject';
+import { serveWallPath } from '~/lib/serveUrls';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
@@ -327,9 +329,8 @@ async function performLiveBindNow(
             projectId,
             commitId,
             resolvedSlideId,
-            project?.customRenderUrl ?? undefined,
+            isCustomProject(project) ? serveWallPath(projectId) : undefined,
             project?.customRenderCompat,
-            project?.customRenderProxy,
             stage.layout,
             stage.id
         );

@@ -38,8 +38,7 @@ export interface Project {
         blurhash?: string;
         sizes?: number[];
     }>;
-    customControlUrl?: string;
-    customRenderUrl?: string | null;
+    controlPath?: string;
 }
 
 interface ProjectCardProps {
@@ -60,6 +59,10 @@ interface ProjectCardProps {
     onWallRebootRequest?: (wallId: string) => Promise<boolean | void> | boolean | void;
     onWallUnbindRequest?: (wallId: string) => Promise<boolean | void> | boolean | void;
     onControllerTokenRequest?: (wallId: string) => Promise<string | null | void>;
+    onControllerLaunchRequest?: (wallId: string) => Promise<{
+        url: string;
+        keepaliveUrl: string;
+    } | null | void>;
     onActiveWallIdChange?: (wallId: string | null) => void;
     previewHref?: string;
     previewDisabledReason?: string;
@@ -67,7 +70,7 @@ interface ProjectCardProps {
 }
 
 function buildControllerUrl(
-    customControlUrl: string | undefined,
+    controlPath: string | undefined,
     wallId: string,
     portalToken?: string | null
 ): string {
@@ -85,7 +88,7 @@ function buildControllerUrl(
             return input;
         }
     };
-    const raw = customControlUrl?.trim();
+    const raw = controlPath?.trim();
     if (!raw) return withPortalToken(fallback);
 
     const withTokens = raw
@@ -116,6 +119,7 @@ function ProjectCardDialogBody({
     onLoadProject,
     onWallRebootRequest,
     onControllerTokenRequest,
+    onControllerLaunchRequest,
     onActiveWallIdChange,
     availableWalls = [],
     presetWallId,
@@ -131,6 +135,8 @@ function ProjectCardDialogBody({
     const [activeWallId, setActiveWallId] = useState<string | null>(null);
     const [controllerReloadNonce, setControllerReloadNonce] = useState(0);
     const [controllerPortalToken, setControllerPortalToken] = useState<string | null>(null);
+    const [controllerLaunchUrl, setControllerLaunchUrl] = useState<string | null>(null);
+    const [controllerKeepaliveUrl, setControllerKeepaliveUrl] = useState<string | null>(null);
     const [isRefreshingController, setIsRefreshingController] = useState(false);
     const [refreshRebootDone, setRefreshRebootDone] = useState(false);
     const [refreshIframeLoaded, setRefreshIframeLoaded] = useState(false);
@@ -140,6 +146,65 @@ function ProjectCardDialogBody({
 
     const hasController = Boolean(activeWallId);
     const isFullscreen = state === 'fullscreen';
+
+    useEffect(() => {
+        if (!activeWallId || !onControllerLaunchRequest) {
+            setControllerLaunchUrl(null);
+            setControllerKeepaliveUrl(null);
+            return;
+        }
+        let cancelled = false;
+        let retryTimer: number | null = null;
+        let retryDelayMs = 5_000;
+        setControllerLaunchUrl(null);
+        setControllerKeepaliveUrl(null);
+        const requestLaunch = () => {
+            void onControllerLaunchRequest(activeWallId)
+                .then((launch) => {
+                    if (cancelled) return;
+                    if (launch?.url) {
+                        setControllerLaunchUrl(launch.url);
+                        setControllerKeepaliveUrl(launch.keepaliveUrl);
+                        setErrorMessage(null);
+                    } else {
+                        setErrorMessage('Could not open demo controller; retrying');
+                        retryTimer = window.setTimeout(requestLaunch, retryDelayMs);
+                        retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
+                    }
+                })
+                .catch(() => {
+                    if (!cancelled) {
+                        setErrorMessage('Could not open demo controller; retrying');
+                        retryTimer = window.setTimeout(requestLaunch, retryDelayMs);
+                        retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
+                    }
+                });
+        };
+        requestLaunch();
+        return () => {
+            cancelled = true;
+            if (retryTimer !== null) window.clearTimeout(retryTimer);
+        };
+    }, [activeWallId, controllerReloadNonce, onControllerLaunchRequest]);
+
+    useEffect(() => {
+        if (!controllerKeepaliveUrl) return;
+        let cancelled = false;
+        const keepalive = () => {
+            const image = new Image();
+            image.onerror = () => {
+                if (!cancelled) setControllerReloadNonce((nonce) => nonce + 1);
+            };
+            const url = new URL(controllerKeepaliveUrl);
+            url.searchParams.set('t', String(Date.now()));
+            image.src = url.toString();
+        };
+        const timer = window.setInterval(keepalive, 60_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [controllerKeepaliveUrl]);
 
     useEffect(() => {
         if (!activeWallId) {
@@ -239,17 +304,22 @@ function ProjectCardDialogBody({
 
     const controllerUrl = useMemo(() => {
         if (!activeWallId) return '';
+        if (onControllerLaunchRequest) return controllerLaunchUrl ?? '';
+        // Private Serve controllers must never fall back to direct navigation.
+        if (project.controlPath?.startsWith('/serve/')) return '';
         if (onControllerTokenRequest && !controllerPortalToken) return '';
         const baseUrl = buildControllerUrl(
-            project.customControlUrl,
+            project.controlPath,
             activeWallId,
             controllerPortalToken
         );
         return `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_r=${controllerReloadNonce}`;
     }, [
         activeWallId,
+        controllerLaunchUrl,
+        onControllerLaunchRequest,
         controllerPortalToken,
-        project.customControlUrl,
+        project.controlPath,
         controllerReloadNonce,
         onControllerTokenRequest
     ]);
@@ -309,6 +379,11 @@ function ProjectCardDialogBody({
                         <iframe
                             title={`Controller for ${project.name}`}
                             src={controllerUrl}
+                            sandbox={
+                                onControllerLaunchRequest
+                                    ? 'allow-scripts allow-forms allow-same-site-none-cookies'
+                                    : undefined
+                            }
                             className="h-full w-full border-0 bg-background"
                             onLoad={() => {
                                 if (isRefreshingController) {
@@ -521,6 +596,7 @@ export function ProjectCard({
     onWallRebootRequest,
     onWallUnbindRequest,
     onControllerTokenRequest,
+    onControllerLaunchRequest,
     availableWalls,
     presetWallId,
     hideWallPicker,
@@ -683,6 +759,7 @@ export function ProjectCard({
                         onLoadProject={onLoadProject}
                         onWallRebootRequest={onWallRebootRequest}
                         onControllerTokenRequest={onControllerTokenRequest}
+                        onControllerLaunchRequest={onControllerLaunchRequest}
                         onActiveWallIdChange={handleActiveWallIdChange}
                     />
                 </MorphingDialogContent>

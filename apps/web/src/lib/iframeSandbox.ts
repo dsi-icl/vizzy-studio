@@ -1,6 +1,9 @@
 /** Third-party HTML re-served from our own origin. Must stay opaque. */
 const UNTRUSTED_SAME_ORIGIN = 'allow-scripts allow-forms';
 
+/** Chromium can send only SameSite=None cookies with third-party cookies blocked. */
+const SERVE_SANDBOX = 'allow-scripts allow-forms allow-same-site-none-cookies';
+
 /** Our own error and placeholder pages. Trusted, and they need to hydrate. */
 const TRUSTED_SAME_ORIGIN = 'allow-scripts allow-same-origin';
 
@@ -23,6 +26,8 @@ export function resolveIframeSandbox(src: string, appOrigin: string = currentApp
         return REMOTE_ORIGIN;
     }
 
+    if (path.startsWith('/serve/')) return SERVE_SANDBOX;
+
     if (TRUSTED_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) {
         return TRUSTED_SAME_ORIGIN;
     }
@@ -33,12 +38,14 @@ export function resolveIframeSandbox(src: string, appOrigin: string = currentApp
 
 function toSameOriginPath(src: string, appOrigin: string): string | null {
     const trimmed = src.trim();
-    if (trimmed.startsWith('//')) return null;
-    if (trimmed.startsWith('/')) return trimmed;
+    if (trimmed.startsWith('//') && !appOrigin) return '';
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return trimmed;
 
-    if (!appOrigin) return null;
     try {
-        const resolved = new URL(trimmed, appOrigin);
+        const resolved = new URL(trimmed, appOrigin || undefined);
+        // During SSR we cannot compare against window.location. Launch URLs
+        // are absolute, so keep /serve documents opaque from the first paint.
+        if (!appOrigin && resolved.pathname.startsWith('/serve/')) return resolved.pathname;
         return resolved.origin === appOrigin ? `${resolved.pathname}${resolved.search}` : null;
     } catch {
         return null;

@@ -41,7 +41,7 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
                     return json(request, 401, { error: 'Missing bearer token' });
                 }
 
-                const validated = validatePortalToken(token);
+                const validated = validatePortalToken(token, 'control');
                 if (!validated) {
                     await logAuditDenied({
                         action: 'PORTAL_BIND_DENIED',
@@ -121,7 +121,7 @@ export const Route = createFileRoute('/api/portal/v1/bind')({
                 const newScopeId = wallBindings.get(validated.wallId);
                 const fresh =
                     newScopeId !== undefined
-                        ? createPortalToken(validated.wallId, newScopeId)
+                        ? createPortalToken(validated.wallId, newScopeId, 'control')
                         : null;
 
                 if (!result.ok) {

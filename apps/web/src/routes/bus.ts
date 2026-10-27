@@ -291,12 +291,73 @@ function dispatchJsonMessage(
 
 const pendingHandshakeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function cleanupPeer(peerId: string) {
+    const handshakeTimer = pendingHandshakeTimers.get(peerId);
+    if (handshakeTimer) {
+        clearTimeout(handshakeTimer);
+        pendingHandshakeTimers.delete(peerId);
+    }
+
+    wsRateLimitStrikes.delete(peerId);
+    editorProjectPermissions.delete(peerId);
+    clearPendingHelloAuth(peerId);
+    // Cancel pending override requests from disconnected requester.
+    for (const [requestId, pending] of pendingBindOverrides) {
+        if (pending.requesterPeerId !== peerId) continue;
+        clearPendingBindOverride(requestId);
+    }
+
+    const meta = unregisterPeer(peerId);
+    if (!meta) return;
+    const disconnectedDeviceId = meta.authContext?.device?.id;
+    if (typeof disconnectedDeviceId === 'string') {
+        void markDeviceDisconnectedById(disconnectedDeviceId);
+    }
+    if (meta.specimen === 'editor' && meta.scope?.scopeId !== undefined) {
+        handleEditorScopeVacated(meta.scope.scopeId);
+    }
+    if (meta.specimen === 'wall') {
+        if (getWallNodeCount(meta.wallId) <= 0) {
+            scheduleWallUnbindGrace(meta.wallId, () => {
+                // Wall may have reconnected during grace period.
+                if (getWallNodeCount(meta.wallId) > 0) return;
+                if (
+                    wallBindingSources.get(meta.wallId) === 'signage' ||
+                    process.__SIGNAGE_IS_TARGET_WALL__?.(meta.wallId)
+                ) {
+                    return;
+                }
+
+                unbindWall(meta.wallId);
+                hydrateWallNodes(meta.wallId);
+                broadcastToControllersByWallRaw(
+                    meta.wallId,
+                    JSON.stringify({ type: 'hydrate', layers: [] } satisfies GSMessage)
+                );
+                notifyControllers(meta.wallId, false);
+                void dbCol.walls.updateByWallId(meta.wallId, {
+                    boundProjectId: null,
+                    boundCommitId: null,
+                    boundSlideId: null,
+                    boundSource: null
+                });
+                broadcastWallBindingToEditors(meta.wallId);
+                broadcastWallBindingToGalleries(meta.wallId);
+                broadcastWallNodeCountToEditors(meta.wallId);
+            });
+        }
+        broadcastWallNodeCountToEditors(meta.wallId);
+        broadcastWallBindingToEditors(meta.wallId);
+        broadcastWallBindingToGalleries(meta.wallId);
+    }
+    logPeerCounts();
+}
+
 const hooks = defineHooks({
     open(peer) {
         // crossws exposes a WebSocket facade whose native Bun binaryType setter
         // cannot be called through its proxy. message() already normalizes both
         // ArrayBuffer and Buffer/Uint8Array, so no setter is necessary here.
-        touchPing(peer.id);
         const timer = setTimeout(() => {
             pendingHandshakeTimers.delete(peer.id);
             if (!peers.has(peer.id)) {
@@ -321,64 +382,7 @@ const hooks = defineHooks({
     },
 
     close(peer) {
-        const handshakeTimer = pendingHandshakeTimers.get(peer.id);
-        if (handshakeTimer) {
-            clearTimeout(handshakeTimer);
-            pendingHandshakeTimers.delete(peer.id);
-        }
-
-        wsRateLimitStrikes.delete(peer.id);
-        editorProjectPermissions.delete(peer.id);
-        clearPendingHelloAuth(peer.id);
-        // Cancel pending override requests from disconnected requester.
-        for (const [requestId, pending] of pendingBindOverrides) {
-            if (pending.requesterPeerId !== peer.id) continue;
-            clearPendingBindOverride(requestId);
-        }
-
-        const meta = unregisterPeer(peer.id);
-        const disconnectedDeviceId = meta?.authContext?.device?.id;
-        if (typeof disconnectedDeviceId === 'string') {
-            void markDeviceDisconnectedById(disconnectedDeviceId);
-        }
-        if (meta?.specimen === 'editor' && meta.scope?.scopeId !== undefined) {
-            handleEditorScopeVacated(meta.scope.scopeId);
-        }
-        if (meta?.specimen === 'wall') {
-            if (getWallNodeCount(meta.wallId) <= 0) {
-                scheduleWallUnbindGrace(meta.wallId, () => {
-                    // Wall may have reconnected during grace period.
-                    if (getWallNodeCount(meta.wallId) > 0) return;
-                    if (
-                        wallBindingSources.get(meta.wallId) === 'signage' ||
-                        process.__SIGNAGE_IS_TARGET_WALL__?.(meta.wallId)
-                    ) {
-                        return;
-                    }
-
-                    unbindWall(meta.wallId);
-                    hydrateWallNodes(meta.wallId);
-                    broadcastToControllersByWallRaw(
-                        meta.wallId,
-                        JSON.stringify({ type: 'hydrate', layers: [] } satisfies GSMessage)
-                    );
-                    notifyControllers(meta.wallId, false);
-                    void dbCol.walls.updateByWallId(meta.wallId, {
-                        boundProjectId: null,
-                        boundCommitId: null,
-                        boundSlideId: null,
-                        boundSource: null
-                    });
-                    broadcastWallBindingToEditors(meta.wallId);
-                    broadcastWallBindingToGalleries(meta.wallId);
-                    broadcastWallNodeCountToEditors(meta.wallId);
-                });
-            }
-            broadcastWallNodeCountToEditors(meta.wallId);
-            broadcastWallBindingToEditors(meta.wallId);
-            broadcastWallBindingToGalleries(meta.wallId);
-        }
-        logPeerCounts();
+        cleanupPeer(peer.id);
     },
 
     message(peer, message) {
@@ -684,7 +688,7 @@ process.__AUTO_SAVE_INTERVAL__ = setInterval(() => {
 
 if (process.__REAPER_INTERVAL__) clearInterval(process.__REAPER_INTERVAL__);
 process.__REAPER_INTERVAL__ = setInterval(() => {
-    reapStalePeers();
+    reapStalePeers(cleanupPeer);
 }, 10_000);
 
 if (import.meta.hot) {
