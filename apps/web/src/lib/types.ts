@@ -16,6 +16,24 @@ export const TEXT_FORMAT_VERSION = 1;
 
 // ── Layer schemas ────────────────────────────────────────────────────────────
 
+export const MAP_STYLE_IDS = [
+    'protomaps-light',
+    'protomaps-dark',
+    'protomaps-darkvizgray',
+    'protomaps-darkvizwhite'
+] as const;
+
+export const DEFAULT_MAP_STYLE_ID = 'protomaps-light';
+
+export const MAP_STYLE_OPTIONS = [
+    { value: 'protomaps-light', label: 'Light' },
+    { value: 'protomaps-dark', label: 'Dark' },
+    { value: 'protomaps-darkvizgray', label: 'Dark Gray' },
+    { value: 'protomaps-darkvizwhite', label: 'Dark White' }
+] satisfies Array<{ value: MapStyleId; label: string }>;
+
+export type MapStyleId = (typeof MAP_STYLE_IDS)[number];
+
 const LayerPositionStateSchema = z.object({
     cx: z.number(),
     cy: z.number(),
@@ -138,6 +156,9 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('map'),
+            style: z.enum(MAP_STYLE_IDS).default(DEFAULT_MAP_STYLE_ID),
+            /** Authoring viewport pixels per stage pixel; keeps editor framing on the wall. */
+            viewportScale: z.number().positive().optional(),
             view: z.object({
                 latitude: z.number(),
                 longitude: z.number(),

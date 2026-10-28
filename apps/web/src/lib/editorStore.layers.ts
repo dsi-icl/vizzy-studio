@@ -10,7 +10,12 @@ import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { preserveImageDeepZoom } from './mediaUtils';
 import { getLineBounds } from './stageGeometry';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import { migrateLegacyLayers, type Layer, type LayerWithEditorState } from './types';
+import {
+    DEFAULT_MAP_STYLE_ID,
+    migrateLegacyLayers,
+    type Layer,
+    type LayerWithEditorState
+} from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)
@@ -147,6 +152,32 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 return { layers: newLayers };
             });
             get().markDirty();
+        },
+
+        updateMapView: (
+            numericId: number,
+            patch: Partial<Extract<LayerWithEditorState, { type: 'map' }>['view']>
+        ) => {
+            let changed = false;
+            set((s) => {
+                const layer = s.layers.get(numericId);
+                if (layer?.type !== 'map' || layer.config.locked) return s;
+                const view = { ...layer.view, ...patch };
+                if (
+                    Object.keys(patch).every(
+                        (key) =>
+                            view[key as keyof typeof view] === layer.view[key as keyof typeof view]
+                    )
+                )
+                    return s;
+                const newLayers = new Map(s.layers);
+                newLayers.set(numericId, { ...layer, view });
+                changed = true;
+                return { layers: newLayers };
+            });
+            if (!changed) return;
+            helpers.queueMapLayerUpdate(numericId);
+            if (get().saveStatus !== 'dirty') get().markDirty();
         },
 
         toggleLayerVisibility: (numericId: number) => {
@@ -519,6 +550,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             const newLayer: LayerWithEditorState = {
                 numericId,
                 type: 'map',
+                style: DEFAULT_MAP_STYLE_ID,
                 config: {
                     cx: insertionCenter.x,
                     cy: insertionCenter.y,
@@ -531,9 +563,9 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                     visible: true
                 },
                 view: {
-                    latitude: 37.7751,
-                    longitude: -122.4193,
-                    zoom: 11,
+                    latitude: 51.4904999,
+                    longitude: -0.017,
+                    zoom: 14,
                     bearing: 0,
                     pitch: 0
                 }

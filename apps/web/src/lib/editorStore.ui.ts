@@ -147,6 +147,7 @@ export function createUiSlice(set: SliceSet, get: SliceGet, helpers: SliceHelper
         },
 
         saveProject: (message: string) => {
+            helpers.flushMapViewUpdate();
             set({ saveStatus: 'saving' });
             const engine = EditorEngine.getInstance();
             engine.requestSave(message);

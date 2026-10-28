@@ -2,12 +2,26 @@ import { CaretDownIcon, SlidersHorizontalIcon } from '@phosphor-icons/react';
 import { Input } from '@repo/ui/components/input';
 import { Label } from '@repo/ui/components/label';
 import SideButtonNumberField from '@repo/ui/components/number-field';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from '@repo/ui/components/select';
 import { throttle } from '@tanstack/pacer';
 import { useCallback, useRef } from 'react';
 
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
-import type { LayerWithEditorState } from '~/lib/types';
+import {
+    DEFAULT_MAP_STYLE_ID,
+    MAP_STYLE_OPTIONS,
+    type LayerWithEditorState,
+    type MapStyleId
+} from '~/lib/types';
+
+type MapViewField = keyof Extract<LayerWithEditorState, { type: 'map' }>['view'];
 
 interface ParametersPanelProps {
     titleBarSize?: number;
@@ -78,24 +92,65 @@ export function ParametersPanel({
 
             throttledWebUrlUpdate.current(updatedLayer);
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
     );
 
     const updateConfig = useCallback(
         (field: keyof LayerWithEditorState['config'], value: number) => {
             if (!selectedLayer || selectedLayer.config.locked) return;
-            const newConfig = { ...selectedLayer.config, [field]: value };
-            const updatedLayer = { ...selectedLayer, config: newConfig };
-
+            let updatedLayer: LayerWithEditorState | null = null;
             useEditorStore.setState((s) => {
+                const current = s.layers.get(selectedLayer.numericId);
+                if (!current || current.config.locked) return s;
+                updatedLayer = {
+                    ...current,
+                    config: { ...current.config, [field]: value }
+                };
                 const newLayers = new Map(s.layers);
                 newLayers.set(selectedLayer.numericId, updatedLayer);
                 return { layers: newLayers };
             });
-
-            throttledConfigUpdate.current(updatedLayer);
+            if (!updatedLayer) return;
+            if (selectedLayer.type === 'map') {
+                const store = useEditorStore.getState();
+                store.queueMapLayerUpdate(selectedLayer.numericId);
+                if (store.saveStatus !== 'dirty') store.markDirty();
+            } else {
+                throttledConfigUpdate.current(updatedLayer);
+            }
         },
-        [selectedLayer, markDirty]
+        [selectedLayer]
+    );
+
+    const updateMapView = useCallback(
+        (field: MapViewField, value: number) => {
+            if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
+                return;
+            useEditorStore.getState().updateMapView(selectedLayer.numericId, { [field]: value });
+        },
+        [selectedLayer]
+    );
+
+    const updateMapStyle = useCallback(
+        (value: MapStyleId) => {
+            if (!selectedLayer || selectedLayer.config.locked || selectedLayer.type !== 'map')
+                return;
+            let changed = false;
+            useEditorStore.setState((s) => {
+                const current = s.layers.get(selectedLayer.numericId);
+                if (current?.type !== 'map' || current.config.locked || current.style === value)
+                    return s;
+                const newLayers = new Map(s.layers);
+                newLayers.set(selectedLayer.numericId, { ...current, style: value });
+                changed = true;
+                return { layers: newLayers };
+            });
+            if (!changed) return;
+            const store = useEditorStore.getState();
+            store.queueMapLayerUpdate(selectedLayer.numericId);
+            if (store.saveStatus !== 'dirty') store.markDirty();
+        },
+        [selectedLayer]
     );
 
     const selectedLeftX = selectedLayer
@@ -135,7 +190,6 @@ export function ParametersPanel({
                                         allowWheelScrub={true}
                                         disabled={isSelectedLayerLocked}
                                         value={selectedLeftX ?? 0}
-                                        onInput={(e) => console.log(e)}
                                         onValueChange={(v) => {
                                             if (v === null || !selectedLayer) return;
                                             updateConfig('cx', v + selectedLayer.config.width / 2);
@@ -226,6 +280,103 @@ export function ParametersPanel({
                                         </div>
                                     </fieldset>
                                 </>
+                            )}
+
+                            {selectedLayer.type === 'map' && (
+                                <fieldset className="space-y-1.5">
+                                    <Label className="text-xs font-semibold">Map View</Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <SideButtonNumberField
+                                            label="Latitude"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={0.1}
+                                            smallStep={0.01}
+                                            min={-85.0511}
+                                            max={85.0511}
+                                            value={selectedLayer.view.latitude}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('latitude', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Longitude"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={0.1}
+                                            smallStep={0.01}
+                                            min={-180}
+                                            max={180}
+                                            value={selectedLayer.view.longitude}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('longitude', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Zoom"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={0.25}
+                                            smallStep={0.1}
+                                            min={0}
+                                            max={20}
+                                            value={selectedLayer.view.zoom}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('zoom', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Pitch"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={1}
+                                            smallStep={0.25}
+                                            min={0}
+                                            max={90}
+                                            value={selectedLayer.view.pitch}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('pitch', v);
+                                            }}
+                                        />
+                                        <SideButtonNumberField
+                                            label="Bearing"
+                                            allowWheelScrub={true}
+                                            disabled={isSelectedLayerLocked}
+                                            step={1}
+                                            smallStep={0.25}
+                                            min={0}
+                                            max={360}
+                                            value={selectedLayer.view.bearing}
+                                            onValueChange={(v) => {
+                                                if (v !== null) updateMapView('bearing', v);
+                                            }}
+                                        />
+                                        <div className="flex flex-col items-start gap-1">
+                                            <Label className="text-sm font-medium">Style</Label>
+                                            <Select
+                                                disabled={isSelectedLayerLocked}
+                                                value={selectedLayer.style ?? DEFAULT_MAP_STYLE_ID}
+                                                onValueChange={(value) =>
+                                                    updateMapStyle(value as MapStyleId)
+                                                }
+                                            >
+                                                <SelectTrigger className="w-44 border-border bg-transparent text-sm data-[size=default]:h-10 dark:bg-transparent">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent align="start">
+                                                    {MAP_STYLE_OPTIONS.map((option) => (
+                                                        <SelectItem
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </div>
+                                </fieldset>
                             )}
                         </div>
                     ) : (
