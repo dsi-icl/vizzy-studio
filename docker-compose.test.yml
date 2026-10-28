@@ -24,7 +24,8 @@ services:
             retries: 20
 
     mongo:
-        image: mongo:8-noble
+        # MongoDB 8 exits on Linux 6.19+ runners; 7.0 supports those kernels.
+        image: mongo:7.0
         command: ['mongod', '--replSet', 'rs0', '--bind_ip_all', '--port', '27017']
         networks:
             - vizzy_network
@@ -43,7 +44,7 @@ services:
             retries: 20
 
     mongo-init:
-        image: mongo:8-noble
+        image: mongo:7.0
         depends_on:
             mongo:
                 condition: service_healthy
