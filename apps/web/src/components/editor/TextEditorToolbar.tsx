@@ -45,6 +45,7 @@ import { useFonts } from '~/hooks/useFonts';
 import { useEditorStore } from '~/lib/editorStore';
 import { isExplicitCommitKey, parseBoundedNumber } from '~/lib/explicitInputCommit';
 import { emToVirtualPx, TEXT_BASE_FONT_SIZE_PX, virtualPxToEm } from '~/lib/textRenderConfig';
+import { inheritTrailingTextStyle } from '~/lib/textSelectionStyle';
 
 import { ColorPickerPopover } from '../ColourPicker';
 
@@ -268,6 +269,8 @@ export default function TextEditorToolbar() {
             editor.registerCommand(
                 SELECTION_CHANGE_COMMAND,
                 (_payload, _newEditor) => {
+                    const selection = $getSelection();
+                    if ($isRangeSelection(selection)) inheritTrailingTextStyle(selection);
                     $updateToolbar();
                     return false;
                 },
