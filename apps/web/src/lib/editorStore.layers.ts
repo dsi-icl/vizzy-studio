@@ -7,8 +7,15 @@ import {
 } from './editorLayerOrder';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
+import { preserveImageDeepZoom } from './mediaUtils';
+import { getLineBounds } from './stageGeometry';
 import { TEXT_DEFAULT_LAYER_HEIGHT_PX, TEXT_DEFAULT_LAYER_WIDTH_PX } from './textRenderConfig';
-import { DEFAULT_MAP_STYLE_ID, type Layer, type LayerWithEditorState } from './types';
+import {
+    DEFAULT_MAP_STYLE_ID,
+    migrateLegacyLayers,
+    type Layer,
+    type LayerWithEditorState
+} from './types';
 
 type SliceSet = (
     partial: Partial<EditorState> | ((s: EditorState) => Partial<EditorState>)

@@ -49,6 +49,7 @@ import { Route as AdminSignageIndexRouteImport } from './routes/admin/signage/in
 import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index'
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
+import { Route as ApiImageTilesSplatRouteImport } from './routes/api/image-tiles/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
 import { Route as AdminSignageSlideshowIdRouteImport } from './routes/admin/signage/$slideshowId'
@@ -272,6 +273,11 @@ const ApiWallMediaCookieRoute = ApiWallMediaCookieRouteImport.update({
 const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   id: '/api/uploads/$',
   path: '/api/uploads/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImageTilesSplatRoute = ApiImageTilesSplatRouteImport.update({
+  id: '/api/image-tiles/$',
+  path: '/api/image-tiles/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -1138,6 +1144,13 @@ declare module '@tanstack/react-router' {
       path: '/api/uploads/$'
       fullPath: '/api/uploads/$'
       preLoaderRoute: typeof ApiUploadsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/image-tiles/$': {
+      id: '/api/image-tiles/$'
+      path: '/api/image-tiles/$'
+      fullPath: '/api/image-tiles/$'
+      preLoaderRoute: typeof ApiImageTilesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {

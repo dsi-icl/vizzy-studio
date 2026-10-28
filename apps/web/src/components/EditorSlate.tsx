@@ -27,6 +27,7 @@ import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/Asset
 import { EditorMapOverlay } from '~/components/EditorMapOverlay';
 import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { KonvaMapLayer } from '~/components/KonvaMapLayer';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
@@ -49,6 +50,12 @@ import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { adjustEraserWidth } from '~/lib/eraser';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import {
+    appendEraserPoint,
+    eraseLinePaths,
+    getLineEraseFailureMessage,
+    type LineEraseGesture
+} from '~/lib/lineEraser';
 import { getMapPreviewMap } from '~/lib/mapPreviewStore';
 import {
     clampMapView,
@@ -59,7 +66,7 @@ import {
     mapZoomCenterAtLocalPoint,
     type MapTouchGestureKind
 } from '~/lib/mapViewGestures';
-import { isFontAsset, makeUniqueMediaLayerName } from '~/lib/mediaUtils';
+import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getSnapGridSize } from '~/lib/stageConstants';
 import {
@@ -1040,6 +1047,20 @@ export function EditorSlate() {
             });
         }
 
+        // Async preview/tile handoff must see an in-progress gesture too, before
+        // dragend/transformend commits it through the normal store path.
+        if (layer.isUploading) {
+            layer.config = {
+                ...layer.config,
+                cx: node.x(),
+                cy: node.y(),
+                width: node.width(),
+                height: node.height(),
+                scaleX: node.scaleX(),
+                scaleY: node.scaleY(),
+                rotation: node.rotation()
+            };
+        }
         engine?.broadcastBinaryMove(
             numericId,
             Math.round(node.x()),
@@ -1326,6 +1347,20 @@ export function EditorSlate() {
         },
         [mapLocalPointAtClient]
     );
+    const processEraserBatch = (gesture: LineEraseGesture, path: number[]) => {
+        if (gesture.result.status === 'failed') return;
+
+        const nextResult = eraseLinePaths(gesture.result.paths, path, gesture.radius);
+        if (nextResult.status === 'changed') {
+            setErasedLinePreview({
+                numericId: gesture.numericId,
+                linePaths: nextResult.paths
+            });
+        }
+        if (nextResult.status !== 'unchanged' || gesture.result.status !== 'changed') {
+            gesture.result = nextResult;
+        }
+    };
 
     const handleStageInteractionStart = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
         if (isTouchEvent(e.evt) || (e.evt instanceof MouseEvent && e.evt.button === 0)) {
@@ -1665,6 +1700,11 @@ export function EditorSlate() {
     };
 
     const handleTouchEnd = (e: KonvaEventObject<TouchEvent | MouseEvent>) => {
+        if (isErasing) {
+            finishEraserGesture();
+            if (isTouchEvent(e.evt)) setEraserCursor(null);
+            return;
+        }
         if (isTouchEvent(e.evt) && mapTouchGesture.current && e.evt.touches.length < 2) {
             if (!mapTouchGesture.current.completed) {
                 mapTouchGesture.current.completed = true;
@@ -1718,6 +1758,11 @@ export function EditorSlate() {
             const slot = stageSlot.current;
             if (!slot) return;
             const { clientX, clientY, deltaX, deltaY, deltaMode, ctrlKey } = e.evt;
+            if (isErasing) {
+                e.evt.preventDefault();
+                if (deltaY !== 0) setEraserWidth(adjustEraserWidth(eraserWidth, deltaY));
+                return;
+            }
             const numericId = selectedMapAtPoint(clientX, clientY);
             if (numericId !== null && deltaY !== 0) {
                 e.evt.preventDefault();
@@ -1743,7 +1788,7 @@ export function EditorSlate() {
             e.evt.preventDefault();
             slot.scrollLeft += delta;
         },
-        [selectedMapAtPoint, updateMapViewByGesture]
+        [eraserWidth, isErasing, selectedMapAtPoint, setEraserWidth, updateMapViewByGesture]
     );
 
     useEffect(() => {
@@ -1788,24 +1833,10 @@ export function EditorSlate() {
             safariMapGestureActive.current = false;
         };
     }, [selectedMapAtPoint, updateMapViewByGesture]);
-
-    const handleStageWheel = useCallback(
-        (e: KonvaEventObject<WheelEvent>) => {
-            const slot = stageSlot.current;
-            if (!slot) return;
-            const delta = e.evt.deltaX + e.evt.deltaY;
-            if (delta === 0) return;
-            e.evt.preventDefault();
-            if (isErasing) {
-                if (e.evt.deltaY !== 0) {
-                    setEraserWidth(adjustEraserWidth(eraserWidth, e.evt.deltaY));
-                }
-                return;
-            }
-            slot.scrollLeft += delta;
-        },
-        [eraserWidth, isErasing, setEraserWidth]
-    );
+    const handlePreviewScrollTo = useCallback((scrollLeft: number) => {
+        const slot = stageSlot.current;
+        if (slot) slot.scrollLeft = scrollLeft;
+    }, []);
 
     useEffect(() => {
         // A Group's child changes do not automatically refresh its Transformer.
@@ -1864,6 +1895,8 @@ export function EditorSlate() {
                 stageSlot={stageSlot}
                 stageScaleFactor={stageScaleFactor}
                 previewScopeKey={slideScopeKey}
+                onScrollTo={handlePreviewScrollTo}
+                onWheel={handleStageWheel}
             />
             <div ref={stageWrapper} className="flex min-h-0 grow flex-col overflow-hidden">
                 <div
@@ -1871,6 +1904,14 @@ export function EditorSlate() {
                     id="slate"
                     onDragOver={handleStageDragOver}
                     onDrop={handleStageDrop}
+                    style={{
+                        touchAction:
+                            singleSelectedLayer?.type === 'image' &&
+                            !isSingleSelectedLayerLocked &&
+                            !isDrawing
+                                ? 'none'
+                                : undefined
+                    }}
                     className="relative min-h-0 grow overflow-x-auto overflow-y-hidden border-b border-border bg-black"
                 >
                     <div
@@ -1947,8 +1988,8 @@ export function EditorSlate() {
                                     const hiddenOpacity = isHidden ? 0.3 : 1;
 
                                     const props = {
-                                        listening: !isDrawing,
-                                        isDrawing,
+                                        listening: !isDrawing && !isErasing,
+                                        isDrawing: isDrawing || isErasing,
                                         isPinching,
                                         isLocked,
                                         opacity: hiddenOpacity,
@@ -2072,14 +2113,13 @@ export function EditorSlate() {
                                                 />
                                             );
                                         }
-                                        if (layer.shape === 'circle') {
+                                        if (layer.shape === 'oval') {
                                             return (
-                                                <Circle
+                                                <Ellipse
                                                     key={`shape_${layer.numericId}`}
                                                     {...commonProps}
-                                                    offsetX={layer.config.width / 2}
-                                                    offsetY={layer.config.height / 2}
-                                                    radius={layer.config.width / 2}
+                                                    radiusX={layer.config.width / 2}
+                                                    radiusY={layer.config.height / 2}
                                                     dash={layer.strokeDash}
                                                     lineCap="round"
                                                     lineJoin="round"
@@ -2088,20 +2128,23 @@ export function EditorSlate() {
                                         }
                                     }
                                     if (layer.type === 'line') {
+                                        const previewLayer =
+                                            isErasing &&
+                                            erasedLinePreview?.numericId === layer.numericId
+                                                ? {
+                                                      ...layer,
+                                                      linePaths: erasedLinePreview.linePaths
+                                                  }
+                                                : layer;
                                         return (
-                                            <Line
+                                            <KonvaLineSegments
                                                 key={`lin_${layer.numericId}`}
                                                 id={layer.numericId.toString()}
+                                                layer={previewLayer}
                                                 listening={props.listening}
                                                 opacity={hiddenOpacity}
                                                 onClick={props.onSelect}
                                                 onTap={props.onSelect}
-                                                points={layer.line}
-                                                stroke={layer.strokeColor}
-                                                strokeWidth={layer.strokeWidth}
-                                                dash={layer.strokeDash}
-                                                dashEnabled={true}
-                                                tension={0.4}
                                                 shadowForStrokeEnabled={
                                                     selectedLayerIds[0] ===
                                                         layer.numericId.toString() &&
@@ -2112,8 +2155,6 @@ export function EditorSlate() {
                                                 shadowOffsetY={20}
                                                 shadowOffsetX={20}
                                                 shadowOpacity={1}
-                                                lineCap="round"
-                                                lineJoin="round"
                                             />
                                         );
                                     }
@@ -2132,6 +2173,27 @@ export function EditorSlate() {
                                         lineJoin="round"
                                     />
                                 )}
+                                {isErasing && eraserPreviewPath.length > 2 ? (
+                                    <Line
+                                        points={eraserPreviewPath}
+                                        stroke="rgba(148, 163, 184, 0.4)"
+                                        strokeWidth={eraserWidth}
+                                        lineCap="round"
+                                        lineJoin="round"
+                                        listening={false}
+                                    />
+                                ) : null}
+                                {isErasing && eraserCursor ? (
+                                    <Circle
+                                        x={eraserCursor.x}
+                                        y={eraserCursor.y}
+                                        radius={eraserWidth / 2}
+                                        fill="rgba(255, 255, 255, 0.08)"
+                                        stroke="rgba(255, 255, 255, 0.7)"
+                                        strokeWidth={2 / stageScaleFactor}
+                                        listening={false}
+                                    />
+                                ) : null}
                                 <Transformer
                                     ref={hoverTrRef}
                                     listening={false}

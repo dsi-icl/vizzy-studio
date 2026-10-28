@@ -9,6 +9,8 @@ import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
+import { KonvaTiledImage } from './KonvaStaticImage';
+
 export function PreviewMapLayer({
     shape,
     previewKey
@@ -36,7 +38,7 @@ export function PreviewMapLayer({
     );
 }
 
-export function PreviewMediaLayer({
+function LegacyPreviewMediaLayer({
     shape,
     stageScaleFactor
 }: {
