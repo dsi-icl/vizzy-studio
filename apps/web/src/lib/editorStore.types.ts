@@ -31,6 +31,8 @@ export interface EditorState {
     showSpacePreview: boolean;
     showGrid: boolean;
     isDrawing: boolean;
+    isErasing: boolean;
+    eraserWidth: number;
     isSnapping: boolean;
     strokeColor: string;
     strokeWidth: number;
@@ -54,6 +56,8 @@ export interface EditorState {
 
     // ── Save pipeline state ──
     loading: boolean;
+    /** Local cancellation generation for pending media placement, never persisted. */
+    placementEpoch: number;
     saveStatus: SaveStatus;
     headCommitId: string | null;
     insertionCenter: { x: number; y: number };
@@ -83,10 +87,11 @@ export interface EditorState {
     ) => void;
     addTextLayer: () => void;
     addMapLayer: () => void;
-    addShapeLayer: (shape: 'rectangle' | 'circle') => void;
+    addShapeLayer: (shape: 'rectangle' | 'oval') => void;
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
     addLineLayer: (line: Array<number>) => void;
+    commitLineErase: (numericId: number, linePaths: number[][]) => void;
     clearStage: () => void;
     reboot: () => void;
     reorderLayers: (layers: LayerWithEditorState[]) => void;
@@ -112,6 +117,8 @@ export interface EditorState {
     toggleSlideSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
     toggleGrid: () => void;
     toggleDrawing: () => void;
+    setErasing: (isErasing: boolean) => void;
+    setEraserWidth: (width: number) => void;
     toggleSnapping: () => void;
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;

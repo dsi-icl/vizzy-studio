@@ -18,15 +18,16 @@ import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer as KonvaLayer, Rect, Circle, Line } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Rect, Ellipse } from 'react-konva';
 import { toast } from 'sonner';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { useFonts } from '~/hooks/useFonts';
 import { getStageGridLines } from '~/lib/editorHelpers';
-import type { LayerWithEditorState } from '~/lib/types';
+import { migrateLegacyLayers, type LayerWithEditorState } from '~/lib/types';
 import { $createBranchHead } from '~/server/projects.fns';
 import { commitQueryOptions, projectQueryOptions } from '~/server/projects.queries';
 
@@ -72,14 +73,12 @@ function CommitViewer() {
 
     // Default to first slide
     useEffect(() => {
-        if (!activeSlideId && slides.length > 0) {
-            setActiveSlideId(slides[0].id);
-        }
-    }, [activeSlideId, slides]);
+        setActiveSlideId((current) => current ?? slides[0]?.id ?? null);
+    }, [slides]);
 
     const activeLayers = useMemo(() => {
         const slide = slides.find((s) => s.id === activeSlideId);
-        return (slide?.layers ?? []) as LayerWithEditorState[];
+        return migrateLegacyLayers((slide?.layers ?? []) as LayerWithEditorState[]);
     }, [slides, activeSlideId]);
 
     const sortedLayers = useMemo(
@@ -331,16 +330,15 @@ function CommitViewer() {
                                                                 />
                                                             );
                                                         }
-                                                        if (layer.shape === 'circle') {
+                                                        if (layer.shape === 'oval') {
                                                             return (
-                                                                <Circle
+                                                                <Ellipse
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
-                                                                    offsetX={layer.config.width / 2}
-                                                                    offsetY={
+                                                                    radiusX={layer.config.width / 2}
+                                                                    radiusY={
                                                                         layer.config.height / 2
                                                                     }
-                                                                    radius={layer.config.width / 2}
                                                                     dash={layer.strokeDash}
                                                                 />
                                                             );
@@ -348,16 +346,9 @@ function CommitViewer() {
                                                     }
                                                     if (layer.type === 'line') {
                                                         return (
-                                                            <Line
+                                                            <KonvaLineSegments
                                                                 key={`lin_${layer.numericId}`}
-                                                                points={layer.line}
-                                                                stroke={layer.strokeColor}
-                                                                strokeWidth={layer.strokeWidth}
-                                                                dash={layer.strokeDash}
-                                                                dashEnabled={true}
-                                                                tension={0.4}
-                                                                lineCap="round"
-                                                                lineJoin="round"
+                                                                layer={layer}
                                                                 listening={false}
                                                             />
                                                         );

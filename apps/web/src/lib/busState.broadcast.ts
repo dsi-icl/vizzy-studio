@@ -20,6 +20,7 @@ import {
     type PeerEntry,
     type ScopeId
 } from './busState.state';
+import { PUBLIC_ASSET_PROJECT_ID } from './constants';
 
 export function estimatePlaybackLeadMs(scopeId: ScopeId): number {
     const targets = wallPeersByScope.get(scopeId);
@@ -252,7 +253,10 @@ export function broadcastAssetToEditorsByProject(
     const payload = JSON.stringify({ type: 'asset_added', projectId, asset });
     let sent = 0;
     for (const [scopeId, scope] of scopedState) {
-        if (scope.projectId === projectId) {
+        if (
+            scope.projectId === projectId ||
+            (projectId === PUBLIC_ASSET_PROJECT_ID && !!asset.deepZoom)
+        ) {
             const set = editorsByScope.get(scopeId);
             if (!set) continue;
             for (const entry of set) {

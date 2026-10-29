@@ -1,9 +1,10 @@
 import type { StageLayout } from '@repo/db/schema';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useState, RefObject, useEffect } from 'react';
-import { Circle, KonvaNodeEvents, Layer, Rect, Stage, Line } from 'react-konva';
+import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
+import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import type { LayerWithEditorState } from '~/lib/types';
@@ -100,28 +101,22 @@ export function ViewerSlatePreview({
                         .map((shape) => {
                             if (shape.type === 'line')
                                 return (
-                                    <Line
+                                    <KonvaLineSegments
                                         key={`lin_${shape.numericId}`}
-                                        points={shape.line}
-                                        stroke={shape.strokeColor}
+                                        layer={shape}
                                         strokeWidth={shape.strokeWidth * 2}
-                                        dash={shape.strokeDash}
-                                        dashEnabled={true}
-                                        tension={0.4}
-                                        lineCap="round"
-                                        lineJoin="round"
                                     />
                                 );
                             if (shape.type === 'shape') {
-                                if (shape.shape === 'circle')
+                                if (shape.shape === 'oval')
                                     return (
-                                        <Circle
+                                        <Ellipse
                                             key={shape.numericId}
                                             x={shape.config.cx}
                                             y={shape.config.cy}
-                                            offsetX={shape.config.width / 2}
-                                            offsetY={shape.config.height / 2}
-                                            radius={shape.config.width / 2}
+                                            radiusX={shape.config.width / 2}
+                                            radiusY={shape.config.height / 2}
+                                            rotation={shape.config.rotation}
                                             fill="transparent"
                                             stroke={shape.strokeColor}
                                             strokeWidth={shape.strokeWidth * 2}

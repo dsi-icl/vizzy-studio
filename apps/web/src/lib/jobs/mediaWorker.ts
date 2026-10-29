@@ -325,7 +325,9 @@ export async function startMediaWorker() {
         void drainQueue();
     }, SWEEP_INTERVAL_MS);
     setInterval(() => {
-        void markStalledRunningJobs(STALE_HEARTBEAT_MS);
+        void markStalledRunningJobs(STALE_HEARTBEAT_MS, {
+            types: ['process_image_asset', 'process_video_asset']
+        });
     }, REAPER_INTERVAL_MS);
 
     void drainQueue();

@@ -107,6 +107,7 @@ function SlideEditorInner({
     // Leave the live scope when navigating away from the editor
     useEffect(() => {
         return () => {
+            useEditorStore.setState((state) => ({ placementEpoch: state.placementEpoch + 1 }));
             EditorEngine.getInstance().leaveScope();
         };
     }, []);

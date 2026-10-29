@@ -9,6 +9,7 @@ import { useCallback, useMemo, useRef } from 'react';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 import { FILTER_PRESETS, normalizeLayerFilters, toCssFilterString } from '~/lib/layerFilters';
+import { imagePreviewUrl } from '~/lib/mediaUtils';
 import type { LayerFilterState, LayerWithEditorState } from '~/lib/types';
 
 interface FilterPanelProps {
@@ -19,7 +20,8 @@ export function FilterPanel({ activeLayer }: FilterPanelProps) {
     const activeFilters = normalizeLayerFilters(activeLayer.config.filters);
 
     const activeLayerPreviewUrl = useMemo(() => {
-        if (activeLayer.type === 'image') return activeLayer.url;
+        if (activeLayer.type === 'image')
+            return activeLayer.deepZoom ? imagePreviewUrl(activeLayer.deepZoom) : activeLayer.url;
         if (activeLayer.type === 'video') {
             if (activeLayer.stillImage) return `/api/assets/${activeLayer.stillImage}`;
             const filename = activeLayer.url.split('/').pop() ?? '';

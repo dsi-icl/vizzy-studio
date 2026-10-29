@@ -1,7 +1,7 @@
 import type { CommitDocument } from '@repo/db/documents';
 
 import { captureScopeRevision, KeyedSerialQueue, markScopePersisted } from '~/lib/scopePersistence';
-import type { Layer, ScopeState } from '~/lib/types';
+import { migrateLegacyLayer, type Layer, type ScopeState } from '~/lib/types';
 import { dbCol } from '~/server/collections';
 
 import {
@@ -175,7 +175,7 @@ export async function seedScopeFromDb(scopeId: ScopeId): Promise<boolean> {
 
         for (const layer of slide.layers) {
             if (typeof layer?.numericId === 'number') {
-                scope.layers.set(layer.numericId, layer);
+                scope.layers.set(layer.numericId, migrateLegacyLayer(layer) as Layer);
             }
         }
         scope.dirty = false;

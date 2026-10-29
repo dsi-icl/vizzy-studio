@@ -7,15 +7,17 @@ import QRCode from 'qrcode';
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 
 import { MapWrapper } from '~/components/MapWrapper';
+import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { useWallFonts } from '~/hooks/useWallFonts';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
+import { imagePreviewUrl } from '~/lib/mediaUtils';
 import { signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import type { LayerWithWallComponentState } from '~/lib/types';
+import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 
 const HYDRATE_FADE_MS = 1000;
@@ -305,10 +307,13 @@ function WallApp() {
             if (data.type === 'hydrate') {
                 // Eagerly warm the browser cache for image URLs before React mounts them
                 for (const layer of data.layers) {
-                    if (layer.type === 'image' && layer.url && !warmedImageUrls.has(layer.url)) {
-                        warmedImageUrls.add(layer.url);
-                        const img = new Image();
-                        img.src = layer.url;
+                    if (layer.type === 'image') {
+                        const url = layer.deepZoom ? imagePreviewUrl(layer.deepZoom) : layer.url;
+                        if (url && !warmedImageUrls.has(url)) {
+                            warmedImageUrls.add(url);
+                            const img = new Image();
+                            img.src = url;
+                        }
                     }
                 }
                 stageHydrateRef.current?.({
@@ -322,15 +327,15 @@ function WallApp() {
                     slideId: data.slideId
                 });
             } else if (data.type === 'upsert_layer') {
-                // Eagerly warm the browser cache for incoming image layers
-                if (
-                    data.layer.type === 'image' &&
-                    data.layer.url &&
-                    !warmedImageUrls.has(data.layer.url)
-                ) {
-                    warmedImageUrls.add(data.layer.url);
-                    const img = new Image();
-                    img.src = data.layer.url;
+                if (data.layer.type === 'image') {
+                    const url = data.layer.deepZoom
+                        ? imagePreviewUrl(data.layer.deepZoom)
+                        : data.layer.url;
+                    if (url && !warmedImageUrls.has(url)) {
+                        warmedImageUrls.add(url);
+                        const img = new Image();
+                        img.src = url;
+                    }
                 }
                 setLayers((prev) => {
                     const existing = prev.find((l) => l.numericId === data.layer.numericId);
@@ -364,7 +369,7 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const bounds = getLineBounds(layer.line);
+                              const bounds = getLineBounds(getLinePaths(layer).flat());
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -378,41 +383,32 @@ function WallApp() {
 
                 // --- UPGRADED CLIENT-SIDE CULLING MATH (Rotated AABB) ---
                 // 1. Get the scaled width and height
-                const sw = effectivePos.width * effectivePos.scaleX;
-                const sh = effectivePos.height * effectivePos.scaleY;
+                const sw = Math.abs(effectivePos.width * effectivePos.scaleX);
+                const sh = Math.abs(effectivePos.height * effectivePos.scaleY);
 
                 // 2. Convert degrees to radians for JS Math functions
                 const rad = effectivePos.rotation * (Math.PI / 180);
 
                 // 3. Calculate the true dynamic bounding box of the rotated rectangle
                 const cullingPadding = getCullingPadding(layer, effectivePos);
-                const isCircleShape = layer.type === 'shape' && layer.shape === 'circle';
-                const radiusX = isCircleShape
-                    ? Math.max(sw, sh) / 2 + cullingPadding
-                    : (sw / 2) * Math.abs(Math.cos(rad)) +
-                      (sh / 2) * Math.abs(Math.sin(rad)) +
-                      cullingPadding;
-                const radiusY = isCircleShape
-                    ? Math.max(sw, sh) / 2 + cullingPadding
-                    : (sw / 2) * Math.abs(Math.sin(rad)) +
-                      (sh / 2) * Math.abs(Math.cos(rad)) +
-                      cullingPadding;
+                const radiusX =
+                    (sw / 2) * Math.abs(Math.cos(rad)) +
+                    (sh / 2) * Math.abs(Math.sin(rad)) +
+                    cullingPadding;
+                const radiusY =
+                    (sw / 2) * Math.abs(Math.sin(rad)) +
+                    (sh / 2) * Math.abs(Math.cos(rad)) +
+                    cullingPadding;
 
                 // Protect against network NaN poisoning
                 if (isNaN(radiusX) || isNaN(radiusY)) return;
 
                 // 4. Evaluate against the screen viewport
-                const cullCx = isCircleShape
-                    ? effectivePos.cx - effectivePos.width / 2
-                    : effectivePos.cx;
-                const cullCy = isCircleShape
-                    ? effectivePos.cy - effectivePos.height / 2
-                    : effectivePos.cy;
                 const isVisible =
-                    cullCx + radiusX > myViewport.x &&
-                    cullCx - radiusX < myViewport.x + myViewport.w &&
-                    cullCy + radiusY > myViewport.y &&
-                    cullCy - radiusY < myViewport.y + myViewport.h;
+                    effectivePos.cx + radiusX > myViewport.x &&
+                    effectivePos.cx - radiusX < myViewport.x + myViewport.w &&
+                    effectivePos.cy + radiusY > myViewport.y &&
+                    effectivePos.cy - radiusY < myViewport.y + myViewport.h;
 
                 if (isVisible) {
                     const localX = effectivePos.cx - effectivePos.width / 2 - myViewport.x;
@@ -600,22 +596,31 @@ function WallApp() {
             if (layer.type === 'image')
                 return (
                     <div key={layer.numericId} {...commonProps}>
-                        <img
-                            src={layer.url}
-                            alt={`Layer ${layer.numericId}`}
-                            loading="eager"
-                            fetchPriority="high"
-                            width="100%"
-                            height="100%"
-                            decoding="async"
-                            className="block h-full w-full object-fill"
-                            onLoad={() =>
-                                markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
-                            }
-                            onError={() =>
-                                markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
-                            }
-                        />
+                        {layer.deepZoom ? (
+                            <TiledImage
+                                image={layer.deepZoom}
+                                onReady={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                            />
+                        ) : (
+                            <img
+                                src={layer.url}
+                                alt={`Layer ${layer.numericId}`}
+                                loading="eager"
+                                fetchPriority="high"
+                                width="100%"
+                                height="100%"
+                                decoding="async"
+                                className="block h-full w-full object-fill"
+                                onLoad={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                                onError={() =>
+                                    markIframeReady(`img:${layer.numericId}`, iframeGateCycle)
+                                }
+                            />
+                        )}
                     </div>
                 );
 
@@ -713,13 +718,9 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const bounds = getLineBounds(layer.line);
+                const linePaths = getLinePaths(layer);
+                const bounds = getLineBounds(linePaths.flat());
                 if (!bounds) return null;
-                let svgPoints = [];
-                for (let i = 0; i < layer.line.length; i += 2)
-                    svgPoints.push(
-                        `${Math.round(layer.line[i] - bounds.cx + bounds.width / 2)},${Math.round(layer.line[i + 1] - bounds.cy + bounds.height / 2)}`
-                    );
                 return (
                     <div
                         key={layer.numericId}
@@ -737,16 +738,27 @@ function WallApp() {
                             className="overflow-visible"
                             xmlns="http://www.w3.org/2000/svg"
                         >
-                            <polyline
-                                points={svgPoints.join(' ')}
-                                fill="none"
-                                stroke={layer.strokeColor}
-                                strokeWidth={layer.strokeWidth}
-                                strokeDasharray={layer.strokeDash.join(' ')}
-                                strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
+                            {linePaths.map((line, pathIndex) => {
+                                const points = [];
+                                for (let i = 0; i < line.length; i += 2) {
+                                    points.push(
+                                        `${Math.round(line[i] - bounds.cx + bounds.width / 2)},${Math.round(line[i + 1] - bounds.cy + bounds.height / 2)}`
+                                    );
+                                }
+                                return (
+                                    <polyline
+                                        key={`line-path-${pathIndex}`}
+                                        points={points.join(' ')}
+                                        fill="none"
+                                        stroke={layer.strokeColor}
+                                        strokeWidth={layer.strokeWidth}
+                                        strokeDasharray={layer.strokeDash.join(' ')}
+                                        strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                );
+                            })}
                         </svg>
                     </div>
                 );
@@ -783,7 +795,7 @@ function WallApp() {
                         </div>
                     );
 
-                if (layer.shape === 'circle')
+                if (layer.shape === 'oval')
                     return (
                         <div key={layer.numericId} {...commonProps}>
                             <svg
@@ -792,8 +804,11 @@ function WallApp() {
                                 className="overflow-visible"
                                 xmlns="http://www.w3.org/2000/svg"
                             >
-                                <circle
-                                    r={layer.config.width / 2}
+                                <ellipse
+                                    cx={layer.config.width / 2}
+                                    cy={layer.config.height / 2}
+                                    rx={layer.config.width / 2}
+                                    ry={layer.config.height / 2}
                                     fill={layer.fill}
                                     stroke={layer.strokeColor}
                                     strokeDasharray={layer.strokeDash.join(' ')}

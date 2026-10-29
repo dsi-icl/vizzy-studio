@@ -53,10 +53,17 @@ import {
     projectContextPayload,
     recordProjectColour
 } from '~/lib/busState.projectContext';
+import { preserveImageDeepZoom } from '~/lib/mediaUtils';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopePersistence';
 import { canBindWall } from '~/lib/signageAccess';
-import { GSMessageSchema, HelloSchema, makeScopeLabel, type GSMessage } from '~/lib/types';
+import {
+    GSMessageSchema,
+    HelloSchema,
+    makeScopeLabel,
+    type GSMessage,
+    type Layer
+} from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { ensureDeviceByPublicKey } from '~/server/devices';
@@ -194,7 +201,9 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
     let layer = data.layer;
     if (typeof layer?.numericId !== 'number') return;
 
-    const isControllerTransientUpsert = data.origin === 'controller:add_line_layer';
+    const isControllerTransientUpsert =
+        data.origin === 'controller:add_line_layer' ||
+        data.origin === 'controller:erase_line_layer';
     let relayPayload = rawText;
 
     if (scopeId !== null) {
@@ -212,6 +221,14 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
                 });
                 return;
             } else {
+                const resourceLayer = preserveImageDeepZoom(
+                    scope.layers.get(layer.numericId),
+                    layer
+                );
+                if (resourceLayer !== layer) {
+                    layer = resourceLayer;
+                    relayPayload = JSON.stringify({ ...data, layer });
+                }
                 // Playback timeline is authoritative via video_play/pause/seek handlers.
                 // Generic upsert_layer must never override live playback state.
                 if (layer.type === 'video') {
@@ -287,7 +304,9 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
 
 handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {
     if (scopeId === null) return;
-    const isControllerTransientDelete = data.origin === 'controller:add_line_layer';
+    const isControllerTransientDelete =
+        data.origin === 'controller:add_line_layer' ||
+        data.origin === 'controller:erase_line_layer';
     const scope = scopedState.get(scopeId);
     let deletedPersistentLayer = false;
     let deletedControllerTransient = false;
@@ -332,9 +351,12 @@ handlers.set('seed_scope', ({ entry, data, scopeId }) => {
     const scope = scopedState.get(scopeId);
     if (!scope) return;
 
-    // Replace all layers wholesale
+    const layers = data.layers.map((layer: Layer) =>
+        preserveImageDeepZoom(scope.layers.get(layer.numericId), layer)
+    );
+    // Replace membership wholesale while preserving known image resource metadata.
     scope.layers.clear();
-    for (const layer of data.layers) {
+    for (const layer of layers) {
         if (typeof layer?.numericId === 'number') {
             scope.layers.set(layer.numericId, layer);
         }

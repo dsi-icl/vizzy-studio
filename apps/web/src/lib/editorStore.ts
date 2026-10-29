@@ -9,6 +9,7 @@ import { createProjectSlice } from './editorStore.project';
 import { createSlideSlice } from './editorStore.slides';
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { createUiSlice } from './editorStore.ui';
+import { ERASER_DEFAULT_WIDTH } from './eraser';
 import type { ConnectionStatus } from './reconnectingWs';
 
 export type { EditorState };
@@ -81,6 +82,8 @@ export const useEditorStore =
                   showSpacePreview: false,
                   showGrid: true,
                   isDrawing: false,
+                  isErasing: false,
+                  eraserWidth: ERASER_DEFAULT_WIDTH,
                   isSnapping: false,
                   strokeColor: '#ff0000',
                   strokeWidth: 10,
@@ -95,6 +98,7 @@ export const useEditorStore =
                   connectionStatus: 'connecting' as ConnectionStatus,
                   commitId: null,
                   loading: true,
+                  placementEpoch: 0,
                   saveStatus: 'idle',
                   headCommitId: null,
                   insertionCenter: {

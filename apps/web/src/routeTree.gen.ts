@@ -50,6 +50,7 @@ import { Route as AuthQuarryIndexRouteImport } from './routes/_auth/quarry/index
 import { Route as ApiWallMediaCookieRouteImport } from './routes/api/wall/media-cookie'
 import { Route as ApiWallFontsRouteImport } from './routes/api/wall/fonts'
 import { Route as ApiUploadsSplatRouteImport } from './routes/api/uploads/$'
+import { Route as ApiImageTilesSplatRouteImport } from './routes/api/image-tiles/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAssetsUriRouteImport } from './routes/api/assets/$uri'
 import { Route as AdminSignageSlideshowIdRouteImport } from './routes/admin/signage/$slideshowId'
@@ -279,6 +280,11 @@ const ApiUploadsSplatRoute = ApiUploadsSplatRouteImport.update({
   path: '/api/uploads/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiImageTilesSplatRoute = ApiImageTilesSplatRouteImport.update({
+  id: '/api/image-tiles/$',
+  path: '/api/image-tiles/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -458,6 +464,7 @@ export interface FileRoutesByFullPath {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
@@ -521,6 +528,7 @@ export interface FileRoutesByTo {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
@@ -589,6 +597,7 @@ export interface FileRoutesById {
   '/admin/signage/$slideshowId': typeof AdminSignageSlideshowIdRoute
   '/api/assets/$uri': typeof ApiAssetsUriRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/image-tiles/$': typeof ApiImageTilesSplatRoute
   '/api/uploads/$': typeof ApiUploadsSplatRoute
   '/api/wall/fonts': typeof ApiWallFontsRoute
   '/api/wall/media-cookie': typeof ApiWallMediaCookieRoute
@@ -657,6 +666,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/fonts'
     | '/api/wall/media-cookie'
@@ -720,6 +730,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/fonts'
     | '/api/wall/media-cookie'
@@ -787,6 +798,7 @@ export interface FileRouteTypes {
     | '/admin/signage/$slideshowId'
     | '/api/assets/$uri'
     | '/api/auth/$'
+    | '/api/image-tiles/$'
     | '/api/uploads/$'
     | '/api/wall/fonts'
     | '/api/wall/media-cookie'
@@ -841,6 +853,7 @@ export interface RootRouteChildren {
   WallIndexRoute: typeof WallIndexRoute
   ApiAssetsUriRoute: typeof ApiAssetsUriRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiImageTilesSplatRoute: typeof ApiImageTilesSplatRoute
   ApiUploadsSplatRoute: typeof ApiUploadsSplatRoute
   ApiWallFontsRoute: typeof ApiWallFontsRoute
   ApiWallMediaCookieRoute: typeof ApiWallMediaCookieRoute
@@ -1137,6 +1150,13 @@ declare module '@tanstack/react-router' {
       path: '/api/uploads/$'
       fullPath: '/api/uploads/$'
       preLoaderRoute: typeof ApiUploadsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/image-tiles/$': {
+      id: '/api/image-tiles/$'
+      path: '/api/image-tiles/$'
+      fullPath: '/api/image-tiles/$'
+      preLoaderRoute: typeof ApiImageTilesSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -1513,6 +1533,7 @@ const rootRouteChildren: RootRouteChildren = {
   WallIndexRoute: WallIndexRoute,
   ApiAssetsUriRoute: ApiAssetsUriRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiImageTilesSplatRoute: ApiImageTilesSplatRoute,
   ApiUploadsSplatRoute: ApiUploadsSplatRoute,
   ApiWallFontsRoute: ApiWallFontsRoute,
   ApiWallMediaCookieRoute: ApiWallMediaCookieRoute,
@@ -1524,13 +1545,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
