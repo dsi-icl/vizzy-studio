@@ -25,7 +25,7 @@ export function sortAssetsFontsLast<T extends { name: string; mimeType?: string 
     return [...media, ...fonts];
 }
 
-function stripFileExtension(name: string): string {
+export function stripFileExtension(name: string): string {
     const trimmed = name.trim();
     const dot = trimmed.lastIndexOf('.');
     if (dot <= 0) return trimmed;
