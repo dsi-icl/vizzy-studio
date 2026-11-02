@@ -72,14 +72,37 @@ const OptionalSizesSchema = z
     }, z.array(z.number()))
     .optional();
 
-/**
- * Oval replaces Circle, so legacy circle layers need their discriminator
- * renamed and `cx`/`cy` pulled back onto that centre.
- * Idempotent — a migrated layer no longer says 'circle'.
- */
+/** Normalize old layer records before validating hydrate and seed messages. */
 export const migrateLegacyLayer = (layer: unknown): unknown => {
     if (!layer || typeof layer !== 'object') return layer;
     const candidate = layer as Record<string, unknown>;
+    if (candidate.type === 'video') {
+        // Older direct canvas uploads omitted these fields. A single invalid
+        // video otherwise makes the whole slide's hydrate message unreadable.
+        if (
+            typeof candidate.loop === 'boolean' &&
+            typeof candidate.duration === 'number' &&
+            Number.isFinite(candidate.duration) &&
+            typeof candidate.rvfcActive === 'boolean' &&
+            candidate.playback
+        ) {
+            return layer;
+        }
+        return {
+            ...candidate,
+            loop: typeof candidate.loop === 'boolean' ? candidate.loop : true,
+            duration:
+                typeof candidate.duration === 'number' && Number.isFinite(candidate.duration)
+                    ? candidate.duration
+                    : 0,
+            rvfcActive: typeof candidate.rvfcActive === 'boolean' ? candidate.rvfcActive : false,
+            playback: candidate.playback ?? {
+                status: 'paused',
+                anchorMediaTime: 0,
+                anchorServerTime: 0
+            }
+        };
+    }
     if (candidate.type !== 'shape' || candidate.shape !== 'circle') return layer;
 
     const config = (candidate.config ?? {}) as Record<string, unknown>;
