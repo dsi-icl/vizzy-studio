@@ -735,19 +735,24 @@ export function EditorSlate() {
 
         const layerName = makeUniqueMediaLayerName(file.name, store.layers.values());
 
-        const optimisticLayer = {
+        const optimisticMedia = {
             numericId,
-            type: isImage ? 'image' : 'video',
             name: layerName,
             url: previewDataUrl,
-            playback: defaultPlayback,
             config,
             isUploading: true,
-            progress: 0,
-            rvfcActive: false,
-            duration,
-            loop: true
-        } as LayerWithEditorState;
+            progress: 0
+        };
+        const optimisticLayer: LayerWithEditorState = isImage
+            ? { ...optimisticMedia, type: 'image' }
+            : {
+                  ...optimisticMedia,
+                  type: 'video',
+                  playback: defaultPlayback,
+                  rvfcActive: false,
+                  duration,
+                  loop: true
+              };
 
         store.upsertLayer(optimisticLayer);
         store.toggleLayerSelection(numericId.toString(), false, false);
@@ -829,14 +834,7 @@ export function EditorSlate() {
 
             // First time this layer reaches the server, so it goes through the
             // acknowledged path and a failed write surfaces to the user.
-            engine.createLayer('editor:handle_upload', {
-                numericId,
-                type: finalizedLayer.type,
-                name: layerName,
-                playback: defaultPlayback,
-                url: assetUrl,
-                config: freshestLayer.config
-            } as LayerWithEditorState);
+            engine.createLayer('editor:handle_upload', finalizedLayer);
             // Without this the project never looks dirty after an upload, so the
             // manual save shortcut silently does nothing.
             useEditorStore.getState().markDirty();
