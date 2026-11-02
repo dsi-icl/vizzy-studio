@@ -13,8 +13,17 @@ export { useTextFontRevision } from './fontRegistration';
  * and the text rasteriser. Returns a list of available font families for
  * toolbar usage.
  */
-export function useFonts(projectId: string | null | undefined): FontAsset[] {
-    const { data: assets } = useQuery({
+export function useFontsState(projectId: string | null | undefined): {
+    fonts: FontAsset[];
+    ready: boolean;
+    failed: boolean;
+    retry: () => void;
+} {
+    const {
+        data: assets,
+        isError,
+        refetch
+    } = useQuery({
         ...projectAssetsQueryOptions(projectId ?? ''),
         enabled: Boolean(projectId)
     });
@@ -24,7 +33,16 @@ export function useFonts(projectId: string | null | undefined): FontAsset[] {
         return fontAssetsFromRecords(assets ?? []);
     }, [assets, projectId]);
 
-    useRegisterFonts(fonts);
+    const registered = useRegisterFonts(fonts);
 
-    return fonts;
+    return {
+        fonts,
+        ready: (!projectId || assets !== undefined) && registered,
+        failed: Boolean(projectId && assets === undefined && isError),
+        retry: () => void refetch()
+    };
+}
+
+export function useFonts(projectId: string | null | undefined): FontAsset[] {
+    return useFontsState(projectId).fonts;
 }

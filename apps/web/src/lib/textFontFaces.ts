@@ -88,6 +88,17 @@ function loadDataUri(key: string): Promise<string | null> {
     return entry.bytes;
 }
 
+export async function preloadTextFontSources(
+    sources: readonly TextFontSource[]
+): Promise<Array<string | null>> {
+    return Promise.all(
+        sources.map((source) => {
+            const key = normalizeFamily(source.family);
+            return fonts.get(key)?.url === source.url ? loadDataUri(key) : Promise.resolve(null);
+        })
+    );
+}
+
 const FONT_FAMILY_ITEM = `"[^"]*"|'[^']*'|[^;"',]+`;
 const FONT_FAMILY_DECLARATION = new RegExp(
     `font-family\\s*:\\s*((?:${FONT_FAMILY_ITEM})(?:\\s*,\\s*(?:${FONT_FAMILY_ITEM}))*)`,
