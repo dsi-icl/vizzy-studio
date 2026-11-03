@@ -1,5 +1,3 @@
-import Uppy from '@uppy/core';
-import Tus from '@uppy/tus';
 import type Konva from 'konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import {
@@ -41,15 +39,11 @@ import {
     broadcastKeyboardLayerTransform,
     isEditorArrowKey
 } from '~/lib/editorKeyboardMovement';
-import { placeAssetInEditor, uploadImageForPlacement } from '~/lib/editorMediaPlacement';
-import {
-    createEditorPlacementSession,
-    type EditorPlacementSession
-} from '~/lib/editorPlacementSession';
+import { placeAssetInEditor } from '~/lib/editorMediaPlacement';
 import { getCanvasSelectionModifiers } from '~/lib/editorSelection';
 import { useEditorStore } from '~/lib/editorStore';
 import { adjustEraserWidth } from '~/lib/eraser';
-import { fitSizeToViewport, MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
+import { MIN_LAYER_DIMENSION } from '~/lib/fitSizeToViewport';
 import {
     appendEraserPoint,
     eraseLinePaths,
@@ -66,7 +60,6 @@ import {
     mapZoomCenterAtLocalPoint,
     type MapTouchGestureKind
 } from '~/lib/mapViewGestures';
-import { makeUniqueMediaLayerName } from '~/lib/mediaUtils';
 import { isTouchEvent } from '~/lib/pointerEvents';
 import { getSnapGridSize } from '~/lib/stageConstants';
 import {
@@ -78,9 +71,7 @@ import {
     snapToGrid,
     touchToStagePoint
 } from '~/lib/stageGeometry';
-import { scrubInsecureTusResumeEntries } from '~/lib/tusClient';
 import { getLinePaths, type Layer, type LayerWithEditorState } from '~/lib/types';
-import { $createUploadToken } from '~/server/projects.fns';
 
 import { SlatePreview } from './SlatePreview';
 import { useImagePinch } from './useImagePinch';
@@ -169,7 +160,6 @@ export function EditorSlate() {
         lastCenterY: number;
     } | null>(null);
     const safariMapGestureActive = useRef(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const sortedLayers = useMemo(
         () => Array.from(layers.values()).sort((a, b) => a.config.zIndex - b.config.zIndex),
@@ -582,287 +572,6 @@ export function EditorSlate() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [editingTextLayerId, engine, isSnapping, snapGrid]);
-
-    const imagePlacementSessions = useRef(new Set<EditorPlacementSession>());
-    useEffect(
-        () => () => {
-            for (const session of imagePlacementSessions.current) session.cancel();
-            imagePlacementSessions.current.clear();
-        },
-        []
-    );
-
-    // ── Upload handler (stays here — complex async + file APIs) ───────────
-    const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!engine) return;
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        const isImage =
-            file.type.startsWith('image/') ||
-            /\.(png|jpe?g|gif|webp|avif|bmp|svg|tiff?)$/i.test(file.name);
-        const uploadScope = {
-            projectId: useEditorStore.getState().projectId,
-            commitId: useEditorStore.getState().commitId,
-            slideId: useEditorStore.getState().activeSlideId
-        };
-        let tokenResult: Awaited<ReturnType<typeof $createUploadToken>>;
-        let placementSession: EditorPlacementSession | undefined;
-        try {
-            syncInsertionCenter();
-            placementSession = createEditorPlacementSession(useEditorStore);
-            imagePlacementSessions.current.add(placementSession);
-            tokenResult = await $createUploadToken({
-                data: { projectId: placementSession.projectId }
-            });
-            placementSession.assertCurrent();
-        } catch (error) {
-            if (placementSession) {
-                placementSession.dispose();
-                imagePlacementSessions.current.delete(placementSession);
-            }
-            // A scope switch while requesting authorization must not start an upload elsewhere.
-            if (!(error instanceof Error && error.name === 'AbortError'))
-                toast.error(error instanceof Error ? error.message : 'Upload failed to initialize');
-            return;
-        }
-        if (isImage && tokenResult.deferImagePlacement) {
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            try {
-                await uploadImageForPlacement(file, tokenResult.token, placementSession);
-            } finally {
-                imagePlacementSessions.current.delete(placementSession);
-            }
-            return;
-        }
-        placementSession.dispose();
-        imagePlacementSessions.current.delete(placementSession);
-        const isUploadScopeCurrent = () => {
-            const state = useEditorStore.getState();
-            return (
-                !state.loading &&
-                state.projectId === uploadScope.projectId &&
-                state.commitId === uploadScope.commitId &&
-                state.activeSlideId === uploadScope.slideId
-            );
-        };
-        const localUrl = URL.createObjectURL(file);
-
-        let mediaWidth = 800;
-        let mediaHeight = 600;
-        let duration = 0;
-        let previewDataUrl = localUrl;
-
-        // 1. Read dimensions and extract a poster frame locally
-        if (isImage) {
-            const img = new window.Image();
-            const p = new Promise((resolve) => {
-                img.onload = resolve;
-                img.onerror = resolve;
-            });
-            if (!localUrl.startsWith('blob:') && !localUrl.startsWith('data:')) {
-                img.crossOrigin = 'anonymous';
-            }
-            img.src = localUrl;
-            await p;
-            mediaWidth = img.width;
-            mediaHeight = img.height;
-        } else {
-            const tempVid = document.createElement('video');
-            tempVid.muted = true;
-            tempVid.playsInline = true;
-            const p = new Promise((resolve) => (tempVid.onloadeddata = resolve));
-            if (!localUrl.startsWith('blob:') && !localUrl.startsWith('data:')) {
-                tempVid.crossOrigin = 'anonymous';
-            }
-            tempVid.src = localUrl;
-            await p;
-            mediaWidth = tempVid.videoWidth;
-            mediaHeight = tempVid.videoHeight;
-            duration = tempVid.duration;
-
-            tempVid.currentTime = Math.min(0.5, duration / 2);
-            await new Promise((resolve) => {
-                tempVid.onseeked = () => {
-                    requestAnimationFrame(() => requestAnimationFrame(resolve));
-                };
-            });
-
-            const canvas = document.createElement('canvas');
-            canvas.width = mediaWidth;
-            canvas.height = mediaHeight;
-            canvas.getContext('2d')?.drawImage(tempVid, 0, 0, mediaWidth, mediaHeight);
-            previewDataUrl = canvas.toDataURL('image/jpeg', 0.8);
-
-            tempVid.removeAttribute('src');
-            tempVid.load();
-        }
-
-        if (!isUploadScopeCurrent()) {
-            URL.revokeObjectURL(localUrl);
-            return;
-        }
-        const store = useEditorStore.getState();
-        const numericId = store.allocateId();
-        const zIndex = store.allocateZIndex();
-        const { x: insertionX, y: insertionY } = store.insertionCenter;
-        const fitted = fitSizeToViewport(
-            mediaWidth,
-            mediaHeight,
-            store.insertionViewport.width,
-            store.insertionViewport.height
-        );
-
-        const positions = {
-            cx: insertionX,
-            cy: insertionY,
-            width: fitted.width,
-            height: fitted.height,
-            rotation: 0,
-            scaleX: 1,
-            scaleY: 1
-        };
-
-        const config: Layer['config'] = { ...positions, zIndex, visible: true };
-
-        const defaultPlayback: Extract<Layer, { type: 'video' }>['playback'] = {
-            status: 'paused',
-            anchorMediaTime: 0,
-            anchorServerTime: engine.getServerTime()
-        };
-
-        // 2. OPTIMISTIC UPDATE — mount immediately
-
-        const layerName = makeUniqueMediaLayerName(file.name, store.layers.values());
-
-        const optimisticMedia = {
-            numericId,
-            name: layerName,
-            url: previewDataUrl,
-            config,
-            isUploading: true,
-            progress: 0
-        };
-        const optimisticLayer: LayerWithEditorState = isImage
-            ? { ...optimisticMedia, type: 'image' }
-            : {
-                  ...optimisticMedia,
-                  type: 'video',
-                  playback: defaultPlayback,
-                  rvfcActive: false,
-                  duration,
-                  loop: true
-              };
-
-        store.upsertLayer(optimisticLayer);
-        store.toggleLayerSelection(numericId.toString(), false, false);
-
-        // 3. Background tus upload with metadata for server-side post-processing
-        const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-        const currentProjectId = useEditorStore.getState().projectId;
-        if (!currentProjectId) {
-            useEditorStore.getState().removeLayer(numericId);
-            toast.error('Upload failed: project context is missing');
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-        }
-
-        const uploadToken = tokenResult.token;
-        scrubInsecureTusResumeEntries();
-
-        const uppy = new Uppy().use(Tus, {
-            endpoint: '/api/uploads/',
-            chunkSize: 5 * 1024 * 1024,
-            // Avoid reusing stale absolute upload URLs from previous sessions
-            // (e.g. cached http:// links after moving behind HTTPS).
-            storeFingerprintForResuming: false,
-            removeFingerprintOnSuccess: true
-        });
-
-        try {
-            uppy.addFile({
-                name: file.name,
-                type: file.type,
-                data: file,
-                meta: {
-                    numericId: numericId.toString(),
-                    duration: duration.toString(),
-                    projectId: currentProjectId,
-                    uploadToken
-                }
-            });
-        } catch (err) {
-            console.error('Upload add-file failure', err);
-            useEditorStore.getState().removeLayer(numericId);
-            uppy.destroy();
-            if (fileInputRef.current) fileInputRef.current.value = '';
-            return;
-        }
-
-        uppy.on('upload-success', (_file, response) => {
-            // Derive asset URL from the tus upload ID
-            const uploadId = response.uploadURL?.split('/').pop() ?? '';
-            const assetFilename = isImage ? `${uploadId}${ext}` : `${uploadId}.mp4`;
-            const assetUrl = `${window.location.origin}/api/assets/${assetFilename}`;
-            const stillImageFilename = isImage ? undefined : `${uploadId}.jpg`;
-
-            // Grab freshest config from shadow state (user may have moved the preview)
-            const freshestLayer = isUploadScopeCurrent()
-                ? useEditorStore.getState().layers.get(numericId)
-                : undefined;
-            if (
-                !freshestLayer ||
-                (freshestLayer.type !== 'image' && freshestLayer.type !== 'video') ||
-                !freshestLayer.isUploading ||
-                freshestLayer.url !== previewDataUrl
-            ) {
-                URL.revokeObjectURL(localUrl);
-                uppy.destroy();
-                return;
-            }
-
-            // 4. Lock it in with preserved transformations
-            const finalizedLayer = {
-                ...freshestLayer,
-                url: assetUrl,
-                isUploading: false,
-                ...(stillImageFilename ? { stillImage: stillImageFilename } : {})
-            };
-
-            useEditorStore.getState().upsertLayer(finalizedLayer);
-            engine.setPlayback(numericId, defaultPlayback);
-
-            // First time this layer reaches the server, so it goes through the
-            // acknowledged path and a failed write surfaces to the user.
-            engine.createLayer('editor:handle_upload', finalizedLayer);
-            // Without this the project never looks dirty after an upload, so the
-            // manual save shortcut silently does nothing.
-            useEditorStore.getState().markDirty();
-            URL.revokeObjectURL(localUrl);
-
-            // Asset record is created server-side in onUploadFinish
-            uppy.destroy();
-        });
-
-        uppy.on('error', (err) => {
-            console.error('Upload failure', err);
-            const current = useEditorStore.getState().layers.get(numericId);
-            if (
-                isUploadScopeCurrent() &&
-                current &&
-                (current.type === 'image' || current.type === 'video') &&
-                current.url === previewDataUrl &&
-                current.isUploading
-            )
-                useEditorStore.getState().removeLayer(numericId);
-            URL.revokeObjectURL(localUrl);
-            toast.error(err instanceof Error ? err.message : 'Upload failed');
-            uppy.destroy();
-        });
-
-        uppy.upload();
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    };
 
     const handleTransform = (
         e: Pick<KonvaEventObject<Event>, 'target' | 'evt'>,
@@ -1884,11 +1593,7 @@ export function EditorSlate() {
 
     return (
         <>
-            <EditorToolbar
-                fileInputRef={fileInputRef}
-                onUpload={handleUpload}
-                // onEditText={setEditingTextLayerId}
-            />
+            <EditorToolbar />
             <SlatePreview
                 stageSlot={stageSlot}
                 stageScaleFactor={stageScaleFactor}
