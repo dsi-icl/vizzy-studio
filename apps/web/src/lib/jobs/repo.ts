@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { db } from '@repo/db';
 import type { AssetDocument } from '@repo/db/documents';
 import type { ImageDeepZoomAsset } from '@repo/db/schema';
-import { ObjectId, type ClientSession, type TransactionOptions } from 'mongodb';
+import { ObjectId, type ClientSession } from 'mongodb';
 
 import { logAudit, type AuditLogInput } from '~/server/audit';
 import { dbCol, collections } from '~/server/collections';
@@ -24,12 +24,6 @@ import type {
 
 const LEASE_MS = 30_000;
 const RETRY_BACKOFF_MS = 5_000;
-// Keep the first command and later writes at one read concern on deployments
-// whose MongoDB URI or cluster default uses majority reads.
-const IMAGE_TILE_TRANSACTION_OPTIONS: TransactionOptions = {
-    readConcern: { level: 'majority' },
-    writeConcern: { w: 'majority' }
-};
 
 async function auditImageTileJob(
     job: JobDocument,
@@ -344,7 +338,7 @@ export async function acceptImageTileUpload(input: {
                 session
             });
             return asset;
-        }, IMAGE_TILE_TRANSACTION_OPTIONS)
+        })
     );
 }
 
@@ -377,7 +371,7 @@ export async function updateImageTileAsset(
             if (!(await dbCol.assets.updateDeepZoomJob(payload.assetId, state, fields, session))) {
                 throw new Error('Image asset is no longer available for processing.');
             }
-        }, IMAGE_TILE_TRANSACTION_OPTIONS)
+        })
     );
 }
 
@@ -426,7 +420,7 @@ export async function completeImageTileJob(
                 },
                 { session }
             );
-        }, IMAGE_TILE_TRANSACTION_OPTIONS)
+        })
     );
     await auditImageTileJob(job, 'COMPLETED', now, {
         changes: {
@@ -484,7 +478,7 @@ export async function failImageTileJob(
                 },
                 { session }
             );
-        }, IMAGE_TILE_TRANSACTION_OPTIONS)
+        })
     );
     await auditImageTileJob(job, retry ? 'RETRY_SCHEDULED' : 'FAILED', now, {
         error,
@@ -524,7 +518,7 @@ export async function reconcileStalledImageTiles(nodeId: string) {
                     {},
                     session
                 );
-            }, IMAGE_TILE_TRANSACTION_OPTIONS)
+            })
         );
     }
 }

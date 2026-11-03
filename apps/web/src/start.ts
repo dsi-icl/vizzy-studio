@@ -59,29 +59,18 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     }
 
     const ip = getClientIpFromHeaders(request.headers);
-    const subjectKey = buildRateLimitSubjectKey({ ip });
-    // Deep Zoom can request many small tiles; keep that traffic from exhausting
-    // the budget for page loads and server functions.
-    const scope =
-        url.pathname.startsWith('/api/image-tiles/') && isRead
-            ? 'image-tile'
-            : isRead
-              ? 'read'
-              : 'shared';
+    const subjectKey = isMutation
+        ? buildRateLimitSubjectKey({ ip })
+        : buildRateLimitSubjectKey({ ip: ip && ip !== 'unknown' ? `get:${ip}` : null });
     const rate = checkRateLimit({
-        subjectKey,
-        scope
+        subjectKey
     });
 
     if (rate.allowed) return next();
 
     const now = Date.now();
-    const auditKey = `${scope}:${subjectKey}`;
-    const shouldAudit = shouldAuditRateLimit(auditKey, now);
-    if (shouldAudit) {
-        console.warn(`[RateLimit] Route rate limited: ${method} ${url.pathname} (ip: ${ip})`);
-    }
-    if (shouldAudit && shouldAuditRateLimitGlobal(now)) {
+    console.warn(`[RateLimit] Route rate limited: ${method} ${url.pathname} (ip: ${ip})`);
+    if (shouldAuditRateLimit(subjectKey, now) && shouldAuditRateLimitGlobal(now)) {
         void logAuditDenied({
             action: 'START_ROUTE_RATE_LIMITED',
             resourceType: 'start_route',
