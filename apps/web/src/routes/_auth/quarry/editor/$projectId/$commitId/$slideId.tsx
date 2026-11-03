@@ -13,6 +13,7 @@ import { LayerList } from '~/components/LayerList';
 import { MainBoard } from '~/components/MainBoard';
 import { ParametersPanel } from '~/components/ParametersPanel';
 import { SlideList } from '~/components/SlideList';
+import { useFontsState } from '~/hooks/useFonts';
 import { EditorColourPaletteProvider } from '~/lib/editorColourPalette';
 import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
@@ -72,7 +73,37 @@ function SlideEditor() {
         );
     }
 
-    return <SlideEditorInner projectId={projectId} commitId={commitId} slideId={slideId} />;
+    return <SlideEditorFontsGate projectId={projectId} commitId={commitId} slideId={slideId} />;
+}
+
+function SlideEditorFontsGate(props: { projectId: string; commitId: string; slideId: string }) {
+    const { ready, failed, retry } = useFontsState(props.projectId);
+
+    return (
+        <div className="relative h-full">
+            <div className="h-full" inert={!ready}>
+                <SlideEditorInner {...props} />
+            </div>
+            {!ready && (
+                <output className="absolute inset-0 z-50 flex items-center justify-center bg-background text-muted-foreground">
+                    {failed ? (
+                        <span>
+                            Could not load project fonts.{' '}
+                            <button
+                                type="button"
+                                className="text-primary underline"
+                                onClick={retry}
+                            >
+                                Retry
+                            </button>
+                        </span>
+                    ) : (
+                        'Loading project fonts...'
+                    )}
+                </output>
+            )}
+        </div>
+    );
 }
 
 function SlideEditorInner({
