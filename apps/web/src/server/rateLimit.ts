@@ -2,7 +2,10 @@ type MaybeHeaders = Headers | Record<string, unknown> | undefined | null;
 
 type StoredEntry = {
     timestamps: number[];
+    head: number;
 };
+
+export type RateLimitScope = 'shared' | 'read' | 'image-tile';
 
 const DEFAULT_LIMIT_PER_MINUTE = 1000;
 const RATE_LIMIT_PER_MINUTE = Math.max(
@@ -71,8 +74,8 @@ let lastPruneTime = Date.now();
 function pruneStaleEntries(now: number) {
     const cutoff = now - WINDOW_MS;
     for (const [key, entry] of store.entries()) {
-        entry.timestamps = entry.timestamps.filter((ts: number) => ts >= cutoff);
-        if (entry.timestamps.length === 0) {
+        expireTimestamps(entry, cutoff);
+        if (entry.head === entry.timestamps.length) {
             store.delete(key);
         }
     }
@@ -87,6 +90,22 @@ function pruneStaleEntries(now: number) {
     }
 }
 
+function expireTimestamps(entry: StoredEntry, cutoff: number) {
+    entry.head ??= 0;
+    while (entry.head < entry.timestamps.length && entry.timestamps[entry.head]! < cutoff) {
+        entry.head++;
+    }
+    // Keep the sliding window exact without copying its entire array per request.
+    if (
+        entry.head > 0 &&
+        (entry.head === entry.timestamps.length ||
+            (entry.head >= 1024 && entry.head * 2 >= entry.timestamps.length))
+    ) {
+        entry.timestamps = entry.timestamps.slice(entry.head);
+        entry.head = 0;
+    }
+}
+
 export function buildRateLimitSubjectKey(input: {
     actorId?: string | null;
     ip?: string | null;
@@ -98,7 +117,7 @@ export function buildRateLimitSubjectKey(input: {
     return 'anonymous';
 }
 
-export function checkRateLimit(input: { subjectKey: string }): {
+export function checkRateLimit(input: { subjectKey: string; scope?: RateLimitScope }): {
     allowed: boolean;
     retryAfterMs: number;
     remaining: number;
@@ -111,13 +130,16 @@ export function checkRateLimit(input: { subjectKey: string }): {
     }
 
     const cutoff = now - WINDOW_MS;
-    const key = input.subjectKey;
-    const limit = key === 'anonymous' ? RATE_LIMIT_PER_MINUTE * 10 : RATE_LIMIT_PER_MINUTE;
-    const entry = store.get(key) ?? { timestamps: [] };
+    const scope = input.scope ?? 'shared';
+    const key = `${scope}:${input.subjectKey}`;
+    const baseLimit =
+        input.subjectKey === 'anonymous' ? RATE_LIMIT_PER_MINUTE * 10 : RATE_LIMIT_PER_MINUTE;
+    const limit = scope === 'image-tile' ? baseLimit * 5 : baseLimit;
+    const entry = store.get(key) ?? { timestamps: [], head: 0 };
 
-    entry.timestamps = entry.timestamps.filter((ts: number) => ts >= cutoff);
-    if (entry.timestamps.length >= limit) {
-        const oldest = entry.timestamps[0] ?? now;
+    expireTimestamps(entry, cutoff);
+    if (entry.timestamps.length - entry.head >= limit) {
+        const oldest = entry.timestamps[entry.head] ?? now;
         const retryAfterMs = Math.max(1_000, WINDOW_MS - (now - oldest));
         store.set(key, entry);
         return {
@@ -134,7 +156,7 @@ export function checkRateLimit(input: { subjectKey: string }): {
     return {
         allowed: true,
         retryAfterMs: 0,
-        remaining: Math.max(0, limit - entry.timestamps.length),
+        remaining: Math.max(0, limit - (entry.timestamps.length - entry.head)),
         limitPerMinute: limit
     };
 }
