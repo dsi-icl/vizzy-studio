@@ -55,7 +55,7 @@ function MobileUpload() {
         if (!token) return;
         let ignore = false;
         $validateUploadToken({ data: { token } })
-            .then((result) => (result?.projectId === projectId ? result.userEmail : null))
+            .then((result) => (result && result.projectId === projectId ? result.userEmail : null))
             .catch(() => null)
             .then((result) => {
                 if (!ignore) setValidation({ token, projectId, userEmail: result });

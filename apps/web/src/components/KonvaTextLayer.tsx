@@ -5,7 +5,9 @@ import type { KonvaEventObject } from 'konva/lib/Node';
 import { useEffect, useRef, useState } from 'react';
 import { Image } from 'react-konva';
 
+import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -33,6 +35,7 @@ export function KonvaTextLayer({
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
     const renderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const fontRevision = useTextFontRevision();
 
     useEffect(() => {
         let cancelled = false;
@@ -41,12 +44,12 @@ export function KonvaTextLayer({
         renderTimer.current = setTimeout(() => {
             textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
                 .then((rendered) => {
-                    if (cancelled) return;
+                    if (cancelled || fontRevision !== getTextFontRevision()) return;
                     setImg(rendered);
                     imageRef.current?.getLayer()?.batchDraw();
                 })
                 .catch(() => {
-                    if (!cancelled) setImg(null);
+                    if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
                 });
         }, 100);
 
@@ -54,7 +57,7 @@ export function KonvaTextLayer({
             cancelled = true;
             if (renderTimer.current) clearTimeout(renderTimer.current);
         };
-    }, [layer.textHtml, layer.config.width, layer.config.height]);
+    }, [layer.textHtml, layer.config.width, layer.config.height, fontRevision]);
 
     useEffect(() => {
         applyKonvaFilters(imageRef.current, layer.config.filters);

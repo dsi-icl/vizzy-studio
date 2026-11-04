@@ -8,7 +8,6 @@ import { TextEditorDialog } from './TextEditorDialog';
 
 export function MainBoard() {
     const loading = useEditorStore((s) => s.loading);
-
     return (
         <main className="relative flex h-full min-h-0 flex-col overflow-hidden bg-card/20">
             <ConnectionBanner />

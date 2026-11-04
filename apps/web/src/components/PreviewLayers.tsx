@@ -3,9 +3,11 @@ import Konva from 'konva';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Rect } from 'react-konva';
 
+import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import { useMapPreviewStore } from '~/lib/mapPreviewStore';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -148,20 +150,21 @@ export function PreviewTextLayer({
 }) {
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
+    const fontRevision = useTextFontRevision();
 
     useEffect(() => {
         let cancelled = false;
         textHtmlToImage(shape.textHtml ?? '', shape.config.width, shape.config.height)
             .then((rendered) => {
-                if (!cancelled) setImg(rendered);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(rendered);
             })
             .catch(() => {
-                if (!cancelled) setImg(null);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
             });
         return () => {
             cancelled = true;
         };
-    }, [shape.textHtml, shape.config.width, shape.config.height]);
+    }, [shape.textHtml, shape.config.width, shape.config.height, fontRevision]);
 
     useEffect(() => {
         applyKonvaFilters(imageRef.current, shape.config.filters);

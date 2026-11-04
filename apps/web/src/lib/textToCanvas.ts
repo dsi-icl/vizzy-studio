@@ -2,6 +2,7 @@
  * Converts HTML content to an HTMLImageElement via foreignObject SVG.
  * Used to render text layer previews in the Konva canvas.
  */
+import { fontFaceCssForHtml } from '~/lib/textFontFaces';
 import {
     TEXT_BASE_FONT_FAMILY,
     TEXT_BASE_FONT_SIZE_PX,
@@ -31,6 +32,8 @@ export async function textHtmlToImage(
     width: number,
     height: number
 ): Promise<HTMLImageElement> {
+    const fontFaceCss = await fontFaceCssForHtml(html);
+
     const escaped = html
         // foreignObject needs well-formed XHTML
         .replace(/&(?!amp;|lt;|gt;|quot;|#\d+;|#x[\da-fA-F]+;)/g, '&amp;')
@@ -40,7 +43,7 @@ export async function textHtmlToImage(
         <foreignObject width="100%" height="100%">
             <div xmlns="http://www.w3.org/1999/xhtml"
                  style="width:${width}px;height:${height}px;overflow:hidden;color:white;font-family:${TEXT_BASE_FONT_FAMILY};font-size:${TEXT_BASE_FONT_SIZE_PX}px;line-height:${TEXT_BASE_LINE_HEIGHT};padding:${TEXT_BASE_PADDING_PX}px;box-sizing:border-box;">
-                <style>${LEXICAL_CSS}</style>
+                <style>${fontFaceCss}${LEXICAL_CSS}</style>
                 ${escaped}
             </div>
         </foreignObject>
