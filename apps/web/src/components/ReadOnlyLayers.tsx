@@ -6,6 +6,7 @@ import { Image, Rect } from 'react-konva';
 import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -122,10 +123,10 @@ export function ReadOnlyTextLayer({
         let cancelled = false;
         textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
             .then((rendered) => {
-                if (!cancelled) setImg(rendered);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(rendered);
             })
             .catch(() => {
-                if (!cancelled) setImg(null);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
             });
         return () => {
             cancelled = true;

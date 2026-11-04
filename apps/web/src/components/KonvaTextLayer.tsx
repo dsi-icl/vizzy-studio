@@ -7,6 +7,7 @@ import { Image } from 'react-konva';
 
 import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -43,12 +44,12 @@ export function KonvaTextLayer({
         renderTimer.current = setTimeout(() => {
             textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
                 .then((rendered) => {
-                    if (cancelled) return;
+                    if (cancelled || fontRevision !== getTextFontRevision()) return;
                     setImg(rendered);
                     imageRef.current?.getLayer()?.batchDraw();
                 })
                 .catch(() => {
-                    if (!cancelled) setImg(null);
+                    if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
                 });
         }, 100);
 

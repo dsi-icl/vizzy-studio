@@ -4,13 +4,14 @@ import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
-import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
+import { PreviewMapLayer, PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 
 type SlatePreviewProps = {
     stageSlot: RefObject<HTMLDivElement | null>;
     stageScaleFactor: number;
+    previewScopeKey: string;
     onScrollTo: (scrollLeft: number) => void;
     onWheel: (e: KonvaEventObject<WheelEvent>) => void;
 };
@@ -20,6 +21,7 @@ const PREVIEW_SCALE = 0.15;
 export function SlatePreview({
     stageSlot,
     stageScaleFactor,
+    previewScopeKey,
     onScrollTo,
     onWheel
 }: SlatePreviewProps) {
@@ -165,6 +167,15 @@ export function SlatePreview({
                                         key={shape.numericId}
                                         shape={shape}
                                         stageScaleFactor={1}
+                                    />
+                                );
+                            }
+                            if (shape.type === 'map') {
+                                return (
+                                    <PreviewMapLayer
+                                        key={shape.numericId}
+                                        shape={shape}
+                                        previewKey={`${previewScopeKey}/${shape.numericId}`}
                                     />
                                 );
                             }

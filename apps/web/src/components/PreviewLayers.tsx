@@ -5,11 +5,40 @@ import { Image, Rect } from 'react-konva';
 
 import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
+import { useMapPreviewStore } from '~/lib/mapPreviewStore';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
 import { KonvaTiledImage } from './KonvaStaticImage';
+
+export function PreviewMapLayer({
+    shape,
+    previewKey
+}: {
+    shape: Extract<LayerWithEditorState, { type: 'map' }>;
+    previewKey: string;
+}) {
+    const preview = useMapPreviewStore((state) => state[previewKey]);
+
+    return (
+        <Image
+            image={preview}
+            fill={preview ? undefined : '#555'}
+            x={shape.config.cx}
+            y={shape.config.cy}
+            width={shape.config.width}
+            height={shape.config.height}
+            scaleX={shape.config.scaleX}
+            scaleY={shape.config.scaleY}
+            offsetX={shape.config.width / 2}
+            offsetY={shape.config.height / 2}
+            rotation={shape.config.rotation}
+            listening={false}
+        />
+    );
+}
 
 function LegacyPreviewMediaLayer({
     shape,
@@ -127,10 +156,10 @@ export function PreviewTextLayer({
         let cancelled = false;
         textHtmlToImage(shape.textHtml ?? '', shape.config.width, shape.config.height)
             .then((rendered) => {
-                if (!cancelled) setImg(rendered);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(rendered);
             })
             .catch(() => {
-                if (!cancelled) setImg(null);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
             });
         return () => {
             cancelled = true;
