@@ -6,7 +6,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import QRCode from 'qrcode';
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 
-import { MapWrapper } from '~/components/MapWrapper';
+import { MapWrapper, type WallMapRenderer } from '~/components/MapWrapper';
 import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
 import { useWallFonts } from '~/hooks/useWallFonts';
@@ -46,6 +46,7 @@ export const Route = createFileRoute('/wall/')({
 
 function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
+    const [projectId, setProjectId] = useState<string>();
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProxy, setCustomRenderProxy] = useState(false);
@@ -55,6 +56,11 @@ function WallApp() {
         width: screenWidth,
         height: screenHeight
     });
+    const [mapRenderers] = useState(() => new Map<number, WallMapRenderer>());
+    const physicalScale = Math.min(
+        physicalViewport.width / Math.max(1, screenWidth),
+        physicalViewport.height / Math.max(1, screenHeight)
+    );
     const [blackOverlayOpacity, setBlackOverlayOpacity] = useState(1);
     const [iframeGateCycle, setIframeGateCycle] = useState(0);
     const [boundProjectId, setBoundProjectId] = useState<string | null>(null);
@@ -174,6 +180,7 @@ function WallApp() {
     const applyHydrateContent = (next: HydrateStagePayload) => {
         engine?.layers.clear();
         setLayers(next.layers);
+        setProjectId(next.projectId);
         setBoundProjectId(next.projectId ?? null);
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
@@ -419,6 +426,12 @@ function WallApp() {
                     layer.el.style.height = `${effectivePos.height}px`;
                     layer.el.style.transform = `translate3d(${localX}px, ${localY}px, 0) rotate(${effectivePos.rotation}deg) scale(${effectivePos.scaleX}, ${effectivePos.scaleY})`;
                     layer.el.style.opacity = '1';
+                    if (layer.type === 'map') {
+                        mapRenderers.get(layer.numericId)?.({
+                            ...layer.config,
+                            ...effectivePos
+                        });
+                    }
                 } else {
                     layer.visible = false;
                     layer.el.style.opacity = '0';
@@ -432,7 +445,7 @@ function WallApp() {
             unsubscribe?.();
             cancelAnimationFrame(frameId);
         };
-    }, [engine, myViewport]);
+    }, [engine, myViewport, mapRenderers]);
 
     useEffect(() => {
         const deviceId = deviceEnrollmentId?.trim();
@@ -640,7 +653,17 @@ function WallApp() {
             }
 
             if (layer.type === 'map') {
-                return <MapWrapper key={layer.numericId} {...commonProps} layer={layer} />;
+                if (!projectId) return null;
+                return (
+                    <MapWrapper
+                        key={layer.numericId}
+                        {...commonProps}
+                        layer={layer}
+                        projectId={projectId}
+                        pixelRatio={physicalScale * (isClient ? window.devicePixelRatio : 1)}
+                        wall={{ viewport: myViewport, renderers: mapRenderers }}
+                    />
+                );
             }
 
             if (layer.type === 'web') {
@@ -867,10 +890,6 @@ function WallApp() {
     const backgroundLayer = layers.find(
         (l): l is Extract<LayerWithWallComponentState, { type: 'background' }> =>
             l.type === 'background' && l.config.visible
-    );
-    const physicalScale = Math.min(
-        physicalViewport.width / Math.max(1, screenWidth),
-        physicalViewport.height / Math.max(1, screenHeight)
     );
     const physicalLeft = (physicalViewport.width - screenWidth * physicalScale) / 2;
     const physicalTop = (physicalViewport.height - screenHeight * physicalScale) / 2;
