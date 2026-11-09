@@ -1,3 +1,4 @@
+import { useAuthSuspense } from '@repo/auth/tanstack/hooks';
 import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate, redirect } from '@tanstack/react-router';
@@ -18,8 +19,11 @@ export const Route = createFileRoute('/')({
         }
     },
     component: HomePage,
-    loader: ({ context }) => {
-        context.queryClient.ensureQueryData(publishedProjectsQueryOptions());
+    loader: async ({ context }) => {
+        const viewer = await context.queryClient.ensureQueryData(authQueryOptions());
+        void context.queryClient.ensureQueryData(
+            publishedProjectsQueryOptions(viewer?.email ?? null)
+        );
     },
     head: () => ({
         meta: [{ title: 'Home · Vizzy Studio' }]
@@ -27,7 +31,8 @@ export const Route = createFileRoute('/')({
 });
 
 function HomePage() {
-    const { data: projects } = useSuspenseQuery(publishedProjectsQueryOptions());
+    const { user } = useAuthSuspense();
+    const { data: projects } = useSuspenseQuery(publishedProjectsQueryOptions(user?.email ?? null));
     const navigate = useNavigate();
 
     const heroImages = useMemo(

@@ -13,6 +13,7 @@ interface GalleryProjectCardProps {
     project: Project & {
         id: string;
         publishedCommitId?: string | null;
+        viewerIsMember?: boolean;
     };
     autoOpenSignal?: string | number | null;
     forceDemoteFullscreenSignal?: string | number | null;
@@ -42,7 +43,9 @@ export function GalleryProjectCard({
     const isEnrolledDevice = useGalleryStore((s) => s.isEnrolledDevice);
     const canAdminBindWall = user?.role === 'admin';
     const canDeviceBindWall = isEnrolledDevice && !user;
-    const canBindWall = allowWallActions && (canAdminBindWall || canDeviceBindWall);
+    const canMemberBindWall = isEnrolledDevice && Boolean(user) && project.viewerIsMember === true;
+    const canBindWall =
+        allowWallActions && (canAdminBindWall || canDeviceBindWall || canMemberBindWall);
 
     const handleLoadProject = useCallback(
         async (wallId: string) => {
@@ -160,7 +163,7 @@ export function GalleryProjectCard({
             onWallUnbindRequest={canBindWall ? handleWallUnbindRequest : undefined}
             onControllerTokenRequest={canBindWall ? handleControllerTokenRequest : undefined}
             presetWallId={wallId}
-            hideWallPicker={canDeviceBindWall}
+            hideWallPicker={!canAdminBindWall && (canDeviceBindWall || canMemberBindWall)}
         />
     );
 }
