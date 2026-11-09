@@ -194,16 +194,15 @@ export async function listPublishedProjects(viewerEmail?: string | null) {
         { sort: { updatedAt: -1 } }
     );
 
-    const visibleProjects = projectDocs.flatMap((project) => {
+    const visibleProjects = projectDocs.filter((project) => {
         if (!project.stages.some((stage) => !stage.archivedAt && stage.publishedCommitId))
-            return [];
-        const viewerIsMember = Boolean(
-            viewerEmail &&
-            (project.createdBy === viewerEmail ||
-                project.collaborators.some((collaborator) => collaborator.email === viewerEmail))
+            return false;
+        if (project.visibility === 'public') return true;
+        if (!viewerEmail) return false;
+        return (
+            project.createdBy === viewerEmail ||
+            project.collaborators.some((collaborator) => collaborator.email === viewerEmail)
         );
-        if (project.visibility !== 'public' && !viewerIsMember) return [];
-        return [{ ...project, viewerIsMember }];
     });
 
     const heroFilenames = Array.from(

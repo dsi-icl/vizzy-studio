@@ -47,11 +47,7 @@ const TAG_BUCKETS: { key: TagBucketKey; matches: (tag: string) => boolean }[] = 
     { key: '#', matches: (t) => !/^[a-z]/i.test(t) }
 ];
 
-type ProjectWithId = Project & {
-    id: string;
-    publishedCommitId?: string | null;
-    viewerIsMember?: boolean;
-};
+type ProjectWithId = Project & { id: string; publishedCommitId?: string | null };
 type WallListEntry = {
     wallId: string;
     name: string;
@@ -495,7 +491,6 @@ function HomePage() {
                     description: p.description,
                     tags: p.tags,
                     publishedCommitId: presentedStage.publishedCommitId,
-                    viewerIsMember: p.viewerIsMember,
                     customControlUrl: (p as { customControlUrl?: string }).customControlUrl,
                     customRenderUrl: (p as { customRenderUrl?: string | null }).customRenderUrl,
                     imageUrl: p.heroImages[0] ?? '',
