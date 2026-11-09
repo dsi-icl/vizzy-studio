@@ -13,7 +13,7 @@ import {
 test('editor takeover approval and last-editor disconnect hand ownership back to the gallery', async ({
     browser
 }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const manifest = readHarnessManifest();
     const contexts: BrowserContext[] = [];
     let editorContext: BrowserContext | null = null;
@@ -145,6 +145,39 @@ test('editor takeover approval and last-editor disconnect hand ownership back to
         });
         await galleryPage.getByRole('button', { name: 'Approve' }).click();
         await waitForWallHydrated(wallPage, { source: 'live', foregroundLayerCount: 2 });
+
+        // The editor's scope changes before the async bind request is handled.
+        // Its own slide navigation must keep the live preview without a new
+        // takeover prompt from the connected gallery.
+        const switchEditorSlide = (slideId: string) =>
+            editorPage.evaluate(
+                ({ projectId, commitId, slideId }) => {
+                    const engine = (
+                        window as Window & {
+                            __EDITOR_ENGINE__?: {
+                                joinScope: (
+                                    targetProjectId: string,
+                                    targetCommitId: string,
+                                    targetSlideId: string
+                                ) => void;
+                            };
+                        }
+                    ).__EDITOR_ENGINE__;
+                    if (!engine) throw new Error('Editor engine was not ready');
+                    engine.joinScope(projectId, commitId, slideId);
+                },
+                {
+                    projectId: manifest.fixtures.publicProjectId,
+                    commitId: manifest.fixtures.publicCommitId,
+                    slideId
+                }
+            );
+        await switchEditorSlide(manifest.fixtures.publicSlideId);
+        await waitForWallHydrated(wallPage, { source: 'live', foregroundLayerCount: 6 });
+        await expect(galleryPage.getByText(/Takeover request from/)).toBeHidden();
+        await switchEditorSlide(manifest.fixtures.galleryAlternateSlideId);
+        await waitForWallHydrated(wallPage, { source: 'live', foregroundLayerCount: 2 });
+        await expect(galleryPage.getByText(/Takeover request from/)).toBeHidden();
 
         // Abruptly closing the final editor socket exercises server-side ownership
         // cleanup, not the editor's explicit unbind or leave-scope controls.

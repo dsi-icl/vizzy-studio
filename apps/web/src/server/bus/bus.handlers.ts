@@ -16,7 +16,6 @@ import {
     deleteControllerTransientLayer,
     deleteControllerTransientLayerForScope,
     deleteYDocForLayer,
-    editorsByScope,
     EMPTY_HYDRATE,
     estimatePlaybackLeadMs,
     getEditorHydratePayload,
@@ -45,6 +44,7 @@ import {
     signageBlankWalls,
     wallBindings,
     wallBindingSources,
+    livePreviewOwners,
     type PeerEntry
 } from '~/lib/busState';
 import {
@@ -576,7 +576,8 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
                 data.commitId,
                 resolvedSlideId,
                 'live',
-                true
+                true,
+                userEmail
             );
             if (!result.ok) process.__SIGNAGE_RESUME_WALL__?.(data.wallId);
             sendBindOverrideResult(entry.peer.id, {
@@ -593,24 +594,27 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
             return;
         }
 
-        // If the wall is live-bound and the requester is already in the currently-bound
-        // scope (i.e. same user navigating slides — switch_scope is async so their scope
-        // entry still reflects the old slide when this message is processed), let them
-        // re-bind without going through the gallery override flow.
-        const isSameUser =
+        // A slide change moves the editor out of the old scope before this async
+        // request may run. Use the owner recorded at the successful bind instead
+        // of looking for the editor in the old scope's membership index.
+        const currentScope = currentScopeId === undefined ? null : scopedState.get(currentScopeId);
+        const isOwnPreviewSlideChange =
             hasConflict &&
             userEmail !== undefined &&
             wallBindingSources.get(data.wallId) === 'live' &&
-            [...(editorsByScope.get(currentScopeId!) ?? [])].some(
-                (e) => e.meta.specimen === 'editor' && e.meta.authContext?.user?.email === userEmail
-            );
+            livePreviewOwners.get(data.wallId) === userEmail &&
+            currentScope?.projectId === data.projectId &&
+            currentScope?.commitId === data.commitId;
 
-        if (!hasConflict || isSameUser) {
+        if (!hasConflict || isOwnPreviewSlideChange) {
             const result = await performLiveBind(
                 data.wallId,
                 data.projectId,
                 data.commitId,
-                resolvedSlideId
+                resolvedSlideId,
+                'live',
+                false,
+                userEmail
             );
             sendBindOverrideResult(entry.peer.id, {
                 type: 'bind_override_result',
@@ -633,7 +637,10 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
                 data.wallId,
                 data.projectId,
                 data.commitId,
-                resolvedSlideId
+                resolvedSlideId,
+                'live',
+                false,
+                userEmail
             );
             sendBindOverrideResult(entry.peer.id, {
                 type: 'bind_override_result',
@@ -670,6 +677,7 @@ handlers.set('request_bind_wall', ({ entry, data }) => {
         pendingBindOverrides.set(data.requestId, {
             requestId: data.requestId,
             requesterPeerId: entry.peer.id,
+            ...(userEmail ? { requesterEmail: userEmail } : {}),
             wallId: data.wallId,
             projectId: data.projectId,
             commitId: data.commitId,
@@ -729,7 +737,10 @@ handlers.set('bind_override_decision', ({ entry, data }) => {
             pending.wallId,
             pending.projectId,
             pending.commitId,
-            pending.slideId
+            pending.slideId,
+            'live',
+            false,
+            pending.requesterEmail
         );
         sendBindOverrideResult(pending.requesterPeerId, {
             type: 'bind_override_result',

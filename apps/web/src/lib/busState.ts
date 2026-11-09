@@ -15,6 +15,7 @@ export {
     allEditors,
     wallBindings,
     wallBindingSources,
+    livePreviewOwners,
     signageBlankWalls,
     scopeWatchers,
     wallPeersByScope,

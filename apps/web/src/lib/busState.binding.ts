@@ -5,6 +5,7 @@ import {
     signageBlankWalls,
     wallBindings,
     wallBindingSources,
+    livePreviewOwners,
     wallPeersByScope,
     wallsByWallId,
     wallUnbindTimers,
@@ -17,7 +18,8 @@ const WALL_UNBIND_GRACE_MS = 5_000; // 5 seconds
 export function bindWall(
     wallId: string,
     scopeId: ScopeId,
-    source: 'live' | 'gallery' | 'signage' = 'gallery'
+    source: 'live' | 'gallery' | 'signage' = 'gallery',
+    livePreviewOwner?: string
 ) {
     const oldScopeId = wallBindings.get(wallId);
     // Never let old controller API credentials survive a wall rebind.
@@ -44,6 +46,11 @@ export function bindWall(
 
     wallBindings.set(wallId, scopeId);
     wallBindingSources.set(wallId, source);
+    if (source === 'live' && livePreviewOwner) {
+        livePreviewOwners.set(wallId, livePreviewOwner);
+    } else {
+        livePreviewOwners.delete(wallId);
+    }
     signageBlankWalls.delete(wallId);
     cancelScopeCleanup(scopeId);
 
@@ -89,6 +96,7 @@ export function unbindWall(wallId: string) {
     }
     wallBindings.delete(wallId);
     wallBindingSources.delete(wallId);
+    livePreviewOwners.delete(wallId);
     signageBlankWalls.delete(wallId);
 }
 

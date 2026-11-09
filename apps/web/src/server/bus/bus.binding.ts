@@ -31,6 +31,7 @@ const wallBindQueues = new Map<string, Promise<unknown>>();
 export interface PendingBindOverride {
     requestId: string;
     requesterPeerId: string;
+    requesterEmail?: string;
     wallId: string;
     projectId: string;
     commitId: string;
@@ -288,7 +289,8 @@ async function performLiveBindNow(
     commitId: string,
     requestedSlideId: string,
     source: 'live' | 'gallery' | 'signage' = 'live',
-    signageLease = false
+    signageLease = false,
+    livePreviewOwner?: string
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
     try {
         cancelWallUnbindGrace(wallId);
@@ -346,7 +348,7 @@ async function performLiveBindNow(
             boundSlideId: resolvedSlideId,
             boundSource: source
         });
-        bindWall(wallId, scopeId, source);
+        bindWall(wallId, scopeId, source, livePreviewOwner);
 
         notifyControllers(
             wallId,
@@ -391,13 +393,22 @@ export async function performLiveBind(
     commitId: string,
     requestedSlideId: string,
     source: 'live' | 'gallery' | 'signage' = 'live',
-    signageLease = false
+    signageLease = false,
+    livePreviewOwner?: string
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
     const previous = wallBindQueues.get(wallId) ?? Promise.resolve();
     const next = previous
         .catch(() => undefined)
         .then(() =>
-            performLiveBindNow(wallId, projectId, commitId, requestedSlideId, source, signageLease)
+            performLiveBindNow(
+                wallId,
+                projectId,
+                commitId,
+                requestedSlideId,
+                source,
+                signageLease,
+                livePreviewOwner
+            )
         );
     wallBindQueues.set(wallId, next);
     try {

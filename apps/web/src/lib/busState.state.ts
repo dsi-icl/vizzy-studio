@@ -67,6 +67,7 @@ const _hmr = (process as any).__BUS_HMR__ ?? {
     allEditors: new Set<PeerEntry>(),
     wallBindings: new Map<string, ScopeId>(),
     wallBindingSources: new Map<string, 'live' | 'gallery' | 'signage'>(),
+    livePreviewOwners: new Map<string, string>(),
     signageBlankWalls: new Set<string>(),
     scopeWatchers: new Map<ScopeId, Set<string>>(),
     wallPeersByScope: new Map<ScopeId, Set<PeerEntry>>(),
@@ -98,6 +99,9 @@ if (!_hmr.wallUnbindTimers) {
 }
 if (!_hmr.signageBlankWalls) {
     _hmr.signageBlankWalls = new Set<string>();
+}
+if (!_hmr.livePreviewOwners) {
+    _hmr.livePreviewOwners = new Map<string, string>();
 }
 if (typeof _hmr.peerCounts.gallery !== 'number') {
     _hmr.peerCounts.gallery = 0;
@@ -213,6 +217,8 @@ export const allEditors: Set<PeerEntry> = _hmr.allEditors;
 export const wallBindings: Map<string, ScopeId> = _hmr.wallBindings;
 export const wallBindingSources: Map<string, 'live' | 'gallery' | 'signage'> =
     _hmr.wallBindingSources;
+// wallId -> email of the editor who most recently bound this live preview.
+export const livePreviewOwners: Map<string, string> = _hmr.livePreviewOwners;
 export const signageBlankWalls: Set<string> = _hmr.signageBlankWalls;
 
 // scopeId > Set<wallId>: reverse index used only for binding cleanup
