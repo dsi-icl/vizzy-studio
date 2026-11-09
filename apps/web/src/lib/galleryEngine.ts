@@ -1,7 +1,7 @@
 'use client';
 
 import { BusClient } from './busClient';
-import { useGalleryStore } from './galleryStore';
+import { rememberEnrolledWallId, useGalleryStore } from './galleryStore';
 import { GSMessageSchema, type GSMessage } from './types';
 
 type GalleryState = Extract<GSMessage, { type: 'gallery_state' }>;
@@ -72,6 +72,7 @@ export class GalleryEngine {
                         }
                         if (!store.deviceEnrollmentId) {
                             store.setIsEnrolledDevice(true);
+                            rememberEnrolledWallId(data.wallId);
                         }
                     }
                     this.galleryStateCallbacks.forEach((cb) => cb(data));

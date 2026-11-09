@@ -25,6 +25,7 @@ import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-route
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { readEnrolledWallId, useGalleryStore } from '~/lib/galleryStore';
 import { $adminStopImpersonation } from '~/server/admin.fns';
 
 import { KeyboardToggle } from './KeyboardToggle';
@@ -138,6 +139,12 @@ function HeaderAuthSection() {
                     setSignOutDialogOpen(false);
                     queryClient.setQueryData(authQueryOptions().queryKey, null);
                     await router.invalidate();
+                    const { wallId, isEnrolledDevice } = useGalleryStore.getState();
+                    const enrolledWallId = (isEnrolledDevice && wallId) || readEnrolledWallId();
+                    if (enrolledWallId) {
+                        navigate({ to: '/gallery', search: { w: enrolledWallId } });
+                        return;
+                    }
                     navigate({ to: '/' });
                 },
                 onError: async (ctx) => {

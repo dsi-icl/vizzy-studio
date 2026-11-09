@@ -37,6 +37,24 @@ export const useGalleryStore: GalleryStateCreator =
 
 if (typeof window !== 'undefined') window.__GALLERY_STORE__ = useGalleryStore;
 
+const ENROLLED_WALL_KEY = 'vizzy_gallery_enrolled_wall';
+
+export function rememberEnrolledWallId(wallId: string) {
+    try {
+        sessionStorage.setItem(ENROLLED_WALL_KEY, wallId);
+    } catch {
+        // no-op: private mode or blocked storage
+    }
+}
+
+export function readEnrolledWallId(): string | null {
+    try {
+        return sessionStorage.getItem(ENROLLED_WALL_KEY);
+    } catch {
+        return null;
+    }
+}
+
 export function initGalleryStore(params: {
     wallId: string | null;
     enrollmentModeEnabled: boolean;
