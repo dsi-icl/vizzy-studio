@@ -221,9 +221,11 @@ describe('wall video recovery', () => {
         harness.runAnimationFrames();
         expect(video.pendingFrameCount).toBe(1);
 
+        const playCount = video.playCount;
         harness.engine.registerLayer(video.layer, video.video as unknown as HTMLVideoElement);
         harness.runAnimationFrames();
         expect(video.pendingFrameCount).toBe(1);
+        expect(video.playCount).toBe(playCount);
 
         const registeredLayer = harness.engine.layers.get(1);
         if (registeredLayer?.type !== 'video') throw new Error('Expected video layer');
@@ -234,5 +236,67 @@ describe('wall video recovery', () => {
         harness.setElapsed(10_000);
         harness.checkStalls();
         expect(video.loadCount).toBe(0);
+    });
+
+    test('a React ref update cannot restore stale playback over a live sync', () => {
+        const harness = makeHarness();
+        const video = harness.makeVideo(1);
+        if (video.layer.type !== 'video') throw new Error('Expected video layer');
+        const live = harness.engine.layers.get(1);
+        if (live?.type !== 'video') throw new Error('Expected video layer');
+        live.playback = { status: 'playing', anchorMediaTime: 4, anchorServerTime: 100_000 };
+
+        harness.engine.registerLayer(
+            {
+                ...video.layer,
+                playback: { status: 'paused', anchorMediaTime: 0, anchorServerTime: 0 }
+            },
+            video.video as unknown as HTMLVideoElement
+        );
+        expect(live.playback).toMatchObject({
+            status: 'playing',
+            anchorMediaTime: 4
+        });
+    });
+
+    test('corrects both late and early screens without seeking across a loop boundary', () => {
+        const harness = makeHarness();
+        const video = harness.makeVideo(1);
+        harness.runAnimationFrames();
+        const layer = harness.engine.layers.get(1);
+        if (layer?.type !== 'video') throw new Error('Expected video layer');
+
+        harness.setElapsed(1_000);
+        video.video.currentTime = 0.6;
+        harness.engine['driftController'](undefined, layer);
+        expect(video.seeks.at(-1)).toBe(1);
+
+        video.video.currentTime = 1.4;
+        harness.engine['driftController'](undefined, layer);
+        expect(video.seeks.at(-1)).toBe(1);
+
+        harness.setElapsed(10_100);
+        video.video.currentTime = 9.9;
+        const seekCount = video.seeks.length;
+        harness.engine['driftController'](undefined, layer);
+        expect(video.seeks).toHaveLength(seekCount);
+        expect(video.video.playbackRate).toBeGreaterThan(1);
+    });
+
+    test('uses the frame about to be displayed instead of the element playhead', () => {
+        const harness = makeHarness();
+        const video = harness.makeVideo(1);
+        const layer = harness.engine.layers.get(1);
+        if (layer?.type !== 'video') throw new Error('Expected video layer');
+
+        harness.setElapsed(1_000);
+        video.video.currentTime = 1;
+        const seekCount = video.seeks.length;
+        harness.engine['driftController'](
+            { mediaTime: 0.5, expectedDisplayTime: 1_000 } as VideoFrameCallbackMetadata,
+            layer
+        );
+        expect(video.seeks).toHaveLength(seekCount + 1);
+        expect(video.seeks.at(-1)).toBe(1);
     });
 });
