@@ -25,6 +25,7 @@ import {
     wallBindingSources,
     wallsByWallId
 } from '~/lib/busState';
+import { sendPendingWallPresentation } from '~/lib/busState.presentation';
 import { releaseProjectContextIfUnused } from '~/lib/busState.projectContext';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { logAuditDenied } from '~/server/audit';
@@ -325,11 +326,13 @@ export async function completeHelloRegistration(
 
         const boundScope = wallBindings.get(effectiveWallId);
 
-        peer.send(
-            boundScope !== undefined && !signageBlankWalls.has(effectiveWallId)
-                ? getWallHydratePayload(boundScope, effectiveWallId)
-                : EMPTY_HYDRATE
-        );
+        if (!sendPendingWallPresentation(effectiveWallId, peer)) {
+            peer.send(
+                boundScope !== undefined && !signageBlankWalls.has(effectiveWallId)
+                    ? getWallHydratePayload(boundScope, effectiveWallId)
+                    : EMPTY_HYDRATE
+            );
+        }
 
         broadcastWallNodeCountToEditors(effectiveWallId);
         broadcastWallBindingToEditors(effectiveWallId);

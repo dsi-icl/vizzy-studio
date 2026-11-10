@@ -9,6 +9,30 @@ import {
 } from './types';
 
 const LAYER_ANIMATION_DURATION = 100;
+const VIDEO_WATCHDOG_INTERVAL_MS = 250;
+const VIDEO_STALL_AFTER_MS = 1_500;
+const VIDEO_FIRST_FRAME_GRACE_MS = 5_000;
+const VIDEO_SEEK_GRACE_MS = 2_000;
+const VIDEO_RELOAD_RETRY_MS = 5_000;
+const CLOCK_SAMPLE_WINDOW_MS = 10_000;
+const VIDEO_DRIFT_DEADBAND_SECONDS = 0.08;
+const VIDEO_HARD_SEEK_SECONDS = 0.25;
+
+type VideoRecoveryState = {
+    video: HTMLVideoElement;
+    lastFrameAt: number;
+    frameIntervalMs: number | null;
+    hasFrame: boolean;
+    active: boolean;
+    phase: 'watching' | 'seeking' | 'reloading';
+    phaseStartedAt: number;
+    reloadAttempts: number;
+    recoveryFrames: number;
+    frameCallbackId: number | null;
+    resumeOnLoad: (() => void) | null;
+    lastFallbackFrameCount: number | null;
+    lastFallbackMediaTime: number;
+};
 
 export interface Viewport {
     x: number;
@@ -25,11 +49,15 @@ export class WallEngine {
     private reconnectClearTimer: ReturnType<typeof setTimeout> | null = null;
     private playbackStartRafs = new Map<number, number>();
     private playbackDriftRafs = new Map<number, number>();
+    private videoRecovery = new Map<number, VideoRecoveryState>();
+    private videoWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+    private monotonicNow = () => performance.now();
 
     // Clock Sync State
     private clockOffset = 0;
-    private bestRTT = Infinity;
-    private rttResetTimer: ReturnType<typeof setTimeout> | null = null;
+    private clockSamples: Array<{ receivedAt: number; rtt: number; offset: number }> = [];
+    private clockSynced = false;
+    private pendingSlideReady: string | null = null;
 
     // Render State
     public layers = new Map<number, LayerWithWallEngineState>();
@@ -52,14 +80,17 @@ export class WallEngine {
             },
             onOpen: () => {
                 console.log('Wall Engine: Connected to Master Server');
-                // Reset clock sync on every (re)connect
-                this.clockOffset = 0;
-                this.bestRTT = Infinity;
+                // Keep the last offset until a fresh authenticated sample arrives.
+                this.clockSynced = false;
+                this.clockSamples = [];
+                this.pendingSlideReady = null;
                 if (this.pingTimer) clearTimeout(this.pingTimer);
-                this.startClockSync();
             },
             onMessage: (event) => this.handleMessage(event)
         });
+        // BusClient rejects outgoing frames until hello_authenticated. Starting
+        // here makes the first clock ping reach the server immediately.
+        this.bus.onReady(() => this.startClockSync());
 
         // On reconnecting: avoid immediate full clear/hydrate churn during short network blips.
         // Only clear if disconnect is sustained.
@@ -78,6 +109,10 @@ export class WallEngine {
                 }
             }
         });
+        this.videoWatchdogTimer = setInterval(
+            () => this.checkForStalledVideos(),
+            VIDEO_WATCHDOG_INTERVAL_MS
+        );
     }
 
     /** Access the underlying WebSocket (changes on each reconnect) */
@@ -89,10 +124,13 @@ export class WallEngine {
         console.log('Wall Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
         if (this.reconnectClearTimer) clearTimeout(this.reconnectClearTimer);
+        if (this.videoWatchdogTimer) clearInterval(this.videoWatchdogTimer);
+        this.pendingSlideReady = null;
         for (const rafId of this.playbackStartRafs.values()) cancelAnimationFrame(rafId);
         this.playbackStartRafs.clear();
         for (const rafId of this.playbackDriftRafs.values()) cancelAnimationFrame(rafId);
         this.playbackDriftRafs.clear();
+        for (const numericId of this.videoRecovery.keys()) this.forgetVideoRecovery(numericId);
         this.bus.destroy();
         this.layoutCallbacks.clear();
     }
@@ -131,6 +169,11 @@ export class WallEngine {
 
     public registerLayer(layer: LayerWithWallComponentState, el: HTMLElement) {
         let layerPtr = this.layers.get(layer.numericId);
+        const sameVideoElement =
+            layerPtr?.type === 'video' &&
+            layer.type === 'video' &&
+            layerPtr.el === el &&
+            layerPtr.url === layer.url;
         if (!layerPtr) {
             layerPtr = {
                 ...layer,
@@ -145,8 +188,8 @@ export class WallEngine {
             // Hydrate can reuse numericIds across slides. Always refresh the cached layer
             // payload so stale visibility/position from a previous slide cannot leak.
             const preservedVideoPlayback =
-                layerPtr.type === 'video' && layer.type === 'video'
-                    ? (layerPtr.playback ?? layer.playback)
+                layerPtr.type === 'video' && layer.type === 'video' && layerPtr.url === layer.url
+                    ? layerPtr.playback
                     : null;
 
             Object.assign(layerPtr, layer);
@@ -160,11 +203,14 @@ export class WallEngine {
             }
         }
         layerPtr.el = el; // Update ref if React re-rendered
-        if (layerPtr.type !== 'video' || layer.type !== 'video') return;
-        layerPtr.playback = layer.playback; // Ensure we have the latest state
+        if (layerPtr.type !== 'video' || layer.type !== 'video') {
+            this.forgetVideoRecovery(layer.numericId);
+            return;
+        }
+        this.ensureVideoRecovery(layerPtr, el as HTMLVideoElement);
 
-        // Evaluate the timeline and start playing/seeking immediately
-        this.handlePlaybackStateChange(layerPtr);
+        // Re-rendered React refs should not restart an already running video.
+        if (!sameVideoElement) this.handlePlaybackStateChange(layerPtr);
     }
 
     // --- CLOCK SYNC ---
@@ -185,16 +231,32 @@ export class WallEngine {
     }
 
     private handlePong(data: Omit<Extract<GSMessage, { type: 'pong' }>, 'type'>) {
-        const rtt = Date.now() - data.t0 - (data.t2 - data.t1);
-        if (rtt < this.bestRTT) {
-            this.bestRTT = rtt;
-            this.clockOffset = (data.t1 - data.t0 + (data.t2 - Date.now())) / 2;
+        const receivedAt = Date.now();
+        const rtt = receivedAt - data.t0 - (data.t2 - data.t1);
+        if (!Number.isFinite(rtt) || rtt < 0 || rtt > 10_000) return;
+        const offset = (data.t1 - data.t0 + data.t2 - receivedAt) / 2;
+        this.clockSamples = this.clockSamples.filter(
+            (sample) => receivedAt - sample.receivedAt < CLOCK_SAMPLE_WINDOW_MS
+        );
+        this.clockSamples.push({ receivedAt, rtt, offset });
+        const best = this.clockSamples.reduce((a, b) => (a.rtt <= b.rtt ? a : b));
+        this.clockOffset = best.offset;
+        this.clockSynced = true;
+        this.flushSlideReady();
+    }
+
+    public reportSlideReady(presentationId: string) {
+        this.pendingSlideReady = presentationId;
+        this.flushSlideReady();
+    }
+
+    private flushSlideReady() {
+        if (!this.pendingSlideReady || !this.clockSynced || !this.bus.ready) return;
+        if (
+            this.bus.sendJSON({ type: 'wall_slide_ready', presentationId: this.pendingSlideReady })
+        ) {
+            this.pendingSlideReady = null;
         }
-        // Periodically reset bestRTT to allow network environment changes to register.
-        if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
-        this.rttResetTimer = setTimeout(() => {
-            this.bestRTT = Infinity;
-        }, 5000);
     }
 
     // --- MESSAGE ROUTING ---
@@ -282,7 +344,8 @@ export class WallEngine {
                 data.type === 'upsert_layer' ||
                 data.type === 'delete_layer' ||
                 data.type === 'reboot' ||
-                data.type === 'device_enrollment'
+                data.type === 'device_enrollment' ||
+                data.type === 'wall_slide_start'
             ) {
                 this.layoutCallbacks.forEach((cb) => cb(data));
             } else if (data.type === 'video_sync' || data.type === 'video_seek') {
@@ -301,10 +364,170 @@ export class WallEngine {
     }
 
     // --- PLAYBACK & SYNC LOGIC ---
+    private ensureVideoRecovery(
+        layer: Extract<LayerWithWallEngineState, { type: 'video' }>,
+        video: HTMLVideoElement
+    ): VideoRecoveryState {
+        const existing = this.videoRecovery.get(layer.numericId);
+        if (existing?.video === video) return existing;
+        if (existing) this.forgetVideoRecovery(layer.numericId);
+
+        const state: VideoRecoveryState = {
+            video,
+            lastFrameAt: this.monotonicNow(),
+            frameIntervalMs: null,
+            hasFrame: false,
+            active: false,
+            phase: 'watching',
+            phaseStartedAt: 0,
+            reloadAttempts: 0,
+            recoveryFrames: 0,
+            frameCallbackId: null,
+            resumeOnLoad: null,
+            lastFallbackFrameCount: null,
+            lastFallbackMediaTime: video.currentTime
+        };
+        this.videoRecovery.set(layer.numericId, state);
+        return state;
+    }
+
+    private forgetVideoRecovery(layerId: number) {
+        const state = this.videoRecovery.get(layerId);
+        if (!state) return;
+        const pendingStartRaf = this.playbackStartRafs.get(layerId);
+        if (pendingStartRaf !== undefined) cancelAnimationFrame(pendingStartRaf);
+        this.playbackStartRafs.delete(layerId);
+        const pendingDriftRaf = this.playbackDriftRafs.get(layerId);
+        if (pendingDriftRaf !== undefined) cancelAnimationFrame(pendingDriftRaf);
+        this.playbackDriftRafs.delete(layerId);
+        if (state.frameCallbackId !== null) {
+            state.video.cancelVideoFrameCallback?.(state.frameCallbackId);
+        }
+        if (state.resumeOnLoad) state.video.removeEventListener('loadeddata', state.resumeOnLoad);
+        this.videoRecovery.delete(layerId);
+    }
+
+    private noteVideoFrame(state: VideoRecoveryState) {
+        const now = this.monotonicNow();
+        if (state.hasFrame) state.frameIntervalMs = now - state.lastFrameAt;
+        state.hasFrame = true;
+        state.lastFrameAt = now;
+        if (state.phase !== 'watching' && ++state.recoveryFrames >= 2) {
+            state.phase = 'watching';
+            state.reloadAttempts = 0;
+            state.recoveryFrames = 0;
+        }
+    }
+
+    private requestNextVideoFrame(
+        layer: Extract<LayerWithWallEngineState, { type: 'video' }>,
+        state: VideoRecoveryState
+    ) {
+        if (state.frameCallbackId !== null || !state.active) return;
+        state.frameCallbackId = state.video.requestVideoFrameCallback((_now, metadata) => {
+            state.frameCallbackId = null;
+            if (
+                this.videoRecovery.get(layer.numericId) !== state ||
+                this.layers.get(layer.numericId) !== layer ||
+                !state.active
+            )
+                return;
+            this.noteVideoFrame(state);
+            this.driftController(metadata, layer);
+            this.requestNextVideoFrame(layer, state);
+        });
+    }
+
+    private expectedMediaTime(
+        layer: Extract<LayerWithWallEngineState, { type: 'video' }>,
+        atServerTime = this.getServerTime()
+    ) {
+        let expectedTime =
+            layer.playback.anchorMediaTime +
+            (atServerTime - layer.playback.anchorServerTime) / 1000;
+        if ((layer.loop ?? true) && layer.duration) expectedTime %= layer.duration;
+        return Math.max(0, expectedTime);
+    }
+
+    private checkForStalledVideos() {
+        const now = this.monotonicNow();
+        for (const [layerId, state] of this.videoRecovery) {
+            const layer = this.layers.get(layerId);
+            if (layer?.type !== 'video' || layer.el !== state.video || !state.video.isConnected) {
+                this.forgetVideoRecovery(layerId);
+                continue;
+            }
+            if (
+                !state.active ||
+                layer.playback.status !== 'playing' ||
+                layer.config.visible === false ||
+                this.getServerTime() < layer.playback.anchorServerTime
+            )
+                continue;
+
+            const stallAfter = state.hasFrame
+                ? Math.max(VIDEO_STALL_AFTER_MS, Math.min(5_000, (state.frameIntervalMs ?? 0) * 4))
+                : VIDEO_FIRST_FRAME_GRACE_MS;
+            if (state.phase === 'watching' && now - state.lastFrameAt >= stallAfter) {
+                state.phase = 'seeking';
+                state.phaseStartedAt = now;
+                state.recoveryFrames = 0;
+                if (state.video.readyState >= 1) {
+                    state.video.currentTime = this.expectedMediaTime(layer);
+                }
+                state.video.play().catch((error) => console.error('Video recovery failed:', error));
+            } else if (
+                state.phase === 'seeking' &&
+                now - state.phaseStartedAt >= VIDEO_SEEK_GRACE_MS
+            ) {
+                this.reloadStalledVideo(layer, state, now);
+            } else if (
+                state.phase === 'reloading' &&
+                now - state.phaseStartedAt >=
+                    Math.min(30_000, VIDEO_RELOAD_RETRY_MS * 2 ** (state.reloadAttempts - 1))
+            ) {
+                this.reloadStalledVideo(layer, state, now);
+            }
+        }
+    }
+
+    private reloadStalledVideo(
+        layer: Extract<LayerWithWallEngineState, { type: 'video' }>,
+        state: VideoRecoveryState,
+        now: number
+    ) {
+        state.phase = 'reloading';
+        state.phaseStartedAt = now;
+        state.reloadAttempts++;
+        state.recoveryFrames = 0;
+        if (state.frameCallbackId !== null) {
+            state.video.cancelVideoFrameCallback?.(state.frameCallbackId);
+            state.frameCallbackId = null;
+        }
+        const pendingDriftRaf = this.playbackDriftRafs.get(layer.numericId);
+        if (pendingDriftRaf !== undefined) cancelAnimationFrame(pendingDriftRaf);
+        this.playbackDriftRafs.delete(layer.numericId);
+        state.lastFallbackFrameCount = null;
+        state.lastFallbackMediaTime = 0;
+        if (state.resumeOnLoad) {
+            state.video.removeEventListener('loadeddata', state.resumeOnLoad);
+            state.resumeOnLoad = null;
+        }
+        state.resumeOnLoad = () => {
+            state.resumeOnLoad = null;
+            if (this.videoRecovery.get(layer.numericId) === state) {
+                this.handlePlaybackStateChange(layer);
+            }
+        };
+        state.video.addEventListener('loadeddata', state.resumeOnLoad, { once: true });
+        state.video.load();
+    }
+
     private handlePlaybackStateChange(layer: Extract<LayerWithWallEngineState, { type: 'video' }>) {
         const video = layer.el as HTMLVideoElement;
         if (!video || typeof video.play !== 'function') return;
         const layerId = layer.numericId;
+        const state = this.ensureVideoRecovery(layer, video);
         const pendingStartRaf = this.playbackStartRafs.get(layerId);
         if (pendingStartRaf !== undefined) {
             cancelAnimationFrame(pendingStartRaf);
@@ -316,49 +539,59 @@ export class WallEngine {
             this.playbackDriftRafs.delete(layerId);
         }
 
-        // CRITICAL HYDRATION FIX:
-        // Wait for the video to parse its headers before attempting to seek
-        if (video.readyState === 0) {
-            video.addEventListener(
-                'loadedmetadata',
-                () => {
-                    this.handlePlaybackStateChange(layer);
-                },
-                { once: true }
-            );
-            return;
-        }
-        if (video.readyState < 2) {
-            // 2 = HAVE_CURRENT_DATA
-            video.addEventListener(
-                'loadeddata',
-                () => {
-                    this.handlePlaybackStateChange(layer);
-                },
-                { once: true }
-            );
-            return;
-        }
-
         if (layer.playback.status === 'paused') {
+            state.active = false;
+            state.phase = 'watching';
+            state.recoveryFrames = 0;
+            if (state.frameCallbackId !== null) {
+                video.cancelVideoFrameCallback?.(state.frameCallbackId);
+                state.frameCallbackId = null;
+            }
             video.pause();
             video.playbackRate = 1.0;
-            if (Math.abs(video.currentTime - layer.playback.anchorMediaTime) > 0.05) {
+            if (
+                video.readyState >= 1 &&
+                Math.abs(video.currentTime - layer.playback.anchorMediaTime) > 0.05
+            ) {
                 video.currentTime = layer.playback.anchorMediaTime;
             }
             layer.rvfcActive = false;
-        } else if (layer.playback.status === 'playing') {
+        }
+
+        // A single listener resumes playback after hydration or a local reload.
+        if (video.readyState < 2) {
+            if (!state.resumeOnLoad) {
+                state.resumeOnLoad = () => {
+                    state.resumeOnLoad = null;
+                    if (this.videoRecovery.get(layerId) === state)
+                        this.handlePlaybackStateChange(layer);
+                };
+                video.addEventListener('loadeddata', state.resumeOnLoad, { once: true });
+            }
+            return;
+        }
+        if (state.resumeOnLoad) {
+            video.removeEventListener('loadeddata', state.resumeOnLoad);
+            state.resumeOnLoad = null;
+        }
+
+        if (layer.playback.status === 'playing') {
+            if (!state.active) {
+                state.active = true;
+                state.lastFrameAt = this.monotonicNow();
+                state.hasFrame = false;
+                state.frameIntervalMs = null;
+                state.phase = 'watching';
+                state.recoveryFrames = 0;
+                state.lastFallbackFrameCount = null;
+                state.lastFallbackMediaTime = video.currentTime;
+            }
             const checkTime = () => {
                 const now = this.getServerTime();
 
                 if (now >= layer.playback.anchorServerTime) {
                     // If we joined late, calculate exactly where we should be NOW
-                    let expectedTime =
-                        layer.playback.anchorMediaTime +
-                        (now - layer.playback.anchorServerTime) / 1000;
-                    if ((layer.loop ?? true) && layer.duration) {
-                        expectedTime = expectedTime % layer.duration;
-                    }
+                    const expectedTime = this.expectedMediaTime(layer);
 
                     if (Math.abs(video.currentTime - expectedTime) > 0.5) {
                         video.currentTime = expectedTime;
@@ -367,21 +600,34 @@ export class WallEngine {
                     video.play().catch((e) => console.error('Autoplay blocked:', e));
 
                     // Attach Drift Controller safely
-                    if ('requestVideoFrameCallback' in video) {
-                        if (!layer.rvfcActive) {
-                            layer.rvfcActive = true; // Lock it so it doesn't duplicate
-                            video.requestVideoFrameCallback((_n, m) =>
-                                this.driftController(m, layer)
-                            );
-                        }
+                    if (
+                        typeof (video as { requestVideoFrameCallback?: unknown })
+                            .requestVideoFrameCallback === 'function'
+                    ) {
+                        layer.rvfcActive = true;
+                        this.requestNextVideoFrame(layer, state);
                     } else {
-                        // Fallback for browsers without RVFC: run drift correction at frame rate.
+                        // Observe decoded frames where RVFC is unavailable.
                         const driftLoop = () => {
-                            if (layer.playback.status !== 'playing' || !layer.el) {
+                            if (!state.active || this.videoRecovery.get(layerId) !== state) {
                                 this.playbackDriftRafs.delete(layerId);
                                 return;
                             }
-                            this.driftController(undefined, layer);
+                            const quality = video.getVideoPlaybackQuality?.();
+                            const frameCount = quality
+                                ? quality.totalVideoFrames - quality.droppedVideoFrames
+                                : null;
+                            const advanced =
+                                frameCount !== null
+                                    ? state.lastFallbackFrameCount !== null &&
+                                      frameCount > state.lastFallbackFrameCount
+                                    : video.currentTime > state.lastFallbackMediaTime + 0.01;
+                            state.lastFallbackFrameCount = frameCount;
+                            state.lastFallbackMediaTime = video.currentTime;
+                            if (advanced) {
+                                this.noteVideoFrame(state);
+                                this.driftController(undefined, layer);
+                            }
                             const rafId = requestAnimationFrame(driftLoop);
                             this.playbackDriftRafs.set(layerId, rafId);
                         };
@@ -401,7 +647,7 @@ export class WallEngine {
     }
 
     private driftController(
-        _metadata: VideoFrameCallbackMetadata | undefined,
+        metadata: VideoFrameCallbackMetadata | undefined,
         layer: Extract<LayerWithWallEngineState, { type: 'video' }>
     ) {
         if (layer.playback.status !== 'playing' || !layer.el) {
@@ -415,33 +661,29 @@ export class WallEngine {
         }
 
         const video = layer.el as HTMLVideoElement;
-        const currentServerTime = this.getServerTime();
-
-        // Master timeline formula
-        let expectedTime =
-            layer.playback.anchorMediaTime +
-            (currentServerTime - layer.playback.anchorServerTime) / 1000;
-        if ((layer.loop ?? true) && layer.duration) {
-            expectedTime = expectedTime % layer.duration;
+        const expectedDisplayTime = metadata?.expectedDisplayTime;
+        const atServerTime =
+            typeof expectedDisplayTime === 'number' && Number.isFinite(expectedDisplayTime)
+                ? this.getServerTime() + expectedDisplayTime - this.monotonicNow()
+                : this.getServerTime();
+        const expectedTime = this.expectedMediaTime(layer, atServerTime);
+        const observedTime =
+            typeof metadata?.mediaTime === 'number' && Number.isFinite(metadata.mediaTime)
+                ? metadata.mediaTime
+                : video.currentTime;
+        let drift = expectedTime - observedTime;
+        if ((layer.loop ?? true) && layer.duration > 0) {
+            if (drift > layer.duration / 2) drift -= layer.duration;
+            if (drift < -layer.duration / 2) drift += layer.duration;
         }
-        // Use element currentTime (same strategy as editor); metadata.mediaTime can diverge
-        // across browser implementations and loop boundaries.
-        const drift = expectedTime - video.currentTime;
 
-        // Apply drift corrections
-        if (drift > 0.5) {
-            video.currentTime = expectedTime; // Hard seek if hopelessly lost
-        } else if (drift > 0.3) {
-            video.playbackRate = 1.05; // Subtly speed up
-        } else if (drift < -0.3) {
-            video.playbackRate = 0.95; // Subtly slow down
+        if (Math.abs(drift) >= VIDEO_HARD_SEEK_SECONDS) {
+            video.currentTime = this.expectedMediaTime(layer);
+            video.playbackRate = 1;
+        } else if (Math.abs(drift) > VIDEO_DRIFT_DEADBAND_SECONDS) {
+            video.playbackRate = Math.max(0.9, Math.min(1.1, 1 + drift));
         } else {
-            video.playbackRate = 1.0; // Frame locked
-        }
-
-        // Loop exactly when the next hardware frame is presented
-        if ('requestVideoFrameCallback' in video) {
-            video.requestVideoFrameCallback((_n, m) => this.driftController(m, layer));
+            video.playbackRate = 1;
         }
     }
 
