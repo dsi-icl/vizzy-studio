@@ -22,6 +22,7 @@ import {
     wallBindingSources,
     wallsByWallId
 } from '~/lib/busState';
+import { prepareWallPresentation } from '~/lib/busState.presentation';
 import { isCustomProject } from '~/lib/customProject';
 import { serveWallPath } from '~/lib/serveUrls';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
@@ -358,7 +359,7 @@ async function performLiveBindNow(
             scope.customRenderUrl
         );
         try {
-            hydrateWallNodes(wallId);
+            if (!prepareWallPresentation(wallId, scopeId)) hydrateWallNodes(wallId);
             broadcastToControllersByWallRaw(wallId, getWallHydratePayload(scopeId, wallId));
             void broadcastSlidesSnapshotToControllersByWall(wallId, commitId);
         } catch (err) {

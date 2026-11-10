@@ -14,6 +14,9 @@ const VIDEO_STALL_AFTER_MS = 1_500;
 const VIDEO_FIRST_FRAME_GRACE_MS = 5_000;
 const VIDEO_SEEK_GRACE_MS = 2_000;
 const VIDEO_RELOAD_RETRY_MS = 5_000;
+const CLOCK_SAMPLE_WINDOW_MS = 10_000;
+const VIDEO_DRIFT_DEADBAND_SECONDS = 0.08;
+const VIDEO_HARD_SEEK_SECONDS = 0.25;
 
 type VideoRecoveryState = {
     video: HTMLVideoElement;
@@ -52,8 +55,9 @@ export class WallEngine {
 
     // Clock Sync State
     private clockOffset = 0;
-    private bestRTT = Infinity;
-    private rttResetTimer: ReturnType<typeof setTimeout> | null = null;
+    private clockSamples: Array<{ receivedAt: number; rtt: number; offset: number }> = [];
+    private clockSynced = false;
+    private pendingSlideReady: string | null = null;
 
     // Render State
     public layers = new Map<number, LayerWithWallEngineState>();
@@ -76,14 +80,17 @@ export class WallEngine {
             },
             onOpen: () => {
                 console.log('Wall Engine: Connected to Master Server');
-                // Reset clock sync on every (re)connect
-                this.clockOffset = 0;
-                this.bestRTT = Infinity;
+                // Keep the last offset until a fresh authenticated sample arrives.
+                this.clockSynced = false;
+                this.clockSamples = [];
+                this.pendingSlideReady = null;
                 if (this.pingTimer) clearTimeout(this.pingTimer);
-                this.startClockSync();
             },
             onMessage: (event) => this.handleMessage(event)
         });
+        // BusClient rejects outgoing frames until hello_authenticated. Starting
+        // here makes the first clock ping reach the server immediately.
+        this.bus.onReady(() => this.startClockSync());
 
         // On reconnecting: avoid immediate full clear/hydrate churn during short network blips.
         // Only clear if disconnect is sustained.
@@ -118,6 +125,7 @@ export class WallEngine {
         if (this.pingTimer) clearTimeout(this.pingTimer);
         if (this.reconnectClearTimer) clearTimeout(this.reconnectClearTimer);
         if (this.videoWatchdogTimer) clearInterval(this.videoWatchdogTimer);
+        this.pendingSlideReady = null;
         for (const rafId of this.playbackStartRafs.values()) cancelAnimationFrame(rafId);
         this.playbackStartRafs.clear();
         for (const rafId of this.playbackDriftRafs.values()) cancelAnimationFrame(rafId);
@@ -161,6 +169,11 @@ export class WallEngine {
 
     public registerLayer(layer: LayerWithWallComponentState, el: HTMLElement) {
         let layerPtr = this.layers.get(layer.numericId);
+        const sameVideoElement =
+            layerPtr?.type === 'video' &&
+            layer.type === 'video' &&
+            layerPtr.el === el &&
+            layerPtr.url === layer.url;
         if (!layerPtr) {
             layerPtr = {
                 ...layer,
@@ -175,8 +188,8 @@ export class WallEngine {
             // Hydrate can reuse numericIds across slides. Always refresh the cached layer
             // payload so stale visibility/position from a previous slide cannot leak.
             const preservedVideoPlayback =
-                layerPtr.type === 'video' && layer.type === 'video'
-                    ? (layerPtr.playback ?? layer.playback)
+                layerPtr.type === 'video' && layer.type === 'video' && layerPtr.url === layer.url
+                    ? layerPtr.playback
                     : null;
 
             Object.assign(layerPtr, layer);
@@ -194,11 +207,10 @@ export class WallEngine {
             this.forgetVideoRecovery(layer.numericId);
             return;
         }
-        layerPtr.playback = layer.playback; // Ensure we have the latest state
         this.ensureVideoRecovery(layerPtr, el as HTMLVideoElement);
 
-        // Evaluate the timeline and start playing/seeking immediately
-        this.handlePlaybackStateChange(layerPtr);
+        // Re-rendered React refs should not restart an already running video.
+        if (!sameVideoElement) this.handlePlaybackStateChange(layerPtr);
     }
 
     // --- CLOCK SYNC ---
@@ -219,16 +231,32 @@ export class WallEngine {
     }
 
     private handlePong(data: Omit<Extract<GSMessage, { type: 'pong' }>, 'type'>) {
-        const rtt = Date.now() - data.t0 - (data.t2 - data.t1);
-        if (rtt < this.bestRTT) {
-            this.bestRTT = rtt;
-            this.clockOffset = (data.t1 - data.t0 + (data.t2 - Date.now())) / 2;
+        const receivedAt = Date.now();
+        const rtt = receivedAt - data.t0 - (data.t2 - data.t1);
+        if (!Number.isFinite(rtt) || rtt < 0 || rtt > 10_000) return;
+        const offset = (data.t1 - data.t0 + data.t2 - receivedAt) / 2;
+        this.clockSamples = this.clockSamples.filter(
+            (sample) => receivedAt - sample.receivedAt < CLOCK_SAMPLE_WINDOW_MS
+        );
+        this.clockSamples.push({ receivedAt, rtt, offset });
+        const best = this.clockSamples.reduce((a, b) => (a.rtt <= b.rtt ? a : b));
+        this.clockOffset = best.offset;
+        this.clockSynced = true;
+        this.flushSlideReady();
+    }
+
+    public reportSlideReady(presentationId: string) {
+        this.pendingSlideReady = presentationId;
+        this.flushSlideReady();
+    }
+
+    private flushSlideReady() {
+        if (!this.pendingSlideReady || !this.clockSynced || !this.bus.ready) return;
+        if (
+            this.bus.sendJSON({ type: 'wall_slide_ready', presentationId: this.pendingSlideReady })
+        ) {
+            this.pendingSlideReady = null;
         }
-        // Periodically reset bestRTT to allow network environment changes to register.
-        if (this.rttResetTimer) clearTimeout(this.rttResetTimer);
-        this.rttResetTimer = setTimeout(() => {
-            this.bestRTT = Infinity;
-        }, 5000);
     }
 
     // --- MESSAGE ROUTING ---
@@ -316,7 +344,8 @@ export class WallEngine {
                 data.type === 'upsert_layer' ||
                 data.type === 'delete_layer' ||
                 data.type === 'reboot' ||
-                data.type === 'device_enrollment'
+                data.type === 'device_enrollment' ||
+                data.type === 'wall_slide_start'
             ) {
                 this.layoutCallbacks.forEach((cb) => cb(data));
             } else if (data.type === 'video_sync' || data.type === 'video_seek') {
@@ -409,10 +438,13 @@ export class WallEngine {
         });
     }
 
-    private expectedMediaTime(layer: Extract<LayerWithWallEngineState, { type: 'video' }>) {
+    private expectedMediaTime(
+        layer: Extract<LayerWithWallEngineState, { type: 'video' }>,
+        atServerTime = this.getServerTime()
+    ) {
         let expectedTime =
             layer.playback.anchorMediaTime +
-            (this.getServerTime() - layer.playback.anchorServerTime) / 1000;
+            (atServerTime - layer.playback.anchorServerTime) / 1000;
         if ((layer.loop ?? true) && layer.duration) expectedTime %= layer.duration;
         return Math.max(0, expectedTime);
     }
@@ -615,7 +647,7 @@ export class WallEngine {
     }
 
     private driftController(
-        _metadata: VideoFrameCallbackMetadata | undefined,
+        metadata: VideoFrameCallbackMetadata | undefined,
         layer: Extract<LayerWithWallEngineState, { type: 'video' }>
     ) {
         if (layer.playback.status !== 'playing' || !layer.el) {
@@ -629,20 +661,29 @@ export class WallEngine {
         }
 
         const video = layer.el as HTMLVideoElement;
-        const expectedTime = this.expectedMediaTime(layer);
-        // Use element currentTime (same strategy as editor); metadata.mediaTime can diverge
-        // across browser implementations and loop boundaries.
-        const drift = expectedTime - video.currentTime;
+        const expectedDisplayTime = metadata?.expectedDisplayTime;
+        const atServerTime =
+            typeof expectedDisplayTime === 'number' && Number.isFinite(expectedDisplayTime)
+                ? this.getServerTime() + expectedDisplayTime - this.monotonicNow()
+                : this.getServerTime();
+        const expectedTime = this.expectedMediaTime(layer, atServerTime);
+        const observedTime =
+            typeof metadata?.mediaTime === 'number' && Number.isFinite(metadata.mediaTime)
+                ? metadata.mediaTime
+                : video.currentTime;
+        let drift = expectedTime - observedTime;
+        if ((layer.loop ?? true) && layer.duration > 0) {
+            if (drift > layer.duration / 2) drift -= layer.duration;
+            if (drift < -layer.duration / 2) drift += layer.duration;
+        }
 
-        // Apply drift corrections
-        if (drift > 0.5) {
-            video.currentTime = expectedTime; // Hard seek if hopelessly lost
-        } else if (drift > 0.3) {
-            video.playbackRate = 1.05; // Subtly speed up
-        } else if (drift < -0.3) {
-            video.playbackRate = 0.95; // Subtly slow down
+        if (Math.abs(drift) >= VIDEO_HARD_SEEK_SECONDS) {
+            video.currentTime = this.expectedMediaTime(layer);
+            video.playbackRate = 1;
+        } else if (Math.abs(drift) > VIDEO_DRIFT_DEADBAND_SECONDS) {
+            video.playbackRate = Math.max(0.9, Math.min(1.1, 1 + drift));
         } else {
-            video.playbackRate = 1.0; // Frame locked
+            video.playbackRate = 1;
         }
     }
 

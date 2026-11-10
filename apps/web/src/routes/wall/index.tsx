@@ -23,6 +23,8 @@ import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
 const HYDRATE_FADE_MS = 1000;
 const HYDRATE_IFRAME_TIMEOUT_MS = 2000;
+const HYDRATE_VIDEO_READY_TIMEOUT_MS = 8_000;
+const PRESENTATION_START_FALLBACK_MS = 12_000;
 const WALL_MEDIA_COOKIE_REFRESH_MS = 60 * 60 * 1000;
 const warmedImageUrls = new Set<string>();
 type HydrateScopeContext = {
@@ -32,6 +34,7 @@ type HydrateScopeContext = {
 };
 type HydrateStagePayload = {
     layers: LayerWithWallComponentState[];
+    presentationId?: string;
     customRenderUrl?: string;
     customRenderCompat: boolean;
     bindingId?: string;
@@ -86,7 +89,15 @@ function WallApp() {
         loadedKeys: Set<string>;
         timeoutId: number | null;
     } | null>(null);
+    const presentationRef = useRef<{
+        id: string;
+        mediaReady: boolean;
+        startAt: number | null;
+        startTimer: number | null;
+        fallbackTimer: number | null;
+    } | null>(null);
     const stageHydrateRef = useRef<((next: HydrateStagePayload) => void) | null>(null);
+    const maybeStartPresentationRef = useRef<() => void>(() => {});
     const lastHydrateContextRef = useRef<{ hasContent: boolean } & HydrateScopeContext>({
         hasContent: false
     });
@@ -164,13 +175,24 @@ function WallApp() {
         iframeGateRef.current = null;
     };
 
+    const clearPresentation = () => {
+        const presentation = presentationRef.current;
+        if (presentation?.startTimer !== null && presentation?.startTimer !== undefined)
+            window.clearTimeout(presentation.startTimer);
+        if (presentation?.fallbackTimer !== null && presentation?.fallbackTimer !== undefined)
+            window.clearTimeout(presentation.fallbackTimer);
+        presentationRef.current = null;
+    };
+
     const countExpectedGatedResources = (
         nextLayers: LayerWithWallComponentState[],
         nextCustomRenderUrl?: string
     ) => {
         if (nextCustomRenderUrl) return 1;
         return nextLayers.filter(
-            (layer) => layer.config.visible && (layer.type === 'web' || layer.type === 'image')
+            (layer) =>
+                layer.config.visible &&
+                (layer.type === 'web' || layer.type === 'image' || layer.type === 'video')
         ).length;
     };
 
@@ -184,7 +206,12 @@ function WallApp() {
         if (prev.hasContent !== nextHasContent) return true;
         if (!prev.hasContent && !nextHasContent) return false;
 
-        return prev.projectId !== next.projectId || prev.commitId !== next.commitId;
+        return (
+            Boolean(next.presentationId) ||
+            prev.projectId !== next.projectId ||
+            prev.commitId !== next.commitId ||
+            prev.slideId !== next.slideId
+        );
     };
 
     const applyHydrateContent = (next: HydrateStagePayload) => {
@@ -208,6 +235,7 @@ function WallApp() {
     const beginFadeIn = () => {
         clearFadeTimer();
         clearIframeGate();
+        clearPresentation();
         transitionPhaseRef.current = 'fadingIn';
         setBlackOverlayOpacity(0);
         fadeTimerRef.current = window.setTimeout(() => {
@@ -219,10 +247,62 @@ function WallApp() {
         }, HYDRATE_FADE_MS);
     };
 
+    const maybeStartPresentation = () => {
+        const presentation = presentationRef.current;
+        if (!presentation?.mediaReady || presentation.startAt === null) return;
+        if (presentation.startTimer !== null) window.clearTimeout(presentation.startTimer);
+        const delay = Math.max(
+            0,
+            presentation.startAt - (engine?.getServerTime() ?? presentation.startAt)
+        );
+        presentation.startTimer = window.setTimeout(() => {
+            if (presentationRef.current?.id === presentation.id) beginFadeIn();
+        }, delay);
+    };
+
+    const finishResourceGate = () => {
+        clearIframeGate();
+        const presentation = presentationRef.current;
+        if (!presentation) {
+            beginFadeIn();
+            return;
+        }
+        presentation.mediaReady = true;
+        // A resource timeout still makes this screen ready to reveal with the
+        // others. Waiting for a missing ready message would split the reveal.
+        engine?.reportSlideReady(presentation.id);
+        maybeStartPresentation();
+    };
+
     const stageHydrate = (next: HydrateStagePayload) => {
+        if (presentationRef.current && transitionPhaseRef.current !== 'visible') {
+            // A newer slide supersedes an older prepare that may never receive a start.
+            clearFadeTimer();
+            clearIframeGate();
+            clearPresentation();
+            queuedHydrateRef.current = null;
+            transitionPhaseRef.current = 'visible';
+        }
         if (transitionPhaseRef.current !== 'visible') {
             queuedHydrateRef.current = next;
             return;
+        }
+
+        if (next.presentationId) {
+            const id = next.presentationId;
+            presentationRef.current = {
+                id,
+                mediaReady: false,
+                startAt: null,
+                startTimer: null,
+                fallbackTimer: window.setTimeout(() => {
+                    const presentation = presentationRef.current;
+                    if (presentation?.id !== id || presentation.startAt !== null) return;
+                    console.warn(`[Wall] Presentation ${id} timed out waiting for server start`);
+                    presentation.startAt = engine?.getServerTime() ?? Date.now();
+                    maybeStartPresentation();
+                }, PRESENTATION_START_FALLBACK_MS)
+            };
         }
 
         if (!shouldFadeHydrate(next)) {
@@ -241,7 +321,7 @@ function WallApp() {
             applyHydrateContent(next);
             const expected = countExpectedGatedResources(next.layers, next.customRenderUrl);
             if (expected <= 0) {
-                beginFadeIn();
+                finishResourceGate();
                 return;
             }
             const cycle = Date.now();
@@ -252,9 +332,12 @@ function WallApp() {
                 cycle,
                 expected,
                 loadedKeys: new Set(),
-                timeoutId: window.setTimeout(() => {
-                    beginFadeIn();
-                }, HYDRATE_IFRAME_TIMEOUT_MS)
+                timeoutId: window.setTimeout(
+                    () => {
+                        finishResourceGate();
+                    },
+                    next.presentationId ? HYDRATE_VIDEO_READY_TIMEOUT_MS : HYDRATE_IFRAME_TIMEOUT_MS
+                )
             };
         }, HYDRATE_FADE_MS);
     };
@@ -263,12 +346,18 @@ function WallApp() {
         if (!gate || gate.cycle !== cycle) return;
         gate.loadedKeys.add(gateKey);
         if (gate.loadedKeys.size >= gate.expected) {
-            beginFadeIn();
+            finishResourceGate();
+        }
+    };
+    const markVideoReady = (video: HTMLVideoElement, numericId: number, cycle: number) => {
+        if (video.readyState >= 2 && !video.seeking) {
+            markIframeReady(`video:${numericId}`, cycle);
         }
     };
 
     useEffect(() => {
         stageHydrateRef.current = stageHydrate;
+        maybeStartPresentationRef.current = maybeStartPresentation;
     });
 
     useEffect(() => {
@@ -404,8 +493,14 @@ function WallApp() {
                     layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
-                    slideId: data.slideId
+                    slideId: data.slideId,
+                    presentationId: data.presentationId
                 });
+            } else if (data.type === 'wall_slide_start') {
+                const presentation = presentationRef.current;
+                if (presentation?.id !== data.presentationId) return;
+                presentation.startAt = data.startAt;
+                maybeStartPresentationRef.current();
             } else if (data.type === 'upsert_layer') {
                 if (data.layer.type === 'image') {
                     const url = data.layer.deepZoom
@@ -559,6 +654,7 @@ function WallApp() {
         return () => {
             clearFadeTimer();
             clearIframeGate();
+            clearPresentation();
         };
     }, []);
 
@@ -804,11 +900,25 @@ function WallApp() {
                     <video
                         key={layer.numericId}
                         {...commonProps}
+                        ref={(el) => {
+                            if (!el) return;
+                            engine?.registerLayer(layer, el);
+                            markVideoReady(el, layer.numericId, iframeGateCycle);
+                        }}
                         src={layer.url}
                         preload="auto"
                         muted
                         playsInline
                         loop={layer.loop ?? true}
+                        onLoadedData={(event) =>
+                            markVideoReady(event.currentTarget, layer.numericId, iframeGateCycle)
+                        }
+                        onSeeked={(event) =>
+                            markVideoReady(event.currentTarget, layer.numericId, iframeGateCycle)
+                        }
+                        onCanPlay={(event) =>
+                            markVideoReady(event.currentTarget, layer.numericId, iframeGateCycle)
+                        }
                         className="object-fill"
                     />
                 );

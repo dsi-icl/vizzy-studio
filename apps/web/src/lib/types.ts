@@ -348,6 +348,7 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         commitId: z.string().optional(),
         slideId: z.string().optional(),
         bindingId: z.string().optional(),
+        presentationId: z.string().optional(),
         layout: StageLayoutSchema.optional(),
         customRender: z
             .object({
@@ -356,6 +357,12 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
             })
             .optional(),
         boundSource: z.enum(['live', 'gallery', 'signage']).optional()
+    }),
+    z.object({ type: z.literal('wall_slide_ready'), presentationId: z.string() }),
+    z.object({
+        type: z.literal('wall_slide_start'),
+        presentationId: z.string(),
+        startAt: z.number()
     }),
     z.object({ type: z.literal('rehydrate_please') }),
     z.object({

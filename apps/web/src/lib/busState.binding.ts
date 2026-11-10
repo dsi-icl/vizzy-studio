@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { cancelScopeCleanup, scheduleScopeCleanup } from './busState.persistence';
+import { cancelWallPresentation } from './busState.presentation';
 import {
     clearControllerTransientForWall,
     scopeWatchers,
@@ -22,6 +23,7 @@ export function bindWall(
     scopeId: ScopeId,
     source: 'live' | 'gallery' | 'signage' = 'gallery'
 ) {
+    cancelWallPresentation(wallId);
     const oldScopeId = wallBindings.get(wallId);
     // Never let old controller API credentials survive a wall rebind.
     revokePortalTokensForWall(wallId);
@@ -71,6 +73,7 @@ export function bindWall(
 }
 
 export function unbindWall(wallId: string) {
+    cancelWallPresentation(wallId);
     const oldScopeId = wallBindings.get(wallId);
     // Wall credentials become invalid immediately when unbound.
     revokePortalTokensForWall(wallId);
