@@ -30,10 +30,14 @@ interface UploadDialogProps {
 }
 
 interface FileProgress {
+    id: string;
     name: string;
     progress: number;
-    status: 'uploading' | 'complete' | 'error';
+    status: 'uploading' | 'complete' | 'error' | 'cancelled';
 }
+
+// Keep a transfer alive if its dialog is removed while the request is in flight.
+const backgroundUploaders = new Set<Uppy>();
 
 function isWoff2File(file: File): boolean {
     return (
@@ -64,29 +68,56 @@ export function UploadDialog({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const uppyRef = useRef<Uppy | null>(null);
     const onUploadCompleteRef = useRef(onUploadComplete);
+    const createTokenFnRef = useRef(createTokenFn);
+    const revokeTokenFnRef = useRef(revokeTokenFn);
+    const openRef = useRef(false);
+    const mountedRef = useRef(true);
+    const tokensToRevokeRef = useRef(new Set<string>());
 
     useEffect(() => {
         onUploadCompleteRef.current = onUploadComplete;
-    }, [onUploadComplete]);
+        createTokenFnRef.current = createTokenFn;
+        revokeTokenFnRef.current = revokeTokenFn;
+    }, [onUploadComplete, createTokenFn, revokeTokenFn]);
 
-    const resetDialogState = useCallback(
-        (tokenToRevoke?: string | null) => {
-            if (tokenToRevoke) {
-                const revoke = revokeTokenFn
-                    ? revokeTokenFn(tokenToRevoke)
-                    : $revokeUploadToken({ data: { token: tokenToRevoke } });
-                revoke.catch(() => {});
-            }
-            if (uppyRef.current) {
-                uppyRef.current.destroy();
-                uppyRef.current = null;
-            }
-            setToken(null);
-            setQrDataUrl(null);
-            setFiles([]);
-        },
-        [revokeTokenFn]
-    );
+    const revokeToken = useCallback((tokenToRevoke: string) => {
+        const revoke = revokeTokenFnRef.current
+            ? revokeTokenFnRef.current(tokenToRevoke)
+            : $revokeUploadToken({ data: { token: tokenToRevoke } });
+        void revoke.catch(() => {});
+    }, []);
+
+    const hasPendingUploads = useCallback(() => {
+        const uppy = uppyRef.current;
+        return Boolean(
+            uppy &&
+            Object.values(uppy.getState().files).some(
+                (file) => !file.progress?.uploadComplete && !file.error
+            )
+        );
+    }, []);
+
+    const cleanupFinishedUploads = useCallback(() => {
+        if (hasPendingUploads()) return;
+        for (const oldToken of tokensToRevokeRef.current) revokeToken(oldToken);
+        tokensToRevokeRef.current.clear();
+        const uppy = uppyRef.current;
+        if (uppy) backgroundUploaders.delete(uppy);
+        if (!openRef.current || !mountedRef.current) {
+            uppyRef.current = null;
+            uppy?.destroy();
+            if (mountedRef.current) setFiles([]);
+        }
+    }, [hasPendingUploads, revokeToken]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            openRef.current = false;
+            cleanupFinishedUploads();
+        };
+    }, [cleanupFinishedUploads]);
 
     // Create upload token when dialog opens
     useEffect(() => {
@@ -94,18 +125,16 @@ export function UploadDialog({
 
         let cancelled = false;
         let issuedToken: string | undefined;
-        const create = createTokenFn
-            ? createTokenFn(projectId)
+        const tokensToRevoke = tokensToRevokeRef.current;
+        const create = createTokenFnRef.current
+            ? createTokenFnRef.current(projectId)
             : $createUploadToken({ data: { projectId } });
 
         create
             .then((result) => {
                 issuedToken = result.token;
                 if (cancelled) {
-                    const revoke = revokeTokenFn
-                        ? revokeTokenFn(result.token)
-                        : $revokeUploadToken({ data: { token: result.token } });
-                    void revoke.catch(() => {});
+                    revokeToken(result.token);
                     return null;
                 }
                 setToken(result.token);
@@ -133,9 +162,15 @@ export function UploadDialog({
             });
         return () => {
             cancelled = true;
-            resetDialogState(issuedToken);
+            if (issuedToken) tokensToRevoke.add(issuedToken);
+            cleanupFinishedUploads();
+            if (mountedRef.current) {
+                setToken(null);
+                setTokenExpiresAt(0);
+                setQrDataUrl(null);
+            }
         };
-    }, [open, projectId, createTokenFn, revokeTokenFn, resetDialogState]);
+    }, [open, projectId, cleanupFinishedUploads, revokeToken]);
 
     // Countdown timer
     useEffect(() => {
@@ -184,27 +219,40 @@ export function UploadDialog({
 
             if (shouldAttachHandlers) {
                 uppy.on('upload-progress', (file, progress) => {
-                    if (!file || !progress.bytesTotal) return;
+                    if (!file || !uppyRef.current?.getFile(file.id) || !progress.bytesTotal) return;
                     const pct = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
-                    setFiles((prev) =>
-                        prev.map((f) => (f.name === file.name ? { ...f, progress: pct } : f))
-                    );
+                    if (mountedRef.current)
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === file.id && f.status === 'uploading'
+                                    ? { ...f, progress: pct }
+                                    : f
+                            )
+                        );
                 });
 
                 uppy.on('upload-success', (file) => {
-                    if (!file) return;
-                    setFiles((prev) =>
-                        prev.map((f) =>
-                            f.name === file.name ? { ...f, progress: 100, status: 'complete' } : f
-                        )
-                    );
+                    if (!file || !uppyRef.current?.getFile(file.id)) return;
+                    if (mountedRef.current)
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === file.id && f.status === 'uploading'
+                                    ? { ...f, progress: 100, status: 'complete' }
+                                    : f
+                            )
+                        );
                 });
 
                 uppy.on('upload-error', (file, error) => {
-                    if (!file) return;
-                    setFiles((prev) =>
-                        prev.map((f) => (f.name === file.name ? { ...f, status: 'error' } : f))
-                    );
+                    if (!file || !uppyRef.current?.getFile(file.id)) return;
+                    if (mountedRef.current)
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === file.id && f.status === 'uploading'
+                                    ? { ...f, status: 'error' }
+                                    : f
+                            )
+                        );
                     const message = error instanceof Error ? error.message : 'Upload failed';
                     toast.error(`${file.name}: ${message}`);
                 });
@@ -212,6 +260,10 @@ export function UploadDialog({
                 uppy.on('complete', (result) => {
                     const failed = result.failed?.length ?? 0;
                     const successful = result.successful?.length ?? 0;
+                    if (successful === 0 && failed === 0) {
+                        cleanupFinishedUploads();
+                        return;
+                    }
                     if (successful > 0) onUploadCompleteRef.current?.();
                     if (failed > 0) {
                         toast.error(
@@ -219,9 +271,10 @@ export function UploadDialog({
                                 ? `${successful} uploaded, ${failed} failed`
                                 : `Upload failed (${failed} file${failed === 1 ? '' : 's'})`
                         );
-                        return;
+                    } else {
+                        toast.success('Upload complete');
                     }
-                    toast.success('Upload complete');
+                    cleanupFinishedUploads();
                 });
             }
 
@@ -229,23 +282,40 @@ export function UploadDialog({
 
             for (const file of selectedFiles) {
                 try {
-                    uppy.addFile({
+                    const id = uppy.addFile({
                         name: file.name,
                         type: file.type,
                         data: file,
                         meta: { projectId, uploadToken: token }
                     });
-                    newEntries.push({ name: file.name, progress: 0, status: 'uploading' });
+                    newEntries.push({ id, name: file.name, progress: 0, status: 'uploading' });
                 } catch (e: any) {
                     toast.error(e.message);
                 }
             }
 
-            setFiles((prev) => [...prev, ...newEntries]);
-
-            uppy.upload();
+            if (newEntries.length === 0) return;
+            setFiles((prev) => [
+                ...prev.filter((entry) => !newEntries.some((file) => file.id === entry.id)),
+                ...newEntries
+            ]);
+            backgroundUploaders.add(uppy);
+            void uppy.upload();
         },
-        [projectId, token]
+        [projectId, token, cleanupFinishedUploads]
+    );
+
+    const cancelUpload = useCallback(
+        (id: string) => {
+            const uppy = uppyRef.current;
+            if (!uppy?.getFile(id)) return;
+            uppy.removeFile(id);
+            setFiles((prev) =>
+                prev.map((file) => (file.id === id ? { ...file, status: 'cancelled' } : file))
+            );
+            cleanupFinishedUploads();
+        },
+        [cleanupFinishedUploads]
     );
 
     const handleDrop = useCallback(
@@ -275,7 +345,13 @@ export function UploadDialog({
     );
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => {
+                openRef.current = nextOpen;
+                setOpen(nextOpen);
+            }}
+        >
             <DialogTrigger nativeButton={false} render={<div />}>
                 {trigger}
             </DialogTrigger>
@@ -373,8 +449,8 @@ export function UploadDialog({
 
                         {files.length > 0 && (
                             <div className="mt-3 max-h-32 space-y-1.5 overflow-y-auto">
-                                {files.map((f, i) => (
-                                    <div key={`${f.name}-${i}`} className="flex items-center gap-2">
+                                {files.map((f) => (
+                                    <div key={f.id} className="flex items-center gap-2">
                                         <div className="flex-1 truncate text-xs">{f.name}</div>
                                         {f.status === 'uploading' && (
                                             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
@@ -384,8 +460,23 @@ export function UploadDialog({
                                                 />
                                             </div>
                                         )}
+                                        {f.status === 'uploading' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => cancelUpload(f.id)}
+                                                aria-label={`Cancel upload of ${f.name}`}
+                                                className="cursor-pointer text-[10px] text-muted-foreground hover:text-destructive"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
                                         {f.status === 'complete' && (
                                             <span className="text-[10px] text-green-500">Done</span>
+                                        )}
+                                        {f.status === 'cancelled' && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                                Canceled
+                                            </span>
                                         )}
                                         {f.status === 'error' && (
                                             <span className="text-[10px] text-destructive">
