@@ -122,3 +122,30 @@ describe('oval layer wire schema', () => {
         expect(layer.strokeWidth).toBe(LEGACY_CIRCLE.strokeWidth);
     });
 });
+
+describe('legacy video layer wire schema', () => {
+    test('opens a slide saved by the old direct upload path', () => {
+        const oldVideo = {
+            numericId: 12,
+            type: 'video',
+            name: 'old.mp4',
+            url: '/api/assets/old.mp4',
+            config,
+            playback: { status: 'paused', anchorMediaTime: 0, anchorServerTime: 0 }
+        };
+
+        const hydrate = GSMessageSchema.parse({ type: 'hydrate', layers: [oldVideo] });
+        expect(hydrate.type).toBe('hydrate');
+        if (hydrate.type === 'hydrate') {
+            expect(hydrate.layers[0]).toMatchObject({
+                type: 'video',
+                duration: 0,
+                loop: true,
+                rvfcActive: false,
+                playback: oldVideo.playback
+            });
+        }
+        const migrated = migrateLegacyLayer(oldVideo);
+        expect(migrateLegacyLayer(migrated)).toEqual(migrated);
+    });
+});
