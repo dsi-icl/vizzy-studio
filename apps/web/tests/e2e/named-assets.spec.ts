@@ -51,11 +51,24 @@ test.describe('media layer naming', () => {
 test.describe('media asset persistence', () => {
     test.use({ storageState: 'apps/web/tests/.auth/user_editor.json' });
 
-    test('media filename label survives upload, save, and reload', async ({ page }) => {
+    test('image upload continues after closing the dialog and survives save and reload', async ({
+        page
+    }) => {
         const { privateProjectId, privateCommitId, privateSlideId } = readManifest().fixtures;
         const layerLabel = `Named.Asset.${randomUUID()}`;
         const originalFilename = `${layerLabel}.PNG`;
         const image = readFileSync(resolve(process.cwd(), 'apps/web/public/favicon-96x96.png'));
+        let signalUploadStarted!: () => void;
+        let continueUpload!: () => void;
+        const uploadStarted = new Promise<void>((resolve) => (signalUploadStarted = resolve));
+        const uploadCanContinue = new Promise<void>((resolve) => (continueUpload = resolve));
+        await page.route('**/api/uploads/**', async (route) => {
+            if (route.request().method() === 'PATCH') {
+                signalUploadStarted();
+                await uploadCanContinue;
+            }
+            await route.continue();
+        });
 
         await page.goto(`/quarry/editor/${privateProjectId}/${privateCommitId}/${privateSlideId}`);
         await expect(page.getByRole('heading', { name: 'Layers' })).toBeVisible();
@@ -74,14 +87,16 @@ test.describe('media asset persistence', () => {
             mimeType: 'image/png',
             buffer: image
         });
-        await expect(uploadDialog.getByText('Done', { exact: true })).toBeVisible({
-            timeout: 45_000
-        });
-        await page.keyboard.press('Escape');
-        await expect(uploadDialog).toBeHidden();
+        try {
+            await uploadStarted;
+            await page.keyboard.press('Escape');
+            await expect(uploadDialog).toBeHidden();
+        } finally {
+            continueUpload();
+        }
 
         const assetCard = page.locator('[data-asset-id]').filter({ hasText: originalFilename });
-        await expect(assetCard).toBeVisible();
+        await expect(assetCard).toBeVisible({ timeout: 45_000 });
         await assetCard.click();
         await expect(page.getByText(layerLabel, { exact: true })).toBeVisible({
             timeout: 45_000
