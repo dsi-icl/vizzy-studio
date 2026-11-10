@@ -89,7 +89,7 @@ ENV NODE_ENV=production \
     TMP_DIR=/app/data/tmp \
     ASSET_DIR=/app/data/assets \
     PLAYWRIGHT_BROWSERS_PATH=/app/data/playwright \
-    FFMPEG_PATH=/app/data/bin/ffmpeg \
+    FFMPEG_PATH=/usr/bin/ffmpeg \
     FFMPEG_STATIC_URL=https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
     FFMPEG_STATIC_SHA256=
 
@@ -99,7 +99,8 @@ COPY package.json /app/package.json
 # Runtime system packages:
 # - tini: proper signal handling / zombie reaping
 # - ca-certificates: TLS trust store
-# - curl/xz-utils: required to fetch/extract static ffmpeg at boot
+# - curl/xz-utils: required for optional static FFmpeg overrides at boot
+# - ffmpeg: default video transcoder, available before the app accepts uploads
 # - Playwright browser OS deps (Chromium) so boot-time install can run reliably
 RUN set -eux; \
     PW_VERSION="$(bun -e "import pkg from '/app/package.json'; const v = pkg?.workspaces?.catalog?.playwright; if(!v) process.exit(1); process.stdout.write(String(v).replace(/^[~^]/,''));")"; \
@@ -114,7 +115,7 @@ RUN set -eux; \
 # Layer B: minimal process/runtime essentials.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends tini ca-certificates curl xz-utils iputils-ping netcat-openbsd gosu libatomic1; \
+    apt-get install -y --no-install-recommends tini ca-certificates curl xz-utils iputils-ping netcat-openbsd gosu libatomic1 ffmpeg; \
     rm -rf /var/lib/apt/lists/*
 
 # Layer browser shared-library dependencies used by Playwright Chromium.

@@ -61,12 +61,31 @@ test.describe('media asset persistence', () => {
         await expect(page.getByRole('heading', { name: 'Layers' })).toBeVisible();
         await expect(page.locator('#titlebar')).toContainText('Harness Private Project');
 
-        await page.locator('#titlebar input[type="file"]').setInputFiles({
+        await page
+            .getByRole('button', { name: 'Upload', exact: true })
+            .or(page.getByRole('button', { name: 'Drop files or click to upload' }))
+            .first()
+            .click();
+        const uploadDialog = page.getByRole('dialog');
+        await expect(uploadDialog.getByText('Upload Assets', { exact: true })).toBeVisible();
+        await expect(uploadDialog.locator('code')).toBeVisible();
+        await uploadDialog.locator('input[type="file"]').setInputFiles({
             name: originalFilename,
             mimeType: 'image/png',
             buffer: image
         });
-        await expect(page.getByText(layerLabel, { exact: true })).toBeVisible();
+        await expect(uploadDialog.getByText('Done', { exact: true })).toBeVisible({
+            timeout: 45_000
+        });
+        await page.keyboard.press('Escape');
+        await expect(uploadDialog).toBeHidden();
+
+        const assetCard = page.locator('[data-asset-id]').filter({ hasText: originalFilename });
+        await expect(assetCard).toBeVisible();
+        await assetCard.click();
+        await expect(page.getByText(layerLabel, { exact: true })).toBeVisible({
+            timeout: 45_000
+        });
         await expect(page.getByTitle(originalFilename, { exact: true })).toBeVisible({
             timeout: 45_000
         });
