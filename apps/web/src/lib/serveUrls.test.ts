@@ -128,10 +128,39 @@ describe('rewriteServeLocation', () => {
         );
     });
 
+    test('accepts absolute redirects built from the forwarded public host', () => {
+        const publicOrigin = 'https://studio.example';
+        assert.equal(
+            rewriteServeLocation(
+                `${publicOrigin}${BASE}/control/?step=1`,
+                UPSTREAM,
+                BASE,
+                BASE,
+                publicOrigin
+            ),
+            `${BASE}/control/?step=1`
+        );
+        assert.equal(
+            rewriteServeLocation(`${publicOrigin}/login`, UPSTREAM, BASE, BASE, publicOrigin),
+            `${BASE}/login`
+        );
+        assert.equal(rewriteServeLocation(`${publicOrigin}${BASE}/control`, UPSTREAM, BASE), null);
+    });
+
     test('refuses anything but the demo redirecting within itself', () => {
         assert.equal(rewriteServeLocation('https://cdn.example/asset.js', UPSTREAM, BASE), null);
         assert.equal(rewriteServeLocation('//evil.example/x', UPSTREAM, BASE), null);
         assert.equal(rewriteServeLocation('http://', UPSTREAM, BASE), null);
+        assert.equal(
+            rewriteServeLocation(
+                'https://elsewhere.example/x',
+                UPSTREAM,
+                BASE,
+                BASE,
+                'https://studio.example'
+            ),
+            null
+        );
     });
 
     test('cannot redirect the iframe at one of our own routes', () => {

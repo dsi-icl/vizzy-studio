@@ -92,7 +92,8 @@ export function rewriteServeLocation(
     location: string,
     upstreamUrl: string,
     basePath: string,
-    publicBasePath = basePath
+    publicBasePath = basePath,
+    publicOrigin?: string
 ): string | null {
     let resolved: URL;
     let upstreamOrigin: string;
@@ -103,7 +104,11 @@ export function rewriteServeLocation(
         return null;
     }
 
-    if (resolved.origin !== upstreamOrigin) return null;
+    // Demos receive Vizzy's public host in X-Forwarded-Host. Frameworks may
+    // therefore use that origin for an absolute redirect, even though the
+    // gateway connected to the demo's private host. Rewriting the path below
+    // still keeps the browser inside this project's /serve namespace.
+    if (resolved.origin !== upstreamOrigin && resolved.origin !== publicOrigin) return null;
 
     if (
         publicBasePath !== basePath &&
