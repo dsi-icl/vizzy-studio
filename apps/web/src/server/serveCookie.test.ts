@@ -6,6 +6,7 @@ import { env } from '@repo/env';
 
 import {
     createServeCookie,
+    obsoleteServeCookieHeaders,
     resolveServeCookieGrant,
     serveCookieName,
     shouldRefreshServeCookie,
@@ -16,6 +17,7 @@ const PROJECT = '507f1f77bcf86cd799439011';
 const OTHER_PROJECT = '507f1f77bcf86cd799439012';
 const ROUTE_A = 'AAAAAAAAAAAAAAAAAAAAAA';
 const ROUTE_B = 'BBBBBBBBBBBBBBBBBBBBBB';
+const ROUTE_C = 'CCCCCCCCCCCCCCCCCCCCCC';
 const actor = {
     surface: 'wall' as const,
     wallId: 'wall-a',
@@ -29,6 +31,39 @@ const request = (path = `/serve/${PROJECT}/screen`, cookie?: string, referer?: s
     });
 
 describe('serve cookie', () => {
+    test('clears older bindings for the same wall while preserving concurrent grants', () => {
+        const old = value(
+            createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
+        );
+        const currentActor = { ...actor, bindingId: ROUTE_B };
+        const current = value(
+            createServeCookie({
+                request: request(),
+                projectId: PROJECT,
+                routeId: ROUTE_B,
+                actor: currentActor
+            })
+        );
+        const otherWall = value(
+            createServeCookie({
+                request: request(),
+                projectId: PROJECT,
+                routeId: ROUTE_C,
+                actor: { ...actor, wallId: 'wall-b', bindingId: ROUTE_C }
+            })
+        );
+        const deletions = obsoleteServeCookieHeaders(
+            request(`/serve/${PROJECT}/_launch`, `${old}; ${current}; ${otherWall}`),
+            PROJECT,
+            currentActor
+        );
+        assert.equal(deletions.length, 1);
+        assert.match(
+            deletions[0]!,
+            new RegExp(`^${serveCookieName(PROJECT, ROUTE_A)}=; Max-Age=0`)
+        );
+    });
+
     test('signs a grant and scopes its cookie to the static project base', () => {
         const setCookie = createServeCookie({
             request: request(),

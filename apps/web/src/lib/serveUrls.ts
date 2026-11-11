@@ -3,6 +3,20 @@
 export const SERVE_PATH_PREFIX = '/serve';
 export const SERVE_SESSION_QUERY_PARAM = '__vizzySession';
 
+export function isSocketIoPollingRequest(rest: string, searchParams: URLSearchParams): boolean {
+    return /(?:^|\/)socket\.io\/?$/i.test(rest) && searchParams.get('transport') === 'polling';
+}
+
+/** Socket.IO can keep an HTTP poll open until its heartbeat; 30s is too short. */
+export function serveFetchTimeoutMs(
+    rest: string,
+    searchParams: URLSearchParams,
+    configuredMs: number
+): number {
+    const baseMs = Number.isFinite(configuredMs) && configuredMs > 0 ? configuredMs : 30_000;
+    return isSocketIoPollingRequest(rest, searchParams) ? Math.max(baseMs, 55_000) : baseMs;
+}
+
 /** Entry points, matching the route names every demo exposes. */
 export function serveBasePath(projectId: string): string {
     return `${SERVE_PATH_PREFIX}/${projectId}`;

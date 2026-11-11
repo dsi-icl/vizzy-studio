@@ -370,6 +370,11 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         progress: z.number()
     }),
     z.object({ type: z.literal('clear_stage') }),
+    z.object({
+        type: z.literal('wall_serve_loaded'),
+        bindingId: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+        elapsedMs: z.number().min(0).max(120_000)
+    }),
     z.object({ type: z.literal('ping') }),
     z.object({ type: z.literal('pong'), t0: z.number(), t1: z.number(), t2: z.number() }),
     z.object({ type: z.literal('reboot'), immediate: z.boolean().optional() }),

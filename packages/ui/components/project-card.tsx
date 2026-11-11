@@ -60,8 +60,9 @@ interface ProjectCardProps {
     onWallUnbindRequest?: (wallId: string) => Promise<boolean | void> | boolean | void;
     onControllerTokenRequest?: (wallId: string) => Promise<string | null | void>;
     onControllerLaunchRequest?: (wallId: string) => Promise<{
-        url: string;
-        keepaliveUrl: string;
+        url?: string;
+        keepaliveUrl?: string;
+        errorCode?: string;
     } | null | void>;
     onActiveWallIdChange?: (wallId: string | null) => void;
     previewHref?: string;
@@ -135,6 +136,7 @@ function ProjectCardDialogBody({
     const [controllerPortalToken, setControllerPortalToken] = useState<string | null>(null);
     const [controllerLaunchUrl, setControllerLaunchUrl] = useState<string | null>(null);
     const [controllerKeepaliveUrl, setControllerKeepaliveUrl] = useState<string | null>(null);
+    const [controllerIframeLoadedUrl, setControllerIframeLoadedUrl] = useState<string | null>(null);
     const [isRefreshingController, setIsRefreshingController] = useState(false);
     const [refreshRebootDone, setRefreshRebootDone] = useState(false);
     const [refreshIframeLoaded, setRefreshIframeLoaded] = useState(false);
@@ -160,12 +162,14 @@ function ProjectCardDialogBody({
             void onControllerLaunchRequest(activeWallId)
                 .then((launch) => {
                     if (cancelled) return;
-                    if (launch?.url) {
+                    if (launch?.url && launch.keepaliveUrl) {
                         setControllerLaunchUrl(launch.url);
                         setControllerKeepaliveUrl(launch.keepaliveUrl);
                         setErrorMessage(null);
                     } else {
-                        setErrorMessage('Could not open demo controller; retrying');
+                        setErrorMessage(
+                            `Demo authorization failed (${launch?.errorCode ?? 'unknown'}); retrying`
+                        );
                         retryTimer = window.setTimeout(requestLaunch, retryDelayMs);
                         retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
                     }
@@ -367,7 +371,7 @@ function ProjectCardDialogBody({
                 className={`grid h-full min-h-0 w-full ${panelClassName} transition-all duration-300`}
             >
                 <div
-                    className={`min-w-0 overflow-hidden border-r ${
+                    className={`relative min-w-0 overflow-hidden border-r ${
                         isFullscreen && hasController
                             ? 'opacity-100'
                             : 'pointer-events-none opacity-0'
@@ -384,12 +388,28 @@ function ProjectCardDialogBody({
                             }
                             className="h-full w-full border-0 bg-background"
                             onLoad={() => {
+                                setControllerIframeLoadedUrl(controllerUrl);
                                 if (isRefreshingController) {
                                     setRefreshIframeLoaded(true);
                                 }
                             }}
                         />
                     ) : null}
+                    {hasController &&
+                        onControllerLaunchRequest &&
+                        (isLoadingWall ||
+                            !controllerUrl ||
+                            controllerIframeLoadedUrl !== controllerUrl) && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-background text-sm text-muted-foreground">
+                                {isLoadingWall
+                                    ? 'Binding wall…'
+                                    : errorMessage && !controllerUrl
+                                      ? errorMessage
+                                      : controllerUrl
+                                        ? 'Loading demo…'
+                                        : 'Authorizing demo…'}
+                            </div>
+                        )}
                 </div>
 
                 <div className="min-w-0">

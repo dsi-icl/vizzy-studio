@@ -262,6 +262,41 @@ export function createServeCookie(input: {
     ].join('; ');
 }
 
+/** Drop obsolete grants for this wall when a new binding launches a demo. */
+export function obsoleteServeCookieHeaders(
+    request: Request,
+    projectId: string,
+    actor: ServeActor,
+    now = Date.now()
+): string[] {
+    const cookieHeader = request.headers.get('cookie');
+    if (!cookieHeader) return [];
+    const routePrefix = `${legacyServeCookieName(projectId)}_`;
+    const deletions: string[] = [];
+    for (const part of cookieHeader.split(';')) {
+        const boundary = part.indexOf('=');
+        if (boundary < 0) continue;
+        const name = part.slice(0, boundary).trim();
+        if (!name.startsWith(routePrefix)) continue;
+        const routeId = name.slice(routePrefix.length);
+        if (!SERVE_SESSION_ID_PATTERN.test(routeId)) continue;
+        const token = part.slice(boundary + 1).trim();
+        const stored = decodeRouteCookie(token, projectId, routeId)?.grant;
+        const obsolete =
+            !stored ||
+            stored.exp <= now ||
+            (actor.surface !== 'preview' &&
+                stored.wallId === actor.wallId &&
+                stored.bindingId !== actor.bindingId);
+        if (!obsolete) continue;
+        deletions.push(
+            `${name}=; Max-Age=0; Path=${serveBasePath(projectId)}; HttpOnly; SameSite=None; Secure`
+        );
+        if (deletions.length >= 32) break;
+    }
+    return deletions;
+}
+
 function routeHint(request: Request, projectId: string): string | null {
     const url = new URL(request.url);
     if (url.searchParams.has(SERVE_SESSION_QUERY_PARAM)) {

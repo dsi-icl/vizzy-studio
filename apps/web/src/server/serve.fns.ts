@@ -10,6 +10,7 @@ import type { AuthContext } from '~/server/requestAuthContext';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import { issueServeLaunch } from '~/server/serveLaunch';
 import { servePublicUrl } from '~/server/serveOrigin';
+import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 
 const projectId = z.string().regex(/^[a-f\d]{24}$/i);
 
@@ -23,6 +24,7 @@ export const $issueBoundServeLaunch = createServerFn({ method: 'POST' })
     .validator(z.object({ projectId, wallId: z.string(), entry: z.enum(['screen', 'control']) }))
     .middleware([actorAuthContextMiddleware])
     .handler(async ({ data, context }) => {
+        const startedAt = performance.now();
         const auth = (context as { authContext?: AuthContext } | undefined)?.authContext;
         const device = auth?.device;
         const allowed =
@@ -43,6 +45,7 @@ export const $issueBoundServeLaunch = createServerFn({ method: 'POST' })
         }
         const project = await getProject(data.projectId);
         if (!project || !isCustomProject(project)) throw new Error('Custom project not found');
+        const projectResolvedAt = performance.now();
         const { ticket, routeId } = await issueServeLaunch({
             projectId: data.projectId,
             entry: data.entry,
@@ -53,9 +56,18 @@ export const $issueBoundServeLaunch = createServerFn({ method: 'POST' })
                 bindingId
             }
         });
+        const traceId = serveTraceId(bindingId);
+        recordServeTiming('authorize', performance.now() - startedAt, {
+            traceId,
+            wallId: data.wallId,
+            projectId: data.projectId,
+            entry: data.entry,
+            projectLookupMs: Math.round(projectResolvedAt - startedAt)
+        });
         return {
             url: launchUrl(data.projectId, ticket),
-            keepaliveUrl: servePublicUrl(serveKeepalivePath(data.projectId, routeId))
+            keepaliveUrl: servePublicUrl(serveKeepalivePath(data.projectId, routeId)),
+            traceId
         };
     });
 

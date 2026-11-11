@@ -32,7 +32,6 @@ import {
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
-    resolveScopeId,
     saveScope,
     scopedState,
     sendJSON,
@@ -44,6 +43,7 @@ import {
     galleriesByWallId,
     signageBlankWalls,
     wallBindings,
+    wallBindingIds,
     wallBindingSources,
     type PeerEntry
 } from '~/lib/busState';
@@ -68,6 +68,7 @@ import { logAuditDenied } from '~/server/audit';
 import { dbCol } from '~/server/collections';
 import { ensureDeviceByPublicKey } from '~/server/devices';
 import { resolveAuthContextFromRequest } from '~/server/requestAuthContext';
+import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 
 import { editorProjectPermissions, enforceWsRateLimit } from './bus.authz';
 import {
@@ -176,6 +177,19 @@ handlers.set('rehydrate_please', ({ entry }) => {
             }
         }
     }
+});
+
+handlers.set('wall_serve_loaded', ({ entry, data }) => {
+    if (entry.meta.specimen !== 'wall') return;
+    const parsed = GSMessageSchema.safeParse(data);
+    if (!parsed.success || parsed.data.type !== 'wall_serve_loaded') return;
+    if (wallBindingIds.get(entry.meta.wallId) !== parsed.data.bindingId) return;
+    recordServeTiming('iframe-load', parsed.data.elapsedMs, {
+        traceId: serveTraceId(parsed.data.bindingId),
+        wallId: entry.meta.wallId,
+        col: entry.meta.col,
+        row: entry.meta.row
+    });
 });
 
 handlers.set('clear_stage', ({ entry, scopeId }) => {

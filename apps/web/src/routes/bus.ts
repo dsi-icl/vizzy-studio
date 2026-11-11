@@ -361,8 +361,14 @@ const hooks = defineHooks({
         const timer = setTimeout(() => {
             pendingHandshakeTimers.delete(peer.id);
             if (!peers.has(peer.id)) {
+                const pending = pendingHelloAuthByPeer.get(peer.id);
                 console.warn(
-                    `[WS] Peer ${peer.id} timed out during handshake (silent/unauthenticated)`
+                    '[WS] Peer timed out during handshake',
+                    JSON.stringify({
+                        peerId: peer.id,
+                        phase: pending ? 'challenge-issued' : 'hello-not-received',
+                        specimen: pending?.hello.specimen ?? null
+                    })
                 );
                 try {
                     peer.close();

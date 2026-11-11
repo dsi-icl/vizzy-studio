@@ -6,6 +6,7 @@ import {
     isPublicServePath,
     parseServePath,
     resolveDemoHost,
+    serveFetchTimeoutMs,
     upstreamPathname,
     rewriteServeLocation,
     serveBasePath,
@@ -209,5 +210,26 @@ describe('upstreamPathname', () => {
     test('strips the prefix for a demo built at the root of its port', () => {
         // Equivalent to nginx `proxy_pass http://127.0.0.1:PORT/` with its trailing slash.
         assert.equal(upstreamPathname(parsed, requested, true), '/assets/main.js');
+    });
+});
+
+describe('serveFetchTimeoutMs', () => {
+    test('allows Socket.IO long polling to outlive its heartbeat interval', () => {
+        assert.equal(
+            serveFetchTimeoutMs('/ws/socket.io/', new URLSearchParams('transport=polling'), 30_000),
+            55_000
+        );
+        assert.equal(
+            serveFetchTimeoutMs(
+                '/ws/socket.io/',
+                new URLSearchParams('transport=websocket'),
+                30_000
+            ),
+            30_000
+        );
+        assert.equal(
+            serveFetchTimeoutMs('/control', new URLSearchParams('transport=polling'), 30_000),
+            30_000
+        );
     });
 });
