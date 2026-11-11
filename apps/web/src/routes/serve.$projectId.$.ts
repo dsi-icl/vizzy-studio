@@ -212,6 +212,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     });
 
     let upstream: Response;
+    const upstreamStartedAt = performance.now();
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
@@ -221,10 +222,22 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             redirect: 'manual',
             signal: AbortSignal.timeout(SERVE_FETCH_TIMEOUT_MS)
         } as RequestInit & { duplex: 'half' });
-    } catch {
+    } catch (error) {
+        const timedOut = error instanceof Error && error.name === 'TimeoutError';
+        console.warn('[Serve] Upstream fetch failed', {
+            projectId,
+            method: request.method,
+            surface: parsed.rest.startsWith('/control')
+                ? 'control'
+                : parsed.rest.startsWith('/screen')
+                  ? 'screen'
+                  : 'other',
+            elapsedMs: Math.round(performance.now() - upstreamStartedAt),
+            kind: timedOut ? 'timeout' : 'fetch-failed'
+        });
         await logAuditFailure({
             action: 'SERVE_PROXY_FAILED',
-            reasonCode: 'UPSTREAM_UNREACHABLE',
+            reasonCode: timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNREACHABLE',
             resourceType: 'project',
             resourceId: projectId,
             executionContext: {
@@ -233,11 +246,18 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 request
             }
         });
-        return new Response('Demo unavailable', { status: 502 });
+        return new Response('Demo unavailable', {
+            status: 502,
+            headers: {
+                'Cache-Control': 'no-store',
+                'X-Vizzy-Serve-Error': timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
+            }
+        });
     }
 
     const headers = buildRelayedHeaders(upstream, request);
     headers.set('Cache-Control', 'private, no-store');
+    if (upstream.status === 502) headers.set('X-Vizzy-Serve-Error', 'upstream-returned-502');
     headers.set('Referrer-Policy', 'no-referrer');
     headers.set('X-Content-Type-Options', 'nosniff');
     // Any upstream content that a browser treats as a document (HTML, SVG,
@@ -266,7 +286,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             location,
             upstreamUrl,
             serveBasePath(projectId),
-            publicBase
+            publicBase,
+            serveOrigin.origin
         );
         if (rewritten === null) {
             await logAuditFailure({
@@ -280,7 +301,13 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                     request
                 }
             });
-            return new Response('Demo sent an invalid redirect', { status: 502 });
+            return new Response('Demo sent an invalid redirect', {
+                status: 502,
+                headers: {
+                    'Cache-Control': 'no-store',
+                    'X-Vizzy-Serve-Error': 'invalid-upstream-location'
+                }
+            });
         }
         const destination = new URL(rewritten, serveOrigin);
         if (grant) destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, grant.routeId);

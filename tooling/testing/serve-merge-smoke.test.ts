@@ -54,10 +54,15 @@ const { servePublicUrl } = await import('../../apps/web/src/server/serveOrigin')
 
 const forwarded: Array<{ url: string; headers: Headers }> = [];
 const realFetch = globalThis.fetch;
+let upstreamLocation = '/assets/app.js';
+let upstreamStatus = 200;
+let upstreamFailure: Error | null = null;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     forwarded.push({ url: String(input), headers: new Headers(init?.headers) });
+    if (upstreamFailure) throw upstreamFailure;
     return new Response('<html>demo</html>', {
-        headers: { 'content-type': 'text/html', location: '/assets/app.js', 'set-cookie': 'bad=1' }
+        status: upstreamStatus,
+        headers: { 'content-type': 'text/html', location: upstreamLocation, 'set-cookie': 'bad=1' }
     });
 }) as typeof fetch;
 
@@ -73,6 +78,63 @@ describe('sandboxed same-host serve gateway', () => {
             servePublicUrl(`/serve/${projectId}/screen`),
             `https://studio.example/serve/${projectId}/screen`
         );
+    });
+
+    test('accepts a control redirect produced from X-Forwarded-Host', async () => {
+        const base = `/serve/${projectId}`;
+        const { ticket, routeId } = await issueServeLaunch({
+            projectId,
+            entry: 'control',
+            actor: { surface: 'preview' }
+        });
+        const launch = await handleServeRequest(request(`${base}/_launch?ticket=${ticket}`));
+        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        upstreamLocation = `https://studio.example${base}/control/`;
+        try {
+            const response = await handleServeRequest(
+                request(`${base}/control?__vizzySession=${routeId}`, cookie)
+            );
+            assert.equal(response.status, 200);
+            assert.equal(
+                response.headers.get('location'),
+                `${base}/control/?__vizzySession=${routeId}`
+            );
+            assert.equal(forwarded.at(-1)?.headers.get('x-forwarded-host'), 'studio.example');
+        } finally {
+            upstreamLocation = '/assets/app.js';
+        }
+    });
+
+    test('distinguishes upstream, timeout, and rejected redirect 502s', async () => {
+        const path = `/serve/${projectId}/public/mini`;
+        try {
+            upstreamStatus = 502;
+            const upstreamResponse = await handleServeRequest(request(path));
+            assert.equal(upstreamResponse.status, 502);
+            assert.equal(
+                upstreamResponse.headers.get('X-Vizzy-Serve-Error'),
+                'upstream-returned-502'
+            );
+
+            upstreamStatus = 200;
+            upstreamFailure = new DOMException('timed out', 'TimeoutError');
+            const timeoutResponse = await handleServeRequest(request(path));
+            assert.equal(timeoutResponse.status, 502);
+            assert.equal(timeoutResponse.headers.get('X-Vizzy-Serve-Error'), 'upstream-timeout');
+
+            upstreamFailure = null;
+            upstreamLocation = 'https://elsewhere.example/control';
+            const redirectResponse = await handleServeRequest(request(path));
+            assert.equal(redirectResponse.status, 502);
+            assert.equal(
+                redirectResponse.headers.get('X-Vizzy-Serve-Error'),
+                'invalid-upstream-location'
+            );
+        } finally {
+            upstreamStatus = 200;
+            upstreamFailure = null;
+            upstreamLocation = '/assets/app.js';
+        }
     });
 
     test('rejects another host and direct unauthenticated demo navigation', async () => {
