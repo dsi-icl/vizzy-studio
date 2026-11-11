@@ -41,6 +41,7 @@ import {
 } from '~/server/serveWebSocket';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
+let pendingServeUpstreamFetches = 0;
 const KEEPALIVE_GIF = Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64');
 const SERVE_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-same-site-none-cookies';
 const SERVE_CONTENT_RESTRICTIONS = "object-src 'none'; base-uri 'self'";
@@ -235,6 +236,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     let upstream: Response;
     const upstreamStartedAt = performance.now();
+    const serveFetchesAtStart = ++pendingServeUpstreamFetches;
+    let serveFetchesAtHeaders = 0;
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
@@ -244,6 +247,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             redirect: 'manual',
             signal: AbortSignal.timeout(timeoutMs)
         } as RequestInit & { duplex: 'half' });
+        serveFetchesAtHeaders = pendingServeUpstreamFetches;
     } catch (error) {
         const timedOut = error instanceof Error && error.name === 'TimeoutError';
         const upstreamMs = performance.now() - upstreamStartedAt;
@@ -252,6 +256,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             projectId,
             requestKind,
             status: 502,
+            serveFetchesAtStart,
+            serveFetchesAtFailure: pendingServeUpstreamFetches,
             errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
         });
         console.warn(
@@ -263,6 +269,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 traceId,
                 elapsedMs: Math.round(upstreamMs),
                 timeoutMs,
+                serveFetchesAtStart,
+                serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorName: error instanceof Error ? error.name : 'unknown',
                 causeCode:
                     error instanceof Error &&
@@ -295,13 +303,22 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 'X-Vizzy-Serve-Error': timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
             }
         });
+    } finally {
+        pendingServeUpstreamFetches -= 1;
     }
 
     const upstreamMs = performance.now() - upstreamStartedAt;
     recordServeTiming(
         'proxy-upstream',
         upstreamMs,
-        { traceId, projectId, requestKind, status: upstream.status },
+        {
+            traceId,
+            projectId,
+            requestKind,
+            status: upstream.status,
+            serveFetchesAtStart,
+            serveFetchesAtHeaders
+        },
         logSample || upstream.status >= 500
     );
     const headers = buildRelayedHeaders(upstream, request);
