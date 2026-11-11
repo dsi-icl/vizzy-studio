@@ -43,6 +43,8 @@ jobs:
                   echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
                   if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
                     echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+                  elif [[ "${GITHUB_REF}" == "refs/heads/integration/main-serve-demos-font-20261027" ]]; then
+                    echo "version=dev-sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
                   else
                     echo "version=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
                   fi
@@ -51,7 +53,7 @@ jobs:
                       echo "tags=sha-${GITHUB_SHA} latest" >> "$GITHUB_OUTPUT"
                       ;;
                     refs/heads/integration/main-serve-demos-font-20261027)
-                      echo "tags=sha-${GITHUB_SHA} dev" >> "$GITHUB_OUTPUT"
+                      echo "tags=sha-${GITHUB_SHA} dev-sha-${GITHUB_SHA} dev" >> "$GITHUB_OUTPUT"
                       ;;
                     refs/tags/v*)
                       echo "tags=sha-${GITHUB_SHA} ${GITHUB_REF_NAME} latest" >> "$GITHUB_OUTPUT"
@@ -70,30 +72,39 @@ jobs:
                     echo "enabled=false" >> "$GITHUB_OUTPUT"
                   fi
 
-            - name: Build OCI image with Buildah
-              id: build
-              uses: redhat-actions/buildah-build@v2
-              with:
-                  image: ${{ steps.prep.outputs.owner_lc }}/vizzy-studio
-                  tags: ${{ steps.meta.outputs.tags }}
-                  containerfiles: |
-                      ./Dockerfile
-                  build-args: |
-                      OCI_CREATED=${{ steps.meta.outputs.created }}
-                      OCI_VERSION=${{ steps.meta.outputs.version }}
-                      OCI_REVISION=${{ github.sha }}
-                      OCI_SOURCE=https://github.com/${{ github.repository }}
-                      BUILD_SOURCEMAPS=${{ steps.sourcemaps.outputs.enabled }}
-                      KEEP_SOURCE_MAPS=${{ steps.sourcemaps.outputs.enabled }}
-                      VITE_GIT_SHA=${{ github.sha }}
-                      APP_COMMIT_SHA=${{ github.sha }}
-                  oci: true
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
 
-            - name: Push image to GHCR
-              uses: redhat-actions/push-to-registry@v3
+            - name: Log in to GHCR
+              uses: docker/login-action@v4
               with:
-                  image: ${{ steps.build.outputs.image }}
-                  tags: ${{ steps.build.outputs.tags }}
                   registry: ghcr.io
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Build and push production image
+              shell: bash
+              env:
+                  IMAGE: ghcr.io/${{ steps.prep.outputs.owner_lc }}/vizzy-studio
+                  TAGS: ${{ steps.meta.outputs.tags }}
+                  OCI_CREATED: ${{ steps.meta.outputs.created }}
+                  OCI_VERSION: ${{ steps.meta.outputs.version }}
+                  BUILD_SOURCEMAPS: ${{ steps.sourcemaps.outputs.enabled }}
+              run: |
+                  set -euo pipefail
+                  read -r -a tags <<< "$TAGS"
+                  tag_args=()
+                  for tag in "${tags[@]}"; do
+                    tag_args+=(--tag "${IMAGE}:${tag}")
+                  done
+                  git archive --format=tar "$GITHUB_SHA" | docker buildx build \
+                    --platform linux/amd64 --target production --push \
+                    "${tag_args[@]}" \
+                    --build-arg "OCI_CREATED=${OCI_CREATED}" \
+                    --build-arg "OCI_VERSION=${OCI_VERSION}" \
+                    --build-arg "OCI_REVISION=${GITHUB_SHA}" \
+                    --build-arg "OCI_SOURCE=https://github.com/${GITHUB_REPOSITORY}" \
+                    --build-arg "BUILD_SOURCEMAPS=${BUILD_SOURCEMAPS}" \
+                    --build-arg "KEEP_SOURCE_MAPS=${BUILD_SOURCEMAPS}" \
+                    --build-arg "VITE_GIT_SHA=${GITHUB_SHA}" \
+                    --build-arg "APP_COMMIT_SHA=${GITHUB_SHA}" -
