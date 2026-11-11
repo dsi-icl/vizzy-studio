@@ -3,8 +3,8 @@
 on:
     push:
         branches:
-            - develop
             - main
+            - integration/main-serve-demos-font-20261027
         tags:
             - 'v*'
     workflow_dispatch:
@@ -21,6 +21,10 @@ permissions:
 
 env:
     FORCE_JAVASCRIPT_ACTIONS_TO_NODE26: 'true'
+
+concurrency:
+    group: container-image-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
     build-and-push:
@@ -42,6 +46,20 @@ jobs:
                   else
                     echo "version=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
                   fi
+                  case "${GITHUB_REF}" in
+                    refs/heads/main)
+                      echo "tags=sha-${GITHUB_SHA} latest" >> "$GITHUB_OUTPUT"
+                      ;;
+                    refs/heads/integration/main-serve-demos-font-20261027)
+                      echo "tags=sha-${GITHUB_SHA} dev" >> "$GITHUB_OUTPUT"
+                      ;;
+                    refs/tags/v*)
+                      echo "tags=sha-${GITHUB_SHA} ${GITHUB_REF_NAME} latest" >> "$GITHUB_OUTPUT"
+                      ;;
+                    *)
+                      echo "tags=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+                      ;;
+                  esac
 
             - name: Resolve sourcemap mode
               id: sourcemaps
@@ -57,9 +75,7 @@ jobs:
               uses: redhat-actions/buildah-build@v2
               with:
                   image: ${{ steps.prep.outputs.owner_lc }}/vizzy-studio
-                  tags: |
-                      sha-${{ github.sha }}
-                      latest
+                  tags: ${{ steps.meta.outputs.tags }}
                   containerfiles: |
                       ./Dockerfile
                   build-args: |
