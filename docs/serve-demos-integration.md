@@ -121,6 +121,21 @@ proxy's CSP permits inline demo scripts and styles while sandboxing documents.
 
 ## Verification
 
+### Staging proxy capacity check
+
+The Web container starts Bun with `BUN_CONFIG_MAX_HTTP_REQUESTS=512` unless the
+deployment sets another value. Bun's default is 256 simultaneous outbound
+`fetch` requests. On a 64-node wall, old long-poll requests and new demo assets
+can overlap. The limit is configurable: set it to `256` to repeat the baseline
+without changing the image.
+
+For a comparable wall switch, inspect `[ServeTiming]` samples for one trace ID.
+`proxy-upstream` includes the time Bun may spend waiting for a fetch slot and
+records `serveFetchesAtStart` and `serveFetchesAtHeaders`. These counters cover
+Serve requests waiting for response headers in this Web process, not every
+outbound request or body stream. Compare screen p95, `iframe-load` p95, 502s,
+and container resource use at 256 and 512 before increasing the limit again.
+
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
 apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts
 apps/web/tests/unit/iframeSandbox.test.ts`.
