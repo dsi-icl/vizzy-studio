@@ -59,12 +59,21 @@ let upstreamStatus = 200;
 let upstreamFailure: Error | null = null;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     forwarded.push({ url: String(input), headers: new Headers(init?.headers) });
+    if (String(input).endsWith('/public/cancel')) {
+        const signal = init?.signal;
+        if (!signal) throw new Error('Missing upstream cancellation signal');
+        upstreamFetchStarted?.(signal);
+        return await new Promise<Response>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+    }
     if (upstreamFailure) throw upstreamFailure;
     return new Response('<html>demo</html>', {
         status: upstreamStatus,
         headers: { 'content-type': 'text/html', location: upstreamLocation, 'set-cookie': 'bad=1' }
     });
 }) as typeof fetch;
+let upstreamFetchStarted: ((signal: AbortSignal) => void) | null = null;
 
 function request(path: string, cookie?: string, origin = 'https://studio.example'): Request {
     return new Request(`${origin}${path}`, {
@@ -134,6 +143,26 @@ describe('sandboxed same-host serve gateway', () => {
             upstreamStatus = 200;
             upstreamFailure = null;
             upstreamLocation = '/assets/app.js';
+        }
+    });
+
+    test('cancels an upstream poll when its browser request is aborted', async () => {
+        const controller = new AbortController();
+        const started = new Promise<AbortSignal>((resolve) => {
+            upstreamFetchStarted = resolve;
+        });
+        try {
+            const response = handleServeRequest(
+                new Request(`https://studio.example/serve/${projectId}/public/cancel`, {
+                    signal: controller.signal
+                })
+            );
+            const upstreamSignal = await started;
+            controller.abort();
+            assert.equal(upstreamSignal.aborted, true);
+            assert.equal((await response).status, 499);
+        } finally {
+            upstreamFetchStarted = null;
         }
     });
 

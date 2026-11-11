@@ -129,12 +129,19 @@ deployment sets another value. Bun's default is 256 simultaneous outbound
 can overlap. The limit is configurable: set it to `256` to repeat the baseline
 without changing the image.
 
+The proxy also forwards client cancellation to the upstream fetch. When a wall
+navigates away, its pending Socket.IO poll should end promptly and log
+`errorCode: client-aborted` with internal status `499`; these cancellations
+are expected and do not generate an upstream failure audit or a 502.
+
 For a comparable wall switch, inspect `[ServeTiming]` samples for one trace ID.
 `proxy-upstream` includes the time Bun may spend waiting for a fetch slot and
 records `serveFetchesAtStart` and `serveFetchesAtHeaders`. These counters cover
 Serve requests waiting for response headers in this Web process, not every
 outbound request or body stream. Compare screen p95, `iframe-load` p95, 502s,
 and container resource use at 256 and 512 before increasing the limit again.
+If slow screens persist while the direct upstream stays fast, check whether
+old `socket-io-polling` requests remain pending after each wall switch.
 
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
 apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts

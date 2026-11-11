@@ -238,6 +238,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     const upstreamStartedAt = performance.now();
     const serveFetchesAtStart = ++pendingServeUpstreamFetches;
     let serveFetchesAtHeaders = 0;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
     try {
         upstream = await fetch(upstreamUrl, {
             method: request.method,
@@ -245,12 +246,29 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
-            signal: AbortSignal.timeout(timeoutMs)
+            // A wall navigation cancels the browser request. Release its old
+            // upstream poll instead of letting it hold a Bun fetch slot.
+            signal: AbortSignal.any([request.signal, timeoutSignal])
         } as RequestInit & { duplex: 'half' });
         serveFetchesAtHeaders = pendingServeUpstreamFetches;
     } catch (error) {
-        const timedOut = error instanceof Error && error.name === 'TimeoutError';
+        const clientAborted = request.signal.aborted;
+        const timedOut =
+            !clientAborted &&
+            (timeoutSignal.aborted || (error instanceof Error && error.name === 'TimeoutError'));
         const upstreamMs = performance.now() - upstreamStartedAt;
+        if (clientAborted) {
+            recordServeTiming('proxy-upstream', upstreamMs, {
+                traceId,
+                projectId,
+                requestKind,
+                status: 499,
+                serveFetchesAtStart,
+                serveFetchesAtFailure: pendingServeUpstreamFetches,
+                errorCode: 'client-aborted'
+            });
+            return new Response(null, { status: 499 });
+        }
         recordServeTiming('proxy-upstream', upstreamMs, {
             traceId,
             projectId,
