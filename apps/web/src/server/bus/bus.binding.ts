@@ -19,6 +19,7 @@ import {
     seedScopeFromDb,
     sendJSON,
     wallBindings,
+    wallBindingIds,
     wallBindingSources,
     wallsByWallId
 } from '~/lib/busState';
@@ -27,6 +28,7 @@ import { isCustomProject } from '~/lib/customProject';
 import { serveWallPath } from '~/lib/serveUrls';
 import { makeScopeLabel, type GSMessage } from '~/lib/types';
 import { dbCol } from '~/server/collections';
+import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 
 export const BIND_OVERRIDE_TIMEOUT_MS = 20_000;
 const wallBindQueues = new Map<string, Promise<unknown>>();
@@ -293,6 +295,7 @@ async function performLiveBindNow(
     source: 'live' | 'gallery' | 'signage' = 'live',
     signageLease = false
 ): Promise<{ ok: boolean; resolvedSlideId?: string; error?: string }> {
+    const startedAt = performance.now();
     try {
         cancelWallUnbindGrace(wallId);
         if (source !== 'signage' && (await isWallTargetedBySignage(wallId))) {
@@ -308,6 +311,7 @@ async function performLiveBindNow(
             dbCol.commits.findById(commitId),
             dbCol.walls.findOne({ wallId })
         ]);
+        const resolvedAt = performance.now();
         if (!wallExists) {
             return { ok: false, error: 'unknown_wall' };
         }
@@ -339,6 +343,7 @@ async function performLiveBindNow(
         if (scope.layers.size === 0) {
             await seedScopeFromDb(scopeId);
         }
+        const seededAt = performance.now();
 
         // Persist authorization metadata before telling wall clients to request
         // the newly bound project's assets.
@@ -348,7 +353,9 @@ async function performLiveBindNow(
             boundSlideId: resolvedSlideId,
             boundSource: source
         });
+        const persistedAt = performance.now();
         bindWall(wallId, scopeId, source);
+        const bindingId = wallBindingIds.get(wallId)!;
 
         notifyControllers(
             wallId,
@@ -376,6 +383,16 @@ async function performLiveBindNow(
         console.log(
             `[WS] Wall ${wallId} bound to scope=${makeScopeLabel(projectId, commitId, resolvedSlideId)}`
         );
+        recordServeTiming('bind', performance.now() - startedAt, {
+            traceId: serveTraceId(bindingId),
+            wallId,
+            projectId,
+            source,
+            wallNodes: getWallNodeCount(wallId),
+            resolveMs: Math.round(resolvedAt - startedAt),
+            seedMs: Math.round(seededAt - resolvedAt),
+            persistMs: Math.round(persistedAt - seededAt)
+        });
         return { ok: true, resolvedSlideId };
     } catch (err) {
         console.error(

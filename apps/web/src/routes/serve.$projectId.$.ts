@@ -10,11 +10,13 @@ import {
 } from '~/lib/serveRequestPolicy';
 import {
     buildServeUpstreamUrl,
+    isSocketIoPollingRequest,
     isPublicServePath,
     parseServePath,
     resolveDemoHost,
     rewriteServeLocation,
     serveBasePath,
+    serveFetchTimeoutMs,
     servePublicBasePath,
     SERVE_SESSION_QUERY_PARAM,
     upstreamPathname
@@ -24,12 +26,14 @@ import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
     createServeCookie,
+    obsoleteServeCookieHeaders,
     resolveServeCookieGrant,
     shouldRefreshServeCookie,
     type ServeActor
 } from '~/server/serveCookie';
 import { consumeServeLaunch } from '~/server/serveLaunch';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
+import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 import {
     isWebSocketUpgrade,
     resolveServeWebSocketUpstream,
@@ -53,6 +57,7 @@ function notFound(): Response {
 }
 
 export async function handleServeRequest(request: Request): Promise<Response> {
+    const requestStartedAt = performance.now();
     if (!isServeOriginRequest(request)) return notFound();
     const serveOrigin = getServeOrigin()!;
     const url = new URL(request.url);
@@ -90,20 +95,24 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         } else if (launch.actor.surface === 'preview') {
             destination.searchParams.set('preview', '1');
         }
-        return new Response(null, {
-            status: 303,
-            headers: {
-                Location: `${destination.pathname}${destination.search}`,
-                'Set-Cookie': createServeCookie({
-                    request,
-                    projectId: parsed.projectId,
-                    routeId: launch.routeId,
-                    actor: launch.actor
-                }),
-                'Cache-Control': 'no-store',
-                'Referrer-Policy': 'no-referrer'
-            }
+        const headers = new Headers({
+            Location: `${destination.pathname}${destination.search}`,
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer'
         });
+        for (const stale of obsoleteServeCookieHeaders(request, parsed.projectId, launch.actor)) {
+            headers.append('Set-Cookie', stale);
+        }
+        headers.append(
+            'Set-Cookie',
+            createServeCookie({
+                request,
+                projectId: parsed.projectId,
+                routeId: launch.routeId,
+                actor: launch.actor
+            })
+        );
+        return new Response(null, { status: 303, headers });
     }
 
     if (!isAllowedServeRequest(request, serveOrigin.origin)) {
@@ -186,6 +195,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
 
     const publicBase = publicRequest ? servePublicBasePath(projectId) : serveBasePath(projectId);
     const actor = grant?.actor ?? { surface: 'public' as const };
+    const traceId =
+        grant && 'bindingId' in grant.actor ? serveTraceId(grant.actor.bindingId) : null;
 
     const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
     if (!host) {
@@ -204,12 +215,23 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     }
 
     url.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
+    const timeoutMs = serveFetchTimeoutMs(parsed.rest, url.searchParams, SERVE_FETCH_TIMEOUT_MS);
+    const requestKind = isSocketIoPollingRequest(parsed.rest, url.searchParams)
+        ? 'socket-io-polling'
+        : parsed.rest.startsWith('/control')
+          ? 'control'
+          : parsed.rest.startsWith('/screen')
+            ? 'screen'
+            : 'other';
+    const logSample = requestKind !== 'other';
     const upstreamUrl = buildServeUpstreamUrl({
         host,
         port,
         pathname: upstreamPathname(parsed, url.pathname, project.customStripPrefix),
         search: url.search
     });
+    const setupMs = performance.now() - requestStartedAt;
+    recordServeTiming('proxy-setup', setupMs, { traceId, projectId, requestKind }, logSample);
 
     let upstream: Response;
     const upstreamStartedAt = performance.now();
@@ -220,21 +242,39 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
-            signal: AbortSignal.timeout(SERVE_FETCH_TIMEOUT_MS)
+            signal: AbortSignal.timeout(timeoutMs)
         } as RequestInit & { duplex: 'half' });
     } catch (error) {
         const timedOut = error instanceof Error && error.name === 'TimeoutError';
-        console.warn('[Serve] Upstream fetch failed', {
+        const upstreamMs = performance.now() - upstreamStartedAt;
+        recordServeTiming('proxy-upstream', upstreamMs, {
+            traceId,
             projectId,
-            method: request.method,
-            surface: parsed.rest.startsWith('/control')
-                ? 'control'
-                : parsed.rest.startsWith('/screen')
-                  ? 'screen'
-                  : 'other',
-            elapsedMs: Math.round(performance.now() - upstreamStartedAt),
-            kind: timedOut ? 'timeout' : 'fetch-failed'
+            requestKind,
+            status: 502,
+            errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
         });
+        console.warn(
+            '[Serve] Upstream fetch failed',
+            JSON.stringify({
+                projectId,
+                method: request.method,
+                surface: requestKind,
+                traceId,
+                elapsedMs: Math.round(upstreamMs),
+                timeoutMs,
+                errorName: error instanceof Error ? error.name : 'unknown',
+                causeCode:
+                    error instanceof Error &&
+                    error.cause &&
+                    typeof error.cause === 'object' &&
+                    'code' in error.cause &&
+                    typeof error.cause.code === 'string'
+                        ? error.cause.code
+                        : undefined,
+                kind: timedOut ? 'timeout' : 'fetch-failed'
+            })
+        );
         await logAuditFailure({
             action: 'SERVE_PROXY_FAILED',
             reasonCode: timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNREACHABLE',
@@ -250,12 +290,26 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             status: 502,
             headers: {
                 'Cache-Control': 'no-store',
+                'Server-Timing': `vizzy_setup;dur=${Math.round(setupMs)}, vizzy_upstream;dur=${Math.round(upstreamMs)}`,
+                ...(traceId ? { 'X-Vizzy-Serve-Trace': traceId } : {}),
                 'X-Vizzy-Serve-Error': timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
             }
         });
     }
 
+    const upstreamMs = performance.now() - upstreamStartedAt;
+    recordServeTiming(
+        'proxy-upstream',
+        upstreamMs,
+        { traceId, projectId, requestKind, status: upstream.status },
+        logSample || upstream.status >= 500
+    );
     const headers = buildRelayedHeaders(upstream, request);
+    headers.set(
+        'Server-Timing',
+        `vizzy_setup;dur=${Math.round(setupMs)}, vizzy_upstream;dur=${Math.round(upstreamMs)}`
+    );
+    if (traceId) headers.set('X-Vizzy-Serve-Trace', traceId);
     headers.set('Cache-Control', 'private, no-store');
     if (upstream.status === 502) headers.set('X-Vizzy-Serve-Error', 'upstream-returned-502');
     headers.set('Referrer-Policy', 'no-referrer');
@@ -305,6 +359,8 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 status: 502,
                 headers: {
                     'Cache-Control': 'no-store',
+                    'Server-Timing': headers.get('Server-Timing') ?? '',
+                    ...(traceId ? { 'X-Vizzy-Serve-Trace': traceId } : {}),
                     'X-Vizzy-Serve-Error': 'invalid-upstream-location'
                 }
             });

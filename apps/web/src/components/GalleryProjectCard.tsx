@@ -147,22 +147,40 @@ export function GalleryProjectCard({
     const handleControllerLaunchRequest = useCallback(
         async (wallId: string) => {
             for (let attempt = 0; attempt < 8; attempt += 1) {
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
                 try {
+                    const signedServerFnFetch = createSignedServerFnFetch({
+                        deviceKind: 'gallery',
+                        wallId
+                    });
+                    const timedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+                        signedServerFnFetch(input, {
+                            ...init,
+                            signal: init?.signal
+                                ? AbortSignal.any([init.signal, controller.signal])
+                                : controller.signal
+                        })) as typeof fetch;
                     const launch = await $issueBoundServeLaunch({
                         data: { wallId, projectId: project.id, entry: 'control' },
-                        fetch: createSignedServerFnFetch({ deviceKind: 'gallery', wallId })
+                        fetch: timedFetch
                     });
                     return launch;
                 } catch (error) {
+                    if (controller.signal.aborted) {
+                        return { errorCode: 'authorization-timeout' };
+                    }
                     if (attempt < 7 && String(error).includes('Wall is not bound')) {
                         await new Promise((resolve) => setTimeout(resolve, 200));
                         continue;
                     }
                     console.warn('[Gallery] Could not obtain demo controller launch', error);
-                    return null;
+                    return { errorCode: 'authorization-failed' };
+                } finally {
+                    window.clearTimeout(timeoutId);
                 }
             }
-            return null;
+            return { errorCode: 'authorization-failed' };
         },
         [project.id]
     );
