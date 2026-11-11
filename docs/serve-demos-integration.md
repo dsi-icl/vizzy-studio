@@ -143,6 +143,16 @@ and container resource use at 256 and 512 before increasing the limit again.
 If slow screens persist while the direct upstream stays fast, check whether
 old `socket-io-polling` requests remain pending after each wall switch.
 
+`[ServeTimingSummary]` separates `completed`, `canceled`, and `failed`
+`proxy-upstream` requests; a canceled wall navigation must not inflate the
+completed screen p95. Screen entry documents use a fresh upstream TCP connection
+by default to test for stale connection reuse in the long-lived Web process;
+set `SERVE_SCREEN_FRESH_CONNECTION=0` to restore pooled connections without a
+rebuild. The per-request log includes `freshConnection` so the test mode is
+visible. `[ServeRuntime]` reports Web event loop stalls over 500 ms.
+If a slow proxy request coincides with no such stall and low Serve in-flight
+counts, inspect that request's upstream connection and response path next.
+
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
 apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts
 apps/web/tests/unit/iframeSandbox.test.ts`.

@@ -41,6 +41,7 @@ import {
 } from '~/server/serveWebSocket';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
+const SERVE_SCREEN_FRESH_CONNECTION = process.env.SERVE_SCREEN_FRESH_CONNECTION !== '0';
 let pendingServeUpstreamFetches = 0;
 const KEEPALIVE_GIF = Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64');
 const SERVE_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-same-site-none-cookies';
@@ -225,6 +226,10 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             ? 'screen'
             : 'other';
     const logSample = requestKind !== 'other';
+    const freshConnection =
+        request.method === 'GET' &&
+        (parsed.rest === '/screen' || parsed.rest === '/screen/') &&
+        SERVE_SCREEN_FRESH_CONNECTION;
     const upstreamUrl = buildServeUpstreamUrl({
         host,
         port,
@@ -246,6 +251,9 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             body: request.body,
             duplex: 'half',
             redirect: 'manual',
+            // The wall's entry document is a short request. A fresh socket
+            // avoids a stale idle connection in the long-lived Web process.
+            ...(freshConnection ? { keepalive: false } : {}),
             // A wall navigation cancels the browser request. Release its old
             // upstream poll instead of letting it hold a Bun fetch slot.
             signal: AbortSignal.any([request.signal, timeoutSignal])
@@ -263,6 +271,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 projectId,
                 requestKind,
                 status: 499,
+                freshConnection,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorCode: 'client-aborted'
@@ -274,6 +283,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             projectId,
             requestKind,
             status: 502,
+            freshConnection,
             serveFetchesAtStart,
             serveFetchesAtFailure: pendingServeUpstreamFetches,
             errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
@@ -287,6 +297,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 traceId,
                 elapsedMs: Math.round(upstreamMs),
                 timeoutMs,
+                freshConnection,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorName: error instanceof Error ? error.name : 'unknown',
@@ -334,6 +345,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             projectId,
             requestKind,
             status: upstream.status,
+            freshConnection,
             serveFetchesAtStart,
             serveFetchesAtHeaders
         },

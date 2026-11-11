@@ -52,13 +52,17 @@ const { handleServeRequest } = await import('../../apps/web/src/routes/serve.$pr
 const { resolveServeWebSocketUpstream } = await import('../../apps/web/src/server/serveWebSocket');
 const { servePublicUrl } = await import('../../apps/web/src/server/serveOrigin');
 
-const forwarded: Array<{ url: string; headers: Headers }> = [];
+const forwarded: Array<{ url: string; headers: Headers; keepalive?: boolean }> = [];
 const realFetch = globalThis.fetch;
 let upstreamLocation = '/assets/app.js';
 let upstreamStatus = 200;
 let upstreamFailure: Error | null = null;
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    forwarded.push({ url: String(input), headers: new Headers(init?.headers) });
+    forwarded.push({
+        url: String(input),
+        headers: new Headers(init?.headers),
+        keepalive: init?.keepalive
+    });
     if (String(input).endsWith('/public/cancel')) {
         const signal = init?.signal;
         if (!signal) throw new Error('Missing upstream cancellation signal');
@@ -357,6 +361,7 @@ describe('sandboxed same-host serve gateway', () => {
         );
         assert.equal(page.headers.get('set-cookie'), null);
         assert.equal(forwarded.at(-1)?.url, `http://127.0.0.1:3008/serve/${projectId}/screen`);
+        assert.equal(forwarded.at(-1)?.keepalive, false);
         assert.equal(forwarded.at(-1)?.headers.get('cookie'), null);
         assert.equal(forwarded.at(-1)?.headers.get('x-vizzy-wall-id'), 'wall-a');
         assert.equal(forwarded.at(-1)?.headers.get('x-vizzy-public-base'), `/serve/${projectId}`);
