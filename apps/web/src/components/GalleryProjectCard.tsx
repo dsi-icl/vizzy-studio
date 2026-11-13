@@ -9,6 +9,8 @@ import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
 
+const BIND_ACK_TIMEOUT_MS = 5000;
+
 interface GalleryProjectCardProps {
     project: Project & {
         id: string;
@@ -52,6 +54,20 @@ export function GalleryProjectCard({
 
             try {
                 const engine = GalleryEngine.getInstance();
+                const bound = new Promise<boolean>((resolve) => {
+                    let timer: ReturnType<typeof setTimeout> | undefined;
+                    const unsubscribe = engine.onWallBindingChanged((event) => {
+                        if (event.wallId !== wallId) return;
+                        if (!event.bound || event.projectId !== project.id) return;
+                        if (timer) clearTimeout(timer);
+                        unsubscribe();
+                        resolve(true);
+                    });
+                    timer = setTimeout(() => {
+                        unsubscribe();
+                        resolve(false);
+                    }, BIND_ACK_TIMEOUT_MS);
+                });
                 engine.sendJSON({
                     type: 'bind_wall',
                     wallId,
@@ -59,6 +75,10 @@ export function GalleryProjectCard({
                     commitId: project.publishedCommitId,
                     slideId: 'default'
                 });
+                if (!(await bound)) {
+                    toast.error('Could not load project on wall');
+                    return false;
+                }
                 toast.success('Project loaded on wall');
                 return true;
             } catch (e: any) {
