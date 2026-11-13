@@ -37,27 +37,27 @@ export const useGalleryStore: GalleryStateCreator =
 
 if (typeof window !== 'undefined') window.__GALLERY_STORE__ = useGalleryStore;
 
-const ENROLLED_WALL_KEY = 'vizzy_gallery_enrolled_wall';
+const ENROLLED_GALLERY_URL_KEY = 'vizzy_gallery_enrolled_url';
 
-export function rememberEnrolledWallId(wallId: string) {
+export function rememberEnrolledGalleryUrl() {
     try {
-        sessionStorage.setItem(ENROLLED_WALL_KEY, wallId);
+        sessionStorage.setItem(ENROLLED_GALLERY_URL_KEY, `/gallery${window.location.search}`);
     } catch {
         // no-op: private mode or blocked storage
     }
 }
 
-export function forgetEnrolledWallId() {
+export function forgetEnrolledGalleryUrl() {
     try {
-        sessionStorage.removeItem(ENROLLED_WALL_KEY);
+        sessionStorage.removeItem(ENROLLED_GALLERY_URL_KEY);
     } catch {
         // no-op: private mode or blocked storage
     }
 }
 
-export function readEnrolledWallId(): string | null {
+export function readEnrolledGalleryUrl(): string | null {
     try {
-        return sessionStorage.getItem(ENROLLED_WALL_KEY);
+        return sessionStorage.getItem(ENROLLED_GALLERY_URL_KEY);
     } catch {
         return null;
     }

@@ -25,7 +25,7 @@ import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-route
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { readEnrolledWallId, useGalleryStore } from '~/lib/galleryStore';
+import { readEnrolledGalleryUrl, useGalleryStore } from '~/lib/galleryStore';
 import { $adminStopImpersonation } from '~/server/admin.fns';
 
 import { KeyboardToggle } from './KeyboardToggle';
@@ -140,10 +140,11 @@ function HeaderAuthSection() {
                     await queryClient.cancelQueries();
                     queryClient.clear();
                     const { wallId, isEnrolledDevice } = useGalleryStore.getState();
-                    const enrolledWallId = (isEnrolledDevice && wallId) || readEnrolledWallId();
-                    const destination = enrolledWallId
-                        ? `/gallery?w=${encodeURIComponent(enrolledWallId)}`
-                        : '/';
+                    const destination =
+                        readEnrolledGalleryUrl() ??
+                        (isEnrolledDevice && wallId
+                            ? `/gallery?w=${encodeURIComponent(wallId)}`
+                            : '/');
                     if (typeof window !== 'undefined') {
                         window.location.assign(destination);
                         return;
