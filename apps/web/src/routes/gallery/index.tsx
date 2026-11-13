@@ -1,5 +1,6 @@
 import { TriangleDashedIcon } from '@phosphor-icons/react';
 import { useAuth } from '@repo/auth/tanstack/hooks';
+import { authQueryOptions } from '@repo/auth/tanstack/queries';
 import { stageLayoutsEqual, type StageLayout } from '@repo/db/schema';
 import { Button } from '@repo/ui/components/button';
 import type { Project } from '@repo/ui/components/project-card';
@@ -18,8 +19,11 @@ import { publishedProjectsQueryOptions } from '~/server/projects.queries';
 import { wallsQueryOptions } from '~/server/walls.queries';
 
 export const Route = createFileRoute('/gallery/')({
-    loader: ({ context, location }) => {
-        context.queryClient.ensureQueryData(publishedProjectsQueryOptions());
+    loader: async ({ context, location }) => {
+        const viewer = await context.queryClient.ensureQueryData(authQueryOptions());
+        void context.queryClient.ensureQueryData(
+            publishedProjectsQueryOptions(viewer?.email ?? null)
+        );
         if (typeof window !== 'undefined') {
             const params = new URLSearchParams(location.searchStr);
             initGalleryStore({
@@ -72,7 +76,8 @@ function HomePage() {
         wallId: string;
         layout: StageLayout;
     } | null>(null);
-    const { data: publishedProjects = [] } = useQuery(publishedProjectsQueryOptions());
+    const viewerEmail = user?.email ?? null;
+    const { data: publishedProjects = [] } = useQuery(publishedProjectsQueryOptions(viewerEmail));
     const queryClient = useQueryClient();
     const searchStr = useLocation({ select: (location) => location.searchStr });
     const requestedWallId = useMemo(
@@ -143,7 +148,7 @@ function HomePage() {
     useEffect(() => {
         if (!galleryEngine) return;
         const wallsQueryKey = wallsQueryOptions().queryKey;
-        const publishedProjectsQueryKey = publishedProjectsQueryOptions().queryKey;
+        const publishedProjectsQueryKey = publishedProjectsQueryOptions(viewerEmail).queryKey;
         const triggerSyncedCardClose = (projectId: string | null) => {
             if (!projectId) return;
             setSyncedCloseProjectId(projectId);
@@ -375,7 +380,7 @@ function HomePage() {
         return () => {
             for (const unsub of unsubs) unsub();
         };
-    }, [galleryEngine, queryClient, wallId, pendingOverride]);
+    }, [galleryEngine, queryClient, wallId, pendingOverride, viewerEmail]);
 
     useEffect(() => {
         const deviceId = deviceEnrollmentId?.trim();

@@ -25,6 +25,7 @@ import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-route
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { readEnrolledGalleryUrl, useGalleryStore } from '~/lib/galleryStore';
 import { $adminStopImpersonation } from '~/server/admin.fns';
 
 import { KeyboardToggle } from './KeyboardToggle';
@@ -136,7 +137,18 @@ function HeaderAuthSection() {
             fetchOptions: {
                 onSuccess: async () => {
                     setSignOutDialogOpen(false);
-                    queryClient.setQueryData(authQueryOptions().queryKey, null);
+                    await queryClient.cancelQueries();
+                    queryClient.clear();
+                    const { wallId, isEnrolledDevice } = useGalleryStore.getState();
+                    const destination =
+                        readEnrolledGalleryUrl() ??
+                        (isEnrolledDevice && wallId
+                            ? `/gallery?w=${encodeURIComponent(wallId)}`
+                            : '/');
+                    if (typeof window !== 'undefined') {
+                        window.location.assign(destination);
+                        return;
+                    }
                     await router.invalidate();
                     navigate({ to: '/' });
                 },
@@ -153,6 +165,7 @@ function HeaderAuthSection() {
                         'Sign out failed';
                     toast.error(message);
                     queryClient.setQueryData(authQueryOptions().queryKey, null);
+                    queryClient.removeQueries({ queryKey: ['projects'] });
                     await router.invalidate();
                     setIsSigningOut(false);
                 }

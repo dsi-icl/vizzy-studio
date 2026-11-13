@@ -188,16 +188,20 @@ export async function listProjects(userEmail: string, includeArchived = false) {
     return projects;
 }
 
-export async function listPublishedProjects() {
+export async function listPublishedProjects(viewerEmail?: string | null) {
     const projectDocs = await dbCol.projects.find(
         { deletedAt: { $exists: false } },
         { sort: { updatedAt: -1 } }
     );
 
     const visibleProjects = projectDocs.filter((project) => {
+        if (!project.stages.some((stage) => !stage.archivedAt && stage.publishedCommitId))
+            return false;
+        if (project.visibility === 'public') return true;
+        if (!viewerEmail) return false;
         return (
-            project.visibility === 'public' &&
-            project.stages.some((stage) => !stage.archivedAt && Boolean(stage.publishedCommitId))
+            project.createdBy === viewerEmail ||
+            project.collaborators.some((collaborator) => collaborator.email === viewerEmail)
         );
     });
 

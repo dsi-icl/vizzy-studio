@@ -2,6 +2,7 @@ import { authMiddleware, freshAuthMiddleware } from '@repo/auth/tanstack/middlew
 import { Collaborator, ProjectVisibility, StageLayout } from '@repo/db/schema';
 import { env } from '@repo/env';
 import { createServerFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 
 import { readImageUploadPolicy } from '~/lib/serverAssetUtils';
 import { createUploadToken, validateUploadToken } from '~/lib/uploadTokens';
@@ -19,7 +20,7 @@ import {
     resolveProjectIdForCommit,
     resolveProjectIdForUploadToken
 } from '~/server/projectAuthz';
-import type { AuthContext } from '~/server/requestAuthContext';
+import { resolveAuthContextFromRequest, type AuthContext } from '~/server/requestAuthContext';
 
 import {
     archiveProject,
@@ -185,7 +186,8 @@ export const $listProjects = createServerFn({ method: 'GET' })
     });
 
 export const $listPublishedProjects = createServerFn({ method: 'GET' }).handler(async () => {
-    return listPublishedProjects();
+    const { authContext } = await resolveAuthContextFromRequest(getRequest());
+    return listPublishedProjects(authContext.user?.email ?? null);
 });
 
 export const $listKnownTags = createServerFn({ method: 'GET' })
