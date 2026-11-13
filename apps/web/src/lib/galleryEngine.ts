@@ -1,7 +1,7 @@
 'use client';
 
 import { BusClient } from './busClient';
-import { rememberEnrolledWallId, useGalleryStore } from './galleryStore';
+import { forgetEnrolledWallId, rememberEnrolledWallId, useGalleryStore } from './galleryStore';
 import { GSMessageSchema, type GSMessage } from './types';
 
 type GalleryState = Extract<GSMessage, { type: 'gallery_state' }>;
@@ -56,11 +56,13 @@ export class GalleryEngine {
                     const store = useGalleryStore.getState();
                     store.setIsEnrolledDevice(false);
                     store.setDeviceEnrollmentId(data.id);
+                    forgetEnrolledWallId();
                     return;
                 }
 
                 if (data.type === 'auth_denied') {
                     useGalleryStore.getState().setIsEnrolledDevice(false);
+                    forgetEnrolledWallId();
                     return;
                 }
 

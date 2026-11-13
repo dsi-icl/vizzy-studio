@@ -47,6 +47,14 @@ export function rememberEnrolledWallId(wallId: string) {
     }
 }
 
+export function forgetEnrolledWallId() {
+    try {
+        sessionStorage.removeItem(ENROLLED_WALL_KEY);
+    } catch {
+        // no-op: private mode or blocked storage
+    }
+}
+
 export function readEnrolledWallId(): string | null {
     try {
         return sessionStorage.getItem(ENROLLED_WALL_KEY);
