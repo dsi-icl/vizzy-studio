@@ -5,6 +5,7 @@ import { describe, test } from 'node:test';
 import { env } from '@repo/env';
 
 import {
+    boundServeRouteId,
     createServeCookie,
     obsoleteServeCookieHeaders,
     resolveServeCookieGrant,
@@ -31,6 +32,18 @@ const request = (path = `/serve/${PROJECT}/screen`, cookie?: string, referer?: s
     });
 
 describe('serve cookie', () => {
+    test('one binding shares a screen route while control and rebinds stay separate', () => {
+        const input = { projectId: PROJECT, wallId: 'wall-a', bindingId: ROUTE_A };
+        const screen = boundServeRouteId({ ...input, entry: 'screen' });
+        assert.equal(screen, boundServeRouteId({ ...input, entry: 'screen' }));
+        assert.match(screen, /^[A-Za-z0-9_-]{22}$/);
+        assert.notEqual(screen, boundServeRouteId({ ...input, entry: 'control' }));
+        assert.notEqual(
+            screen,
+            boundServeRouteId({ ...input, bindingId: ROUTE_B, entry: 'screen' })
+        );
+    });
+
     test('clears older bindings for the same wall while preserving concurrent grants', () => {
         const old = value(
             createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
