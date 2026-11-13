@@ -30,6 +30,8 @@ function shouldAuditRateLimit(key: string, now: number): boolean {
 let rateLimitAuditCount = 0;
 let rateLimitAuditResetAt = Date.now() + 60_000;
 const MAX_RATE_LIMIT_AUDITS_PER_MINUTE = 10;
+const SERVE_BUN_IDLE_TIMEOUT_SECONDS = 65;
+let serveBunTimeoutLogged = false;
 
 function shouldAuditRateLimitGlobal(now: number): boolean {
     if (now > rateLimitAuditResetAt) {
@@ -52,6 +54,31 @@ const startRateLimitMiddleware = createMiddleware().server(async ({ next, reques
     }
 
     const url = new URL(request.url);
+    if (url.pathname.startsWith('/serve/')) {
+        // Bun otherwise closes an in-flight request after ten seconds without
+        // response bytes, before Serve's 30s fetch and 55s polling limits.
+        const bunServer = (
+            request as Request & {
+                runtime?: {
+                    bun?: { server?: { timeout: (req: Request, seconds: number) => void } };
+                };
+            }
+        ).runtime?.bun?.server;
+        try {
+            if (bunServer) bunServer.timeout(request, SERVE_BUN_IDLE_TIMEOUT_SECONDS);
+            if (!serveBunTimeoutLogged && process.env.NODE_ENV === 'production') {
+                serveBunTimeoutLogged = true;
+                console.info(
+                    `[Serve] Bun request idle timeout: ${bunServer ? SERVE_BUN_IDLE_TIMEOUT_SECONDS + 's' : 'unavailable'}`
+                );
+            }
+        } catch (error) {
+            if (!serveBunTimeoutLogged) {
+                serveBunTimeoutLogged = true;
+                console.warn('[Serve] Could not extend Bun request idle timeout', error);
+            }
+        }
+    }
     // Exempt resumable upload chunk streams (PATCH) which stream bytes in small parts.
     // Upload creation (POST) and termination (DELETE) remain subject to rate limits.
     if (url.pathname.startsWith('/api/uploads/') && method === 'PATCH') {
