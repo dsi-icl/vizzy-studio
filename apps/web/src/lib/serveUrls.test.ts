@@ -1,0 +1,235 @@
+import assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+
+import {
+    buildServeUpstreamUrl,
+    isPublicServePath,
+    parseServePath,
+    resolveDemoHost,
+    serveFetchTimeoutMs,
+    upstreamPathname,
+    rewriteServeLocation,
+    serveBasePath,
+    serveBusPath,
+    serveControlPath,
+    serveKeepalivePath,
+    servePublicBasePath,
+    serveWallPath
+} from './serveUrls';
+
+const PID = '507f1f77bcf86cd799439011';
+const ROUTE = 'AAAAAAAAAAAAAAAAAAAAAA';
+
+describe('serve paths', () => {
+    test('derives each surface from the project id', () => {
+        assert.equal(serveBasePath(PID), `/serve/${PID}`);
+        assert.equal(serveWallPath(PID), `/serve/${PID}/screen`);
+        assert.equal(serveControlPath(PID), `/serve/${PID}/control`);
+        assert.equal(serveBusPath(PID), `/serve/${PID}/bus`);
+        assert.equal(servePublicBasePath(PID), `/serve/${PID}/public`);
+    });
+
+    test('splits a serve path into project id and remainder', () => {
+        assert.deepEqual(parseServePath(`/serve/${PID}/screen`), {
+            projectId: PID,
+            rest: '/screen'
+        });
+        assert.deepEqual(parseServePath(`/serve/${PID}/assets/app.js`), {
+            projectId: PID,
+            rest: '/assets/app.js'
+        });
+        assert.deepEqual(parseServePath(`/serve/${PID}`), { projectId: PID, rest: '/' });
+        assert.deepEqual(parseServePath(`/serve/${PID}/`), { projectId: PID, rest: '/' });
+    });
+
+    test('rejects anything that is not a well-formed serve path', () => {
+        assert.equal(parseServePath('/serve'), null);
+        assert.equal(parseServePath('/serve/'), null);
+        assert.equal(parseServePath('/assets/app.js'), null);
+        assert.equal(parseServePath('/serve/not-an-object-id/screen'), null);
+        assert.equal(parseServePath(`/serve/${PID}x/screen`), null);
+        assert.equal(parseServePath(`/serve/${PID}/../../etc/passwd`), null);
+    });
+
+    test('recognizes only the top-level public path segment', () => {
+        for (const path of ['/public', '/public/', '/public/mini', '/public/api/mini/session']) {
+            assert.equal(isPublicServePath(parseServePath(`/serve/${PID}${path}`)), true, path);
+        }
+        for (const path of [
+            '/control/public',
+            '/control/public/mini',
+            '/control',
+            '/screen',
+            '/publicity/mini',
+            '/public-mini',
+            '/mini/public',
+            '/assets/public.js'
+        ]) {
+            assert.equal(isPublicServePath(parseServePath(`/serve/${PID}${path}`)), false, path);
+        }
+    });
+
+    test('builds the upstream URL without touching the path', () => {
+        assert.equal(
+            buildServeUpstreamUrl({
+                host: 'demos.com',
+                port: 3008,
+                pathname: `/serve/${PID}/assets/app.js`,
+                search: '?v=2'
+            }),
+            `http://demos.com:3008/serve/${PID}/assets/app.js?v=2`
+        );
+    });
+
+    test('keeps the session selector out of static asset paths', () => {
+        assert.equal(
+            serveKeepalivePath(PID, ROUTE),
+            `/serve/${PID}/_keepalive?__vizzySession=${ROUTE}`
+        );
+    });
+});
+
+describe('rewriteServeLocation', () => {
+    const UPSTREAM = `http://demos.example:3008/serve/${PID}/screen`;
+    const BASE = `/serve/${PID}`;
+
+    test('keeps a redirect that already carries the base path', () => {
+        assert.equal(
+            rewriteServeLocation(`/serve/${PID}/control`, UPSTREAM, BASE),
+            `/serve/${PID}/control`
+        );
+    });
+
+    test('keeps public redirects inside the public namespace', () => {
+        const publicBase = `${BASE}/public`;
+        const upstream = `${UPSTREAM.replace('/screen', '/public/mini')}`;
+        for (const [location, expected] of [
+            [`${publicBase}/next?a=1`, `${publicBase}/next?a=1`],
+            [`${BASE}/next?a=1`, `${publicBase}/next?a=1`],
+            ['/public/next?a=1', `${publicBase}/next?a=1`],
+            ['/next?a=1', `${publicBase}/next?a=1`]
+        ]) {
+            assert.equal(rewriteServeLocation(location, upstream, BASE, publicBase), expected);
+        }
+    });
+
+    test('prefixes a root-absolute redirect that escaped the subtree', () => {
+        assert.equal(rewriteServeLocation('/control', UPSTREAM, BASE), `/serve/${PID}/control`);
+        assert.equal(rewriteServeLocation('/', UPSTREAM, BASE), `/serve/${PID}/`);
+    });
+
+    test('resolves a relative redirect against the request URL, not just the origin', () => {
+        assert.equal(rewriteServeLocation('control', UPSTREAM, BASE), `/serve/${PID}/control`);
+    });
+
+    test('never discloses the demos host', () => {
+        assert.equal(
+            rewriteServeLocation(`http://demos.example:3008/serve/${PID}/x?a=1#f`, UPSTREAM, BASE),
+            `/serve/${PID}/x?a=1#f`
+        );
+    });
+
+    test('accepts absolute redirects built from the forwarded public host', () => {
+        const publicOrigin = 'https://studio.example';
+        assert.equal(
+            rewriteServeLocation(
+                `${publicOrigin}${BASE}/control/?step=1`,
+                UPSTREAM,
+                BASE,
+                BASE,
+                publicOrigin
+            ),
+            `${BASE}/control/?step=1`
+        );
+        assert.equal(
+            rewriteServeLocation(`${publicOrigin}/login`, UPSTREAM, BASE, BASE, publicOrigin),
+            `${BASE}/login`
+        );
+        assert.equal(rewriteServeLocation(`${publicOrigin}${BASE}/control`, UPSTREAM, BASE), null);
+    });
+
+    test('refuses anything but the demo redirecting within itself', () => {
+        assert.equal(rewriteServeLocation('https://cdn.example/asset.js', UPSTREAM, BASE), null);
+        assert.equal(rewriteServeLocation('//evil.example/x', UPSTREAM, BASE), null);
+        assert.equal(rewriteServeLocation('http://', UPSTREAM, BASE), null);
+        assert.equal(
+            rewriteServeLocation(
+                'https://elsewhere.example/x',
+                UPSTREAM,
+                BASE,
+                BASE,
+                'https://studio.example'
+            ),
+            null
+        );
+    });
+
+    test('cannot redirect the iframe at one of our own routes', () => {
+        assert.equal(
+            rewriteServeLocation('/api/portal/v1/bind', UPSTREAM, BASE),
+            `/serve/${PID}/api/portal/v1/bind`
+        );
+    });
+
+    test('rewrites upstream redirects into the static project base', () => {
+        assert.equal(
+            rewriteServeLocation('/assets/app.js', UPSTREAM, BASE),
+            `/serve/${PID}/assets/app.js`
+        );
+    });
+});
+
+describe('resolveDemoHost', () => {
+    const HOSTS = ['demos.vm1', 'demos.vm2'];
+
+    test('uses the project host when it is allowed', () => {
+        assert.equal(resolveDemoHost(HOSTS, HOSTS[1]), 'demos.vm2');
+    });
+
+    test('requires the project to name its host', () => {
+        assert.equal(resolveDemoHost(HOSTS, null), null);
+        assert.equal(resolveDemoHost(HOSTS, undefined), null);
+        assert.equal(resolveDemoHost(HOSTS, ''), null);
+    });
+
+    test('fails closed for a host that is not in the build config', () => {
+        assert.equal(resolveDemoHost(HOSTS, 'retired.example'), null);
+        assert.equal(resolveDemoHost([], HOSTS[0]), null);
+    });
+});
+
+describe('upstreamPathname', () => {
+    const parsed = { projectId: PID, rest: '/assets/main.js' };
+    const requested = `/serve/${PID}/assets/main.js`;
+
+    test('forwards unchanged for a demo built at its serve path', () => {
+        assert.equal(upstreamPathname(parsed, requested, false), requested);
+        assert.equal(upstreamPathname(parsed, requested, undefined), requested);
+    });
+
+    test('strips the prefix for a demo built at the root of its port', () => {
+        // Equivalent to nginx `proxy_pass http://127.0.0.1:PORT/` with its trailing slash.
+        assert.equal(upstreamPathname(parsed, requested, true), '/assets/main.js');
+    });
+});
+
+describe('serveFetchTimeoutMs', () => {
+    test('allows Socket.IO long polling to outlive its heartbeat interval', () => {
+        assert.equal(
+            serveFetchTimeoutMs('/ws/socket.io/', new URLSearchParams('transport=polling'), 30_000),
+            55_000
+        );
+        assert.equal(
+            serveFetchTimeoutMs(
+                '/ws/socket.io/',
+                new URLSearchParams('transport=websocket'),
+                30_000
+            ),
+            30_000
+        );
+        assert.equal(
+            serveFetchTimeoutMs('/control', new URLSearchParams('transport=polling'), 30_000),
+            30_000
+        );
+    });
+});

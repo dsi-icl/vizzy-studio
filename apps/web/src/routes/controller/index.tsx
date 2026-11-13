@@ -1024,8 +1024,7 @@ function Controller() {
             >
                 <h2 className="text-xl font-semibold">Vizzy Controller Unavailable</h2>
                 <p className="max-w-md text-muted-foreground">
-                    This project uses a custom render URL and cannot be controlled with the built-in
-                    controller. Set your custom control URL in the project settings.
+                    This is a custom project and cannot be controlled with the built-in controller.
                 </p>
             </div>
         );
