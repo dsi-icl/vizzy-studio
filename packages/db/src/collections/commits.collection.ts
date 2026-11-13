@@ -91,19 +91,31 @@ export class CommitsCollection extends BaseCollection<CommitDocument> {
         });
     }
 
+    /** Persist the saved working copy and its snapshot pointer in one HEAD write. */
+    async saveHeadSnapshot(
+        commitId: string,
+        snapshotId: string,
+        slides: CommitDocument['content']['slides']
+    ): Promise<void> {
+        const result = await this.raw.updateOne(
+            { _id: new OID(commitId) },
+            {
+                $set: {
+                    parentId: new OID(snapshotId),
+                    'content.slides': slides,
+                    updatedAt: Date.now(),
+                    _version: this.currentVersion
+                }
+            }
+        );
+        if (result.matchedCount === 0) throw new Error('HEAD commit not found');
+    }
+
     /**
      * Replace `content.slides` in place using dot-notation `$set`.
      * This updates ONLY the slides sub-field without touching other `content` keys.
      * `updatedAt` and `_version` are always stamped.
      */
-    /** Point a commit's `parentId` to another commit. Used when creating snapshot/HEAD pointers. */
-    async setParent(commitId: string, parentId: string): Promise<void> {
-        await this.raw.updateOne(
-            { _id: new OID(commitId) },
-            { $set: { parentId: new OID(parentId), updatedAt: Date.now() } }
-        );
-    }
-
     async updateSlides(
         id: string | ObjectId,
         slides: CommitDocument['content']['slides']

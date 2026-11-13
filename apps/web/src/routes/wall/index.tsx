@@ -6,9 +6,10 @@ import { createFileRoute } from '@tanstack/react-router';
 import QRCode from 'qrcode';
 import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react';
 
-import { MapWrapper } from '~/components/MapWrapper';
+import { MapWrapper, type WallMapRenderer } from '~/components/MapWrapper';
 import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
+import { useWallFonts } from '~/hooks/useWallFonts';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
@@ -16,7 +17,7 @@ import { imagePreviewUrl } from '~/lib/mediaUtils';
 import { createSignedServerFnFetch, signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
-import type { LayerWithWallComponentState } from '~/lib/types';
+import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
 import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
@@ -46,6 +47,7 @@ export const Route = createFileRoute('/wall/')({
 
 function WallApp() {
     const [layers, setLayers] = useState<LayerWithWallComponentState[]>([]);
+    const [projectId, setProjectId] = useState<string>();
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
     const [customRenderProjectId, setCustomRenderProjectId] = useState<string | undefined>();
@@ -69,10 +71,16 @@ function WallApp() {
         width: screenWidth,
         height: screenHeight
     });
+    const [mapRenderers] = useState(() => new Map<number, WallMapRenderer>());
+    const physicalScale = Math.min(
+        physicalViewport.width / Math.max(1, screenWidth),
+        physicalViewport.height / Math.max(1, screenHeight)
+    );
     const [blackOverlayOpacity, setBlackOverlayOpacity] = useState(1);
     const [iframeGateCycle, setIframeGateCycle] = useState(0);
     const serveHydrateRef = useRef<{ bindingId: string; startedAt: number } | null>(null);
     const lastReportedServeFrameRef = useRef<string | null>(null);
+    const [boundProjectId, setBoundProjectId] = useState<string | null>(null);
 
     const transitionPhaseRef = useRef<'visible' | 'fadingOut' | 'waitingIframes' | 'fadingIn'>(
         'visible'
@@ -100,6 +108,7 @@ function WallApp() {
         return new URLSearchParams(window.location.search);
     }, [isClient]);
     const wallId = useMemo(() => searchParams?.get('w') ?? null, [searchParams]);
+    useWallFonts(boundProjectId, wallId);
     const hasMissingParams = useMemo(() => {
         if (!searchParams) return true;
         return !searchParams.has('w') || !searchParams.has('c') || !searchParams.has('r');
@@ -188,6 +197,8 @@ function WallApp() {
     const applyHydrateContent = (next: HydrateStagePayload) => {
         engine?.layers.clear();
         setLayers(next.layers);
+        setProjectId(next.projectId);
+        setBoundProjectId(next.projectId ?? null);
         if (!next.customRenderUrl) setServeLaunchStatus(null);
         else if (next.bindingId !== serveLaunch?.bindingId) setServeLaunchStatus('authorizing');
         setCustomRenderUrl(next.customRenderUrl);
@@ -486,7 +497,7 @@ function WallApp() {
                 const effectivePos =
                     layer.type === 'line'
                         ? (() => {
-                              const bounds = getLineBounds(layer.line);
+                              const bounds = getLineBounds(getLinePaths(layer).flat());
                               if (!bounds) return pos;
                               return {
                                   ...pos,
@@ -536,6 +547,12 @@ function WallApp() {
                     layer.el.style.height = `${effectivePos.height}px`;
                     layer.el.style.transform = `translate3d(${localX}px, ${localY}px, 0) rotate(${effectivePos.rotation}deg) scale(${effectivePos.scaleX}, ${effectivePos.scaleY})`;
                     layer.el.style.opacity = '1';
+                    if (layer.type === 'map') {
+                        mapRenderers.get(layer.numericId)?.({
+                            ...layer.config,
+                            ...effectivePos
+                        });
+                    }
                 } else {
                     layer.visible = false;
                     layer.el.style.opacity = '0';
@@ -549,7 +566,7 @@ function WallApp() {
             unsubscribe?.();
             cancelAnimationFrame(frameId);
         };
-    }, [engine, myViewport]);
+    }, [engine, myViewport, mapRenderers]);
 
     useEffect(() => {
         const deviceId = deviceEnrollmentId?.trim();
@@ -757,7 +774,17 @@ function WallApp() {
             }
 
             if (layer.type === 'map') {
-                return <MapWrapper key={layer.numericId} {...commonProps} layer={layer} />;
+                if (!projectId) return null;
+                return (
+                    <MapWrapper
+                        key={layer.numericId}
+                        {...commonProps}
+                        layer={layer}
+                        projectId={projectId}
+                        pixelRatio={physicalScale * (isClient ? window.devicePixelRatio : 1)}
+                        wall={{ viewport: myViewport, renderers: mapRenderers }}
+                    />
+                );
             }
 
             if (layer.type === 'web') {
@@ -835,13 +862,9 @@ function WallApp() {
                 );
 
             if (layer.type === 'line') {
-                const bounds = getLineBounds(layer.line);
+                const linePaths = getLinePaths(layer);
+                const bounds = getLineBounds(linePaths.flat());
                 if (!bounds) return null;
-                let svgPoints = [];
-                for (let i = 0; i < layer.line.length; i += 2)
-                    svgPoints.push(
-                        `${Math.round(layer.line[i] - bounds.cx + bounds.width / 2)},${Math.round(layer.line[i + 1] - bounds.cy + bounds.height / 2)}`
-                    );
                 return (
                     <div
                         key={layer.numericId}
@@ -859,16 +882,27 @@ function WallApp() {
                             className="overflow-visible"
                             xmlns="http://www.w3.org/2000/svg"
                         >
-                            <polyline
-                                points={svgPoints.join(' ')}
-                                fill="none"
-                                stroke={layer.strokeColor}
-                                strokeWidth={layer.strokeWidth}
-                                strokeDasharray={layer.strokeDash.join(' ')}
-                                strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
+                            {linePaths.map((line, pathIndex) => {
+                                const points = [];
+                                for (let i = 0; i < line.length; i += 2) {
+                                    points.push(
+                                        `${Math.round(line[i] - bounds.cx + bounds.width / 2)},${Math.round(line[i + 1] - bounds.cy + bounds.height / 2)}`
+                                    );
+                                }
+                                return (
+                                    <polyline
+                                        key={`line-path-${pathIndex}`}
+                                        points={points.join(' ')}
+                                        fill="none"
+                                        stroke={layer.strokeColor}
+                                        strokeWidth={layer.strokeWidth}
+                                        strokeDasharray={layer.strokeDash.join(' ')}
+                                        strokeDashoffset={(layer.strokeDash[0] ?? 0) / 2}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                );
+                            })}
                         </svg>
                     </div>
                 );
@@ -1037,10 +1071,6 @@ function WallApp() {
     const backgroundLayer = layers.find(
         (l): l is Extract<LayerWithWallComponentState, { type: 'background' }> =>
             l.type === 'background' && l.config.visible
-    );
-    const physicalScale = Math.min(
-        physicalViewport.width / Math.max(1, screenWidth),
-        physicalViewport.height / Math.max(1, screenHeight)
     );
     const physicalLeft = (physicalViewport.width - screenWidth * physicalScale) / 2;
     const physicalTop = (physicalViewport.height - screenHeight * physicalScale) / 2;

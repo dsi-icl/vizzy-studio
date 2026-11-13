@@ -40,7 +40,7 @@ const getContext = async (
 export async function getRouter() {
     const queryClient =
         typeof window === 'undefined' ? createAppQueryClient() : getBrowserQueryClient();
-    const nonce = getGlobalStartContext()?.nonce;
+    const nonce = (getGlobalStartContext() as { nonce?: string } | undefined)?.nonce;
     const router = createRouter({
         routeTree,
         ssr: { nonce },

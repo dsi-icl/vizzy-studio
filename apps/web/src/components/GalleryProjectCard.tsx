@@ -1,7 +1,6 @@
 import { useAuth } from '@repo/auth/tanstack/hooks';
 import type { Project } from '@repo/ui/components/project-card';
 import { ProjectCard } from '@repo/ui/components/project-card';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -11,7 +10,6 @@ import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
 import { $issueBoundServeLaunch } from '~/server/serve.fns';
-import { wallsQueryOptions } from '~/server/walls.queries';
 
 interface GalleryProjectCardProps {
     project: Project & {
@@ -23,6 +21,12 @@ interface GalleryProjectCardProps {
     forceCloseMinimizedSignal?: string | number | null;
     forceCloseSignal?: string | number | null;
     allowWallActions?: boolean;
+    availableWalls?: Array<{
+        id: string;
+        name: string;
+        connectedNodes: number;
+        isBound?: boolean;
+    }>;
 }
 
 export function GalleryProjectCard({
@@ -31,28 +35,16 @@ export function GalleryProjectCard({
     forceDemoteFullscreenSignal,
     forceCloseMinimizedSignal,
     forceCloseSignal,
-    allowWallActions = true
+    allowWallActions = true,
+    availableWalls = []
 }: GalleryProjectCardProps) {
     const { user } = useAuth();
 
     const wallId = useGalleryStore((s) => s.wallId);
     const isEnrolledDevice = useGalleryStore((s) => s.isEnrolledDevice);
-    const canUserManageWalls = Boolean(user) && allowWallActions;
-    const canEnrolledDeviceLoad = isEnrolledDevice && !user && allowWallActions;
-    const { data: walls = [] } = useQuery({
-        ...wallsQueryOptions(),
-        enabled: canUserManageWalls || canEnrolledDeviceLoad
-    });
-
-    const availableWalls =
-        canUserManageWalls || canEnrolledDeviceLoad
-            ? walls.map((wall) => ({
-                  id: wall.wallId,
-                  name: wall.name,
-                  connectedNodes: wall.connectedNodes,
-                  isBound: Boolean(wall.boundProjectId)
-              }))
-            : [];
+    const canAdminBindWall = user?.role === 'admin';
+    const canDeviceBindWall = isEnrolledDevice && !user;
+    const canBindWall = allowWallActions && (canAdminBindWall || canDeviceBindWall);
 
     const isCustom = Boolean(project.controlPath);
 
@@ -193,7 +185,6 @@ export function GalleryProjectCard({
         [project.id]
     );
 
-    const canLoad = canUserManageWalls || canEnrolledDeviceLoad;
     // The gallery route only sets `controlPath` for custom projects.
     const previewHref =
         user && project.publishedCommitId && !isCustom
@@ -207,22 +198,25 @@ export function GalleryProjectCard({
             project={project}
             previewHref={previewHref}
             previewDisabledReason={previewDisabledReason}
+            loadUnavailableMessage={
+                !user && !isEnrolledDevice ? 'Sign in to load this project on a wall.' : undefined
+            }
             autoOpenSignal={autoOpenSignal}
             forceDemoteFullscreenSignal={forceDemoteFullscreenSignal}
             forceCloseMinimizedSignal={forceCloseMinimizedSignal}
             forceCloseSignal={forceCloseSignal}
             availableWalls={availableWalls}
-            onLoadProject={canLoad ? handleLoadProject : undefined}
-            onWallRebootRequest={canLoad ? handleWallRebootRequest : undefined}
-            onWallUnbindRequest={canLoad ? handleWallUnbindRequest : undefined}
+            onLoadProject={canBindWall ? handleLoadProject : undefined}
+            onWallRebootRequest={canBindWall ? handleWallRebootRequest : undefined}
+            onWallUnbindRequest={canBindWall ? handleWallUnbindRequest : undefined}
             onControllerTokenRequest={
-                canLoad && !isCustom ? handleControllerTokenRequest : undefined
+                canBindWall && !isCustom ? handleControllerTokenRequest : undefined
             }
             onControllerLaunchRequest={
-                canLoad && isCustom ? handleControllerLaunchRequest : undefined
+                canBindWall && isCustom ? handleControllerLaunchRequest : undefined
             }
             presetWallId={wallId}
-            hideWallPicker={canEnrolledDeviceLoad}
+            hideWallPicker={canDeviceBindWall}
         />
     );
 }

@@ -109,6 +109,12 @@ jobs:
             - name: Start test stack
               run: bun run test:harness:up
 
+            - name: Diagnose test stack startup
+              if: ${{ failure() }}
+              run: |
+                  docker compose -f docker-compose.test.yml ps --all
+                  docker compose -f docker-compose.test.yml logs --no-color --tail=200
+
             - name: Prepare harness fixtures
               run: bun run test:harness:prepare
 

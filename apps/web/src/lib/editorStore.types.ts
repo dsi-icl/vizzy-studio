@@ -31,6 +31,8 @@ export interface EditorState {
     showSpacePreview: boolean;
     showGrid: boolean;
     isDrawing: boolean;
+    isErasing: boolean;
+    eraserWidth: number;
     isSnapping: boolean;
     strokeColor: string;
     strokeWidth: number;
@@ -69,6 +71,12 @@ export interface EditorState {
     removeLayer: (numericId: number) => void;
     updateProgress: (numericId: number, progress: number) => void;
     updateLayerConfig: (numericId: number, config: Layer['config']) => void;
+    updateMapView: (
+        numericId: number,
+        view: Partial<Extract<LayerWithEditorState, { type: 'map' }>['view']>
+    ) => void;
+    flushMapViewUpdate: () => void;
+    queueMapLayerUpdate: (numericId: number) => void;
     toggleLayerVisibility: (numericId: number) => void;
     toggleLayerLock: (numericId: number) => void;
     deselectAllLayers: () => void;
@@ -89,6 +97,7 @@ export interface EditorState {
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
     addLineLayer: (line: Array<number>) => void;
+    commitLineErase: (numericId: number, linePaths: number[][]) => void;
     clearStage: () => void;
     reboot: () => void;
     reorderLayers: (layers: LayerWithEditorState[]) => void;
@@ -114,6 +123,8 @@ export interface EditorState {
     toggleSlideSelection: (id: string, isShiftClick: boolean, isCtrlClick: boolean) => void;
     toggleGrid: () => void;
     toggleDrawing: () => void;
+    setErasing: (isErasing: boolean) => void;
+    setEraserWidth: (width: number) => void;
     toggleSnapping: () => void;
     toggleSpacePreview: () => void;
     startTextEditing: (numericId: number) => void;
@@ -124,6 +135,8 @@ export interface EditorState {
 export interface SliceHelpers {
     /** Throttled upsert_layer broadcast — defined once at module level. */
     sendLayerUpdate: (layer: LayerWithEditorState, origin: string) => void;
+    queueMapLayerUpdate: (numericId: number) => void;
+    flushMapViewUpdate: () => void;
     /** Broadcast slide metadata to bus — needs get() for commitId. */
     broadcastSlides: (slides: Slide[]) => void;
     /** ID counter access — module-level state owned by editorStore.ts. */

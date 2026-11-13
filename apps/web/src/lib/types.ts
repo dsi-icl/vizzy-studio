@@ -16,6 +16,24 @@ export const TEXT_FORMAT_VERSION = 1;
 
 // ── Layer schemas ────────────────────────────────────────────────────────────
 
+export const MAP_STYLE_IDS = [
+    'protomaps-light',
+    'protomaps-dark',
+    'protomaps-darkvizgray',
+    'protomaps-darkvizwhite'
+] as const;
+
+export const DEFAULT_MAP_STYLE_ID = 'protomaps-light';
+
+export const MAP_STYLE_OPTIONS = [
+    { value: 'protomaps-light', label: 'Light' },
+    { value: 'protomaps-dark', label: 'Dark' },
+    { value: 'protomaps-darkvizgray', label: 'Dark Gray' },
+    { value: 'protomaps-darkvizwhite', label: 'Dark White' }
+] satisfies Array<{ value: MapStyleId; label: string }>;
+
+export type MapStyleId = (typeof MAP_STYLE_IDS)[number];
+
 const LayerPositionStateSchema = z.object({
     cx: z.number(),
     cy: z.number(),
@@ -138,6 +156,9 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
     z
         .object({
             type: z.literal('map'),
+            style: z.enum(MAP_STYLE_IDS).default(DEFAULT_MAP_STYLE_ID),
+            /** Authoring viewport pixels per stage pixel; keeps editor framing on the wall. */
+            viewportScale: z.number().positive().optional(),
             view: z.object({
                 latitude: z.number(),
                 longitude: z.number(),
@@ -162,6 +183,7 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
         .object({
             type: z.literal('line'),
             line: z.array(z.number()),
+            linePaths: z.array(z.array(z.number())).optional(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number()
@@ -197,6 +219,12 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
 const LayerSchema = z.preprocess(migrateLegacyLayer, LayerVariantSchema);
 
 export type Layer = z.infer<typeof LayerSchema>;
+
+type LineLayer = Extract<Layer, { type: 'line' }>;
+
+export function getLinePaths(layer: LineLayer): number[][] {
+    return layer.linePaths ?? (layer.line.length === 0 ? [] : [layer.line]);
+}
 
 // ── Hello schema (exported separately for handshake-only validation) ─────────
 
@@ -341,7 +369,14 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string(),
         recentColours: z.array(z.string())
     }),
-    z.object({ type: z.literal('delete_layer'), numericId: z.number() }),
+    z.object({
+        type: z.literal('delete_layer'),
+        numericId: z.number(),
+        origin: z
+            .string()
+            .regex(/^(editor|controller|yjs):[a-z0-9_]+$/)
+            .optional()
+    }),
     z.object({
         type: z.literal('video_play'),
         numericId: z.number(),

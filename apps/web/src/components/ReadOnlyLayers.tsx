@@ -3,8 +3,10 @@ import Konva from 'konva';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Rect } from 'react-konva';
 
+import { useTextFontRevision } from '~/hooks/useFonts';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import { deriveVideoStillImageFilename } from '~/lib/mediaUtils';
+import { getTextFontRevision } from '~/lib/textFontFaces';
 import { textHtmlToImage } from '~/lib/textToCanvas';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -115,20 +117,21 @@ export function ReadOnlyTextLayer({
 }) {
     const [img, setImg] = useState<HTMLImageElement | null>(null);
     const imageRef = useRef<Konva.Image>(null);
+    const fontRevision = useTextFontRevision();
 
     useEffect(() => {
         let cancelled = false;
         textHtmlToImage(layer.textHtml ?? '', layer.config.width, layer.config.height)
             .then((rendered) => {
-                if (!cancelled) setImg(rendered);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(rendered);
             })
             .catch(() => {
-                if (!cancelled) setImg(null);
+                if (!cancelled && fontRevision === getTextFontRevision()) setImg(null);
             });
         return () => {
             cancelled = true;
         };
-    }, [layer.textHtml, layer.config.width, layer.config.height]);
+    }, [layer.textHtml, layer.config.width, layer.config.height, fontRevision]);
 
     useEffect(() => {
         applyKonvaFilters(imageRef.current, layer.config.filters);
