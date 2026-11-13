@@ -14,7 +14,6 @@ import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { imagePreviewUrl } from '~/lib/mediaUtils';
-import { serveWallLaunchDelayMs } from '~/lib/serveWallLaunch';
 import { createSignedServerFnFetch, signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
@@ -423,7 +422,6 @@ function WallApp() {
         if (!wallId || !customRenderProjectId) return;
         let cancelled = false;
         let retryTimer: number | null = null;
-        let initialTimer: number | null = null;
         let retryDelayMs = 1_000;
         let activeController: AbortController | null = null;
         const requestLaunch = () => {
@@ -477,26 +475,13 @@ function WallApp() {
                     if (activeController === controller) activeController = null;
                 });
         };
-        initialTimer = window.setTimeout(
-            requestLaunch,
-            serveWallLaunchDelayMs(col, row, columns, rows)
-        );
+        requestLaunch();
         return () => {
             cancelled = true;
             activeController?.abort();
-            if (initialTimer !== null) window.clearTimeout(initialTimer);
             if (retryTimer !== null) window.clearTimeout(retryTimer);
         };
-    }, [
-        wallId,
-        customRenderProjectId,
-        customRenderBindingId,
-        serveGrantRetryCycle,
-        col,
-        row,
-        columns,
-        rows
-    ]);
+    }, [wallId, customRenderProjectId, customRenderBindingId, serveGrantRetryCycle]);
 
     useEffect(() => {
         if (
