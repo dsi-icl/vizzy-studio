@@ -137,14 +137,18 @@ function HeaderAuthSection() {
             fetchOptions: {
                 onSuccess: async () => {
                     setSignOutDialogOpen(false);
-                    queryClient.setQueryData(authQueryOptions().queryKey, null);
-                    await router.invalidate();
+                    await queryClient.cancelQueries();
+                    queryClient.clear();
                     const { wallId, isEnrolledDevice } = useGalleryStore.getState();
                     const enrolledWallId = (isEnrolledDevice && wallId) || readEnrolledWallId();
-                    if (enrolledWallId) {
-                        navigate({ to: '/gallery', search: { w: enrolledWallId } });
+                    const destination = enrolledWallId
+                        ? `/gallery?w=${encodeURIComponent(enrolledWallId)}`
+                        : '/';
+                    if (typeof window !== 'undefined') {
+                        window.location.assign(destination);
                         return;
                     }
+                    await router.invalidate();
                     navigate({ to: '/' });
                 },
                 onError: async (ctx) => {
@@ -160,6 +164,7 @@ function HeaderAuthSection() {
                         'Sign out failed';
                     toast.error(message);
                     queryClient.setQueryData(authQueryOptions().queryKey, null);
+                    queryClient.removeQueries({ queryKey: ['projects'] });
                     await router.invalidate();
                     setIsSigningOut(false);
                 }
