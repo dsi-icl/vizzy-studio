@@ -15,10 +15,10 @@ import {
     upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
-import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import { resolveServeCookieGrant, type ServeActor } from '~/server/serveCookie';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
+import { getServeProject } from '~/server/serveProject';
 
 const UPSTREAM_CONTEXT_KEY = 'serveUpstreamUrl';
 
@@ -74,7 +74,7 @@ export async function resolveServeWebSocketUpstream(request: Request): Promise<s
         return null;
     }
 
-    const project = await getProject(projectId).catch(() => null);
+    const project = await getServeProject(projectId).catch(() => null);
     if (!project || !isCustomProject(project)) return null;
 
     const port = project.customPort;

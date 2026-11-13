@@ -144,6 +144,9 @@ const csrfMiddleware = createCsrfMiddleware({
 });
 
 const authContextMiddleware = createMiddleware().server(async ({ next, request, context }) => {
+    // Serve validates its own launch ticket or per-route cookie and wall binding.
+    // Its screen and asset requests do not use the app's session context.
+    if (new URL(request.url).pathname.startsWith('/serve/')) return next();
     const { authContext } = await resolveRequestAuthContext(request);
     touchUserLastSeenThrottled(authContext.user?.email);
     return next({

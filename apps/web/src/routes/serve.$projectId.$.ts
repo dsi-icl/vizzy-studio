@@ -22,7 +22,6 @@ import {
     upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
-import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
     createServeCookie,
@@ -33,6 +32,7 @@ import {
 } from '~/server/serveCookie';
 import { consumeServeLaunch } from '~/server/serveLaunch';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
+import { getServeProject } from '~/server/serveProject';
 import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 import {
     isWebSocketUpgrade,
@@ -79,7 +79,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         ) {
             return new Response('Invalid demo launch', { status: 401 });
         }
-        const project = await getProject(parsed.projectId).catch(() => null);
+        const project = await getServeProject(parsed.projectId).catch(() => null);
         if (!project || !isCustomProject(project)) return notFound();
         const destination = new URL(
             `${serveBasePath(parsed.projectId)}/${launch.entry}`,
@@ -142,7 +142,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     )
         return new Response('Forbidden', { status: 403 });
     const { projectId } = parsed;
-    const project = await getProject(projectId).catch(() => null);
+    const project = await getServeProject(projectId).catch(() => null);
     if (!project || !isCustomProject(project)) return notFound();
 
     const port = project.customPort;
