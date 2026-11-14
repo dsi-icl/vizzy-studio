@@ -23,6 +23,7 @@ import {
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
 import { isWallBoundToProject } from '~/server/serveAuthz';
+import { fetchServeControlDocument } from '~/server/serveControlHttp';
 import {
     createServeCookie,
     obsoleteServeCookieHeaders,
@@ -231,6 +232,9 @@ export async function handleServeRequest(request: Request): Promise<Response> {
         request.method === 'GET' &&
         ['/screen', '/screen/', '/control', '/control/'].includes(parsed.rest) &&
         SERVE_ENTRY_FRESH_CONNECTION;
+    const isolatedControl =
+        request.method === 'GET' && ['/control', '/control/'].includes(parsed.rest);
+    const transport = isolatedControl ? 'node-http' : 'bun-fetch';
     const upstreamUrl = buildServeUpstreamUrl({
         host,
         port,
@@ -246,19 +250,20 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     let serveFetchesAtHeaders = 0;
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     try {
-        upstream = await fetch(upstreamUrl, {
-            method: request.method,
-            headers: buildForwardedHeaders(request, actor, publicBase),
-            body: request.body,
-            duplex: 'half',
-            redirect: 'manual',
-            // Entry documents should use a fresh socket. A stale pooled
-            // connection can stall the control page while wall requests load.
-            ...(freshConnection ? { keepalive: false } : {}),
-            // A wall navigation cancels the browser request. Release its old
-            // upstream poll instead of letting it hold a Bun fetch slot.
-            signal: AbortSignal.any([request.signal, timeoutSignal])
-        } as RequestInit & { duplex: 'half' });
+        const signal = AbortSignal.any([request.signal, timeoutSignal]);
+        const forwardedHeaders = buildForwardedHeaders(request, actor, publicBase);
+        upstream = isolatedControl
+            ? await fetchServeControlDocument(upstreamUrl, forwardedHeaders, signal)
+            : await fetch(upstreamUrl, {
+                  method: request.method,
+                  headers: forwardedHeaders,
+                  body: request.body,
+                  duplex: 'half',
+                  redirect: 'manual',
+                  ...(freshConnection ? { keepalive: false } : {}),
+                  // Release abandoned polls instead of holding a Bun fetch slot.
+                  signal
+              } as RequestInit & { duplex: 'half' });
         serveFetchesAtHeaders = pendingServeUpstreamFetches;
     } catch (error) {
         const clientAborted = request.signal.aborted;
@@ -273,6 +278,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 requestKind,
                 status: 499,
                 freshConnection,
+                transport,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorCode: 'client-aborted'
@@ -285,6 +291,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             requestKind,
             status: 502,
             freshConnection,
+            transport,
             serveFetchesAtStart,
             serveFetchesAtFailure: pendingServeUpstreamFetches,
             errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
@@ -299,6 +306,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 elapsedMs: Math.round(upstreamMs),
                 timeoutMs,
                 freshConnection,
+                transport,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorName: error instanceof Error ? error.name : 'unknown',
@@ -347,6 +355,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             requestKind,
             status: upstream.status,
             freshConnection,
+            transport,
             serveFetchesAtStart,
             serveFetchesAtHeaders
         },
