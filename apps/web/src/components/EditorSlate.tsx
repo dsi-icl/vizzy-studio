@@ -7,6 +7,7 @@ import {
     useRef,
     useState,
     useLayoutEffect,
+    Fragment,
     type DragEvent
 } from 'react';
 import {
@@ -21,6 +22,7 @@ import {
 } from 'react-konva';
 import { toast } from 'sonner';
 
+import { EffectEllipse, EffectRect } from '~/components/AnimatedKonvaShape';
 import { getAssetDragMimeType, type AssetLibraryAsset } from '~/components/AssetLibrary';
 import { EditorMapOverlay } from '~/components/EditorMapOverlay';
 import { EditorToolbar } from '~/components/EditorToolbar';
@@ -76,6 +78,8 @@ import { getLinePaths, type Layer, type LayerWithEditorState } from '~/lib/types
 
 import { SlatePreview } from './SlatePreview';
 import { useImagePinch } from './useImagePinch';
+
+const getEditorTime = () => EditorEngine.getInstance().getServerTime();
 
 /**
  * `cx`/`cy` always address a layer's centre. Konva draws an Ellipse from its own
@@ -1802,33 +1806,71 @@ export function EditorSlate() {
                                         };
 
                                         if (layer.shape === 'rectangle') {
+                                            const shapeProps = {
+                                                ...commonProps,
+                                                width: layer.config.width,
+                                                height: layer.config.height,
+                                                offsetX: layer.config.width / 2,
+                                                offsetY: layer.config.height / 2,
+                                                cornerRadius: layer.cornerRadius,
+                                                dash: layer.strokeDash,
+                                                dashOffset: (layer.strokeDash[0] ?? 0) / 2,
+                                                lineCap: 'round' as const,
+                                                lineJoin: 'round' as const
+                                            };
+                                            const animated =
+                                                layer.effect && layer.effect !== 'none';
                                             return (
-                                                <Rect
-                                                    key={`shape_${layer.numericId}`}
-                                                    {...commonProps}
-                                                    width={layer.config.width}
-                                                    height={layer.config.height}
-                                                    offsetX={layer.config.width / 2}
-                                                    offsetY={layer.config.height / 2}
-                                                    cornerRadius={layer.cornerRadius}
-                                                    dash={layer.strokeDash}
-                                                    dashOffset={(layer.strokeDash[0] ?? 0) / 2}
-                                                    lineCap="round"
-                                                    lineJoin="round"
-                                                />
+                                                <Fragment key={`shape_${layer.numericId}`}>
+                                                    <Rect
+                                                        {...shapeProps}
+                                                        opacity={animated ? 0 : hiddenOpacity}
+                                                    />
+                                                    {animated ? (
+                                                        <EffectRect
+                                                            {...shapeProps}
+                                                            id={undefined}
+                                                            listening={false}
+                                                            draggable={false}
+                                                            effect={layer.effect}
+                                                            effectSettings={layer.effectSettings}
+                                                            getTimeMs={getEditorTime}
+                                                            followNodeId={layer.numericId.toString()}
+                                                        />
+                                                    ) : null}
+                                                </Fragment>
                                             );
                                         }
                                         if (layer.shape === 'oval') {
+                                            const shapeProps = {
+                                                ...commonProps,
+                                                radiusX: layer.config.width / 2,
+                                                radiusY: layer.config.height / 2,
+                                                dash: layer.strokeDash,
+                                                lineCap: 'round' as const,
+                                                lineJoin: 'round' as const
+                                            };
+                                            const animated =
+                                                layer.effect && layer.effect !== 'none';
                                             return (
-                                                <Ellipse
-                                                    key={`shape_${layer.numericId}`}
-                                                    {...commonProps}
-                                                    radiusX={layer.config.width / 2}
-                                                    radiusY={layer.config.height / 2}
-                                                    dash={layer.strokeDash}
-                                                    lineCap="round"
-                                                    lineJoin="round"
-                                                />
+                                                <Fragment key={`shape_${layer.numericId}`}>
+                                                    <Ellipse
+                                                        {...shapeProps}
+                                                        opacity={animated ? 0 : hiddenOpacity}
+                                                    />
+                                                    {animated ? (
+                                                        <EffectEllipse
+                                                            {...shapeProps}
+                                                            id={undefined}
+                                                            listening={false}
+                                                            draggable={false}
+                                                            effect={layer.effect}
+                                                            effectSettings={layer.effectSettings}
+                                                            getTimeMs={getEditorTime}
+                                                            followNodeId={layer.numericId.toString()}
+                                                        />
+                                                    ) : null}
+                                                </Fragment>
                                             );
                                         }
                                     }
@@ -1846,6 +1888,7 @@ export function EditorSlate() {
                                                 key={`lin_${layer.numericId}`}
                                                 id={layer.numericId.toString()}
                                                 layer={previewLayer}
+                                                getTimeMs={getEditorTime}
                                                 listening={props.listening}
                                                 opacity={hiddenOpacity}
                                                 onClick={props.onSelect}

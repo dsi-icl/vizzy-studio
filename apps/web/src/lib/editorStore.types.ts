@@ -1,7 +1,7 @@
 import type { StageLayout } from '@repo/db/schema';
 
 import type { ConnectionStatus } from './reconnectingWs';
-import type { Layer, LayerWithEditorState, Slide } from './types';
+import type { Layer, LayerWithEditorState, ShapeEffect, ShapeEffectSettings, Slide } from './types';
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -108,6 +108,8 @@ export interface EditorState {
     setStrokeWidth: (width: number) => void;
     setStrokeDash: (dash: number[]) => void;
     setShapeFill: (fill: string) => void;
+    setShapeEffect: (effect: ShapeEffect) => void;
+    setShapeEffectSettings: (settings: Partial<ShapeEffectSettings>) => void;
     setRectangleCornerRadius: (radius: number) => void;
     setInsertionCenter: (x: number, y: number) => void;
     setInsertionViewport: (width: number, height: number) => void;

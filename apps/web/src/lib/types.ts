@@ -74,6 +74,33 @@ const LayerPlaybackStateSchema = z.object({
     anchorServerTime: z.number()
 });
 
+export const ShapeEffectSchema = z.enum(['none', 'pulse', 'focus', 'ping', 'travel', 'reveal']);
+export type ShapeEffect = z.infer<typeof ShapeEffectSchema>;
+
+export const ShapeEffectSettingsSchema = z.object({
+    speed: z.number().min(0.25).max(3).default(1),
+    intensity: z.number().min(0).max(200).default(100),
+    direction: z.enum(['forward', 'reverse']).default('forward'),
+    ringCount: z.number().int().min(1).max(3).default(2),
+    segmentLength: z.number().min(5).max(45).default(20),
+    playMode: z.enum(['loop', 'once']).default('loop'),
+    phaseOffsetMs: z.number().min(0).max(5000).default(0),
+    accentColor: z.string().default('#ffffff'),
+    startAtMs: z.number().optional()
+});
+export type ShapeEffectSettings = z.infer<typeof ShapeEffectSettingsSchema>;
+
+const LEGACY_SHAPE_EFFECTS: Record<string, ShapeEffect> = {
+    glow: 'focus',
+    blink: 'focus',
+    outline: 'focus',
+    ripple: 'ping',
+    flow: 'travel',
+    orbit: 'travel',
+    scan: 'travel',
+    draw: 'reveal'
+};
+
 const LayerBaseSchema = z.object({ numericId: z.number(), config: LayerConfigStateSchema });
 
 const MediaLayerBaseSchema = LayerBaseSchema.extend({
@@ -121,16 +148,21 @@ export const migrateLegacyLayer = (layer: unknown): unknown => {
             }
         };
     }
-    if (candidate.type !== 'shape' || candidate.shape !== 'circle') return layer;
+    if (candidate.type !== 'shape') return layer;
+    const normalized =
+        typeof candidate.effect === 'string' && LEGACY_SHAPE_EFFECTS[candidate.effect]
+            ? { ...candidate, effect: LEGACY_SHAPE_EFFECTS[candidate.effect] }
+            : candidate;
+    if (normalized.shape !== 'circle') return normalized;
 
-    const config = (candidate.config ?? {}) as Record<string, unknown>;
+    const config = (normalized.config ?? {}) as Record<string, unknown>;
     const width = typeof config.width === 'number' ? config.width : 0;
     const height = typeof config.height === 'number' ? config.height : 0;
 
-    // Only the name and the centre move. Every other field — fill, strokeColor,
+    // Only the shape name and centre move. Every other field — fill, strokeColor,
     // strokeDash, strokeWidth, and the rest of config — carries over untouched.
     return {
-        ...candidate,
+        ...normalized,
         shape: 'oval',
         config: {
             ...config,
@@ -209,7 +241,9 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
             linePaths: z.array(z.array(z.number())).optional(),
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
-            strokeWidth: z.number()
+            strokeWidth: z.number(),
+            effect: ShapeEffectSchema.optional(),
+            effectSettings: ShapeEffectSettingsSchema.optional()
         })
         .extend(LayerBaseSchema.shape),
     z
@@ -220,7 +254,9 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
             strokeColor: z.string(),
             strokeDash: z.array(z.number()),
             strokeWidth: z.number(),
-            cornerRadius: z.number().nonnegative().default(0)
+            cornerRadius: z.number().nonnegative().default(0),
+            effect: ShapeEffectSchema.optional(),
+            effectSettings: ShapeEffectSettingsSchema.optional()
         })
         .extend(LayerBaseSchema.shape),
     z

@@ -56,7 +56,7 @@ export class WallEngine {
     // Clock Sync State
     private clockOffset = 0;
     private clockSamples: Array<{ receivedAt: number; rtt: number; offset: number }> = [];
-    private clockSynced = false;
+    private hasClockSync = false;
     private pendingSlideReady: string | null = null;
 
     // Render State
@@ -81,7 +81,7 @@ export class WallEngine {
             onOpen: () => {
                 console.log('Wall Engine: Connected to Master Server');
                 // Keep the last offset until a fresh authenticated sample arrives.
-                this.clockSynced = false;
+                this.hasClockSync = false;
                 this.clockSamples = [];
                 this.pendingSlideReady = null;
                 if (this.pingTimer) clearTimeout(this.pingTimer);
@@ -218,6 +218,10 @@ export class WallEngine {
         return Date.now() + this.clockOffset;
     }
 
+    public get clockSynced(): boolean {
+        return this.hasClockSync;
+    }
+
     private startClockSync() {
         const sendPing = () => {
             const buffer = new ArrayBuffer(9);
@@ -241,7 +245,7 @@ export class WallEngine {
         this.clockSamples.push({ receivedAt, rtt, offset });
         const best = this.clockSamples.reduce((a, b) => (a.rtt <= b.rtt ? a : b));
         this.clockOffset = best.offset;
-        this.clockSynced = true;
+        this.hasClockSync = true;
         this.flushSlideReady();
     }
 
@@ -251,7 +255,7 @@ export class WallEngine {
     }
 
     private flushSlideReady() {
-        if (!this.pendingSlideReady || !this.clockSynced || !this.bus.ready) return;
+        if (!this.pendingSlideReady || !this.hasClockSync || !this.bus.ready) return;
         if (
             this.bus.sendJSON({ type: 'wall_slide_ready', presentationId: this.pendingSlideReady })
         ) {

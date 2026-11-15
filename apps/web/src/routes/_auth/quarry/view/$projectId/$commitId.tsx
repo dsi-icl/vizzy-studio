@@ -18,9 +18,10 @@ import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer as KonvaLayer, Rect, Ellipse } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Rect } from 'react-konva';
 import { toast } from 'sonner';
 
+import { EffectEllipse, EffectRect } from '~/components/AnimatedKonvaShape';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
@@ -314,9 +315,13 @@ function CommitViewer() {
                                                         };
                                                         if (layer.shape === 'rectangle') {
                                                             return (
-                                                                <Rect
+                                                                <EffectRect
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
+                                                                    effect={layer.effect}
+                                                                    effectSettings={
+                                                                        layer.effectSettings
+                                                                    }
                                                                     width={layer.config.width}
                                                                     height={layer.config.height}
                                                                     offsetX={layer.config.width / 2}
@@ -332,9 +337,13 @@ function CommitViewer() {
                                                         }
                                                         if (layer.shape === 'oval') {
                                                             return (
-                                                                <Ellipse
+                                                                <EffectEllipse
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
+                                                                    effect={layer.effect}
+                                                                    effectSettings={
+                                                                        layer.effectSettings
+                                                                    }
                                                                     radiusX={layer.config.width / 2}
                                                                     radiusY={
                                                                         layer.config.height / 2

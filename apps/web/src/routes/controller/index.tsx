@@ -10,9 +10,10 @@ import { createFileRoute, useLocation } from '@tanstack/react-router';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import QRCode from 'qrcode';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Stage, Layer as KonvaLayer, Rect, Ellipse, Line, Circle } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Rect, Line, Circle } from 'react-konva';
 import { useShallow } from 'zustand/react/shallow';
 
+import { EffectEllipse, EffectRect } from '~/components/AnimatedKonvaShape';
 import { ControllerToolbar } from '~/components/ControllerToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
@@ -1168,9 +1169,13 @@ function Controller() {
                                                         };
                                                         if (layer.shape === 'rectangle') {
                                                             return (
-                                                                <Rect
+                                                                <EffectRect
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
+                                                                    effect={layer.effect}
+                                                                    effectSettings={
+                                                                        layer.effectSettings
+                                                                    }
                                                                     width={layer.config.width}
                                                                     height={layer.config.height}
                                                                     offsetX={layer.config.width / 2}
@@ -1186,9 +1191,13 @@ function Controller() {
                                                         }
                                                         if (layer.shape === 'oval') {
                                                             return (
-                                                                <Ellipse
+                                                                <EffectEllipse
                                                                     key={`shape_${layer.numericId}`}
                                                                     {...common}
+                                                                    effect={layer.effect}
+                                                                    effectSettings={
+                                                                        layer.effectSettings
+                                                                    }
                                                                     radiusX={layer.config.width / 2}
                                                                     radiusY={
                                                                         layer.config.height / 2
