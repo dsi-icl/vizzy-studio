@@ -440,6 +440,18 @@ export async function completeHelloRegistration(
             publicKey: parsed.devicePublicKey,
             kind: 'gallery'
         });
+        if (galleryDevice.status === 'revoked') {
+            sendJSON(peer, {
+                type: 'auth_denied',
+                reason: 'device_revoked'
+            });
+            try {
+                peer.close();
+            } catch {
+                // no-op
+            }
+            return { pendingEnrollment: false, rejected: true };
+        }
         if (galleryDevice.status === 'pending') {
             sendJSON(peer, {
                 type: 'device_enrollment',

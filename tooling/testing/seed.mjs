@@ -528,6 +528,14 @@ async function seed() {
             email: 'viewer@test.local',
             name: 'Viewer Test',
             role: 'user'
+        }),
+        // Signing out destroys the session server side, so tests that exercise logout
+        // consume this actor instead of the shared ones.
+        user_signout: await createActor(testHelpers, {
+            id: 'usr_signout',
+            email: 'signout@test.local',
+            name: 'Sign Out Test',
+            role: 'admin'
         })
     };
 
@@ -543,6 +551,7 @@ async function seed() {
     const mediaProjectId = new ObjectId('000000000000000000000108');
     const interactionProjectId = new ObjectId('000000000000000000000109');
     const customRenderProjectId = new ObjectId('000000000000000000000110');
+    const privatePublishedProjectId = new ObjectId('000000000000000000000113');
     const galleryAlpha2ProjectId = new ObjectId('000000000000000000000111');
     const galleryAlpha10ProjectId = new ObjectId('000000000000000000000112');
     const privateCommitId = new ObjectId('000000000000000000000201');
@@ -555,6 +564,7 @@ async function seed() {
     const mediaCommitId = new ObjectId('000000000000000000000208');
     const interactionCommitId = new ObjectId('000000000000000000000209');
     const customRenderCommitId = new ObjectId('000000000000000000000210');
+    const privatePublishedCommitId = new ObjectId('000000000000000000000213');
     const galleryAlpha2CommitId = new ObjectId('000000000000000000000211');
     const galleryAlpha10CommitId = new ObjectId('000000000000000000000212');
 
@@ -780,6 +790,22 @@ async function seed() {
             collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
             defaultStageId: 'main',
             stages: [createMainStage(galleryAlpha10CommitId, galleryAlpha10CommitId)],
+            createdBy: actors.user_editor.email,
+            createdAt: now,
+            updatedAt: now,
+            _version: 2
+        },
+        {
+            _id: privatePublishedProjectId,
+            name: 'Harness Private Published Project',
+            authorOrganisation: 'Harness Org',
+            description: 'Seeded private published project for gallery permission tests',
+            tags: [],
+            visibility: 'private',
+            heroImages: [],
+            collaborators: [{ email: actors.user_editor.email, role: 'owner' }],
+            defaultStageId: 'main',
+            stages: [createMainStage(privatePublishedCommitId, privatePublishedCommitId)],
             createdBy: actors.user_editor.email,
             createdAt: now,
             updatedAt: now,
@@ -1081,6 +1107,23 @@ async function seed() {
             isMutableHead: true,
             createdAt: now,
             _version: 3
+        },
+        {
+            _id: privatePublishedCommitId,
+            projectId: privatePublishedProjectId,
+            stageId: 'main',
+            parentId: null,
+            authorId: new ObjectId(),
+            message: 'Harness private published head',
+            content: {
+                slides: [
+                    { id: 'slide-private-published-1', order: 0, name: 'Published', layers: [] }
+                ]
+            },
+            isAutoSave: false,
+            isMutableHead: true,
+            createdAt: now,
+            _version: 3
         }
     ]);
 
@@ -1272,6 +1315,12 @@ async function seed() {
             assignedWallId: 'test-wall-controller'
         },
         {
+            deviceId: 'dev_gallery_revoked',
+            kind: 'gallery',
+            status: 'revoked',
+            assignedWallId: 'test-wall-gallery'
+        },
+        {
             deviceId: 'dev_wall_revoked',
             kind: 'wall',
             status: 'revoked',
@@ -1339,6 +1388,9 @@ async function seed() {
             toolbarCommitId: privateCommitId.toHexString(),
             toolbarSlideIds: ['slide-toolbar-primary', 'slide-toolbar-retry'],
             publicProjectId: publicProjectId.toHexString(),
+            privatePublishedProjectId: privatePublishedProjectId.toHexString(),
+            privatePublishedCommitId: privatePublishedCommitId.toHexString(),
+            privatePublishedSlideId: 'slide-private-published-1',
             publicCommitId: publicCommitId.toHexString(),
             publicSlideId: 'slide-public-1',
             renderingProjectId: renderingProjectId.toHexString(),
@@ -1393,6 +1445,11 @@ async function seed() {
     await writeFile(
         resolve(authDir, 'user_viewer.json'),
         `${JSON.stringify(toPlaywrightStorageState(baseUrl, actors.user_viewer.cookies), null, 2)}\n`,
+        'utf8'
+    );
+    await writeFile(
+        resolve(authDir, 'user_signout.json'),
+        `${JSON.stringify(toPlaywrightStorageState(baseUrl, actors.user_signout.cookies), null, 2)}\n`,
         'utf8'
     );
 
