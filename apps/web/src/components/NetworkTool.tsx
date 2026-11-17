@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/
 import { Input } from '@repo/ui/components/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@repo/ui/components/tabs';
 import { TipButton } from '@repo/ui/components/tip-button';
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
 import {
@@ -19,6 +19,11 @@ import {
     type CsvMapping,
     type CsvTable
 } from '~/lib/network/import';
+import {
+    hitTestNetwork,
+    networkPointerPosition,
+    networkPreviewView
+} from '~/lib/network/interaction';
 import { drawNetwork, type NetworkSelection } from '~/lib/network/render';
 import {
     DEFAULT_NETWORK_SETTINGS,
@@ -27,8 +32,10 @@ import {
     NetworkSchema,
     type Network,
     type NetworkData,
-    type NetworkSettings
+    type NetworkSettings,
+    type NetworkView
 } from '~/lib/network/schema';
+import { removeNetworkNode } from '~/lib/network/topology';
 import { useNetworkPreview } from '~/lib/network/useNetworkPreview';
 import type { Layer } from '~/lib/types';
 
@@ -38,7 +45,11 @@ import {
     NetworkStyleSettings,
     NetworkPlaybackControls
 } from './NetworkSettingsControls';
-import { NetworkTopologyEditor } from './NetworkTopologyEditor';
+import {
+    NetworkTopologyEditor,
+    NETWORK_TOPOLOGY_PAGE_SIZE,
+    type NetworkTopologyNavigation
+} from './NetworkTopologyEditor';
 
 function NetworkEditor({
     initial,
@@ -63,9 +74,15 @@ function NetworkEditor({
     const fileRef = useRef<HTMLInputElement>(null);
     const readVersion = useRef(0);
     const nameId = useId();
+    const previewHelpId = useId();
+    const paintedView = useRef<NetworkView | undefined>(undefined);
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
     const [tab, setTab] = useState('custom');
     const [selection, setSelection] = useState<NetworkSelection>(null);
+    const [navigation, setNavigation] = useState<NetworkTopologyNavigation>({
+        section: 'nodes',
+        page: 0
+    });
     const [topologySession, setTopologySession] = useState(0);
     const [previewError, setPreviewError] = useState('');
     const [ready, setReady] = useState(false);
@@ -82,22 +99,49 @@ function NetworkEditor({
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx) return;
         let raf = 0;
+        let previousLive: NetworkView | undefined;
+        let view: NetworkView | undefined;
         const paint = () => {
+            if (!view || previousLive !== live.current) {
+                view = networkPreviewView(draft.data, live.current);
+                previousLive = live.current;
+            }
+            paintedView.current = view;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawNetwork(
-                ctx,
-                draft,
-                canvas.width,
-                canvas.height,
-                undefined,
-                live.current,
-                selection
-            );
+            drawNetwork(ctx, draft, canvas.width, canvas.height, undefined, view, selection);
             raf = requestAnimationFrame(paint);
         };
         paint();
         return () => cancelAnimationFrame(raf);
     }, [canvas, draft, live, selection]);
+
+    const canvasTarget = (event: PointerEvent<HTMLCanvasElement>) => {
+        if (!paintedView.current) return null;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const point = networkPointerPosition(event.clientX, event.clientY, {
+            x: bounds.left,
+            y: bounds.top,
+            w: bounds.width,
+            h: bounds.height
+        });
+        return point ? hitTestNetwork(paintedView.current, settings, point) : null;
+    };
+    const selectFromCanvas = (event: PointerEvent<HTMLCanvasElement>) => {
+        if (event.button !== 0) return;
+        const target = canvasTarget(event);
+        setSelection(target);
+        if (!target) return;
+        const index =
+            'nodeId' in target
+                ? data.nodes.findIndex((node) => node.id === target.nodeId)
+                : target.edgeIndex;
+        if (index < 0) return;
+        setTab('custom');
+        setNavigation({
+            section: 'nodeId' in target ? 'nodes' : 'links',
+            page: Math.floor(index / NETWORK_TOPOLOGY_PAGE_SIZE)
+        });
+    };
 
     useEffect(
         () => () => {
@@ -113,6 +157,7 @@ function NetworkEditor({
         setTable(null);
         setData(EXAMPLE_NETWORK);
         setSelection(null);
+        setNavigation({ section: 'nodes', page: 0 });
         setTopologySession((value) => value + 1);
         setTab('custom');
         setSource('live-example');
@@ -148,6 +193,7 @@ function NetworkEditor({
             } else throw new Error('Choose a .csv or .json file.');
             setSource('import');
             setSelection(null);
+            setNavigation({ section: 'nodes', page: 0 });
             setTopologySession((value) => value + 1);
             setName(file.name.replace(/\.(csv|json)$/i, '').slice(0, 100) || 'Network');
         } catch (err) {
@@ -167,6 +213,7 @@ function NetworkEditor({
             setSource('import');
             setError('');
             setSelection(null);
+            setNavigation({ section: 'nodes', page: 0 });
             setTopologySession((value) => value + 1);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Invalid column mapping.');
@@ -239,6 +286,47 @@ function NetworkEditor({
                                 width={1000}
                                 height={650}
                                 aria-label="Network preview"
+                                aria-describedby={previewHelpId}
+                                tabIndex={0}
+                                onPointerDown={selectFromCanvas}
+                                onPointerMove={(event) => {
+                                    event.currentTarget.style.cursor = canvasTarget(event)
+                                        ? 'pointer'
+                                        : 'default';
+                                }}
+                                onPointerLeave={(event) => {
+                                    event.currentTarget.style.cursor = 'default';
+                                }}
+                                onKeyDown={(event) => {
+                                    // Keep canvas shortcuts inside this draft, not the editor
+                                    // underneath the dialog (where Delete removes a whole layer).
+                                    if (event.key === 'Escape' && !selection) return;
+                                    event.stopPropagation();
+                                    if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        setSelection(null);
+                                    } else if (
+                                        event.key === 'Delete' ||
+                                        event.key === 'Backspace'
+                                    ) {
+                                        event.preventDefault();
+                                        if (!selection) return;
+                                        if ('nodeId' in selection) {
+                                            if (data.nodes.length === 1) return;
+                                            changeTopology(
+                                                removeNetworkNode(data, selection.nodeId)
+                                            );
+                                        } else {
+                                            changeTopology({
+                                                ...data,
+                                                edges: data.edges.filter(
+                                                    (_, i) => i !== selection.edgeIndex
+                                                )
+                                            });
+                                        }
+                                        setSelection(null);
+                                    }
+                                }}
                                 className="absolute inset-0 h-full w-full object-contain"
                             />
                             {busy && (
@@ -260,7 +348,12 @@ function NetworkEditor({
                                     Black preview. Transparent layer.
                                 </p>
                             </div>
-                            <span className="text-[10px] text-white/40">Fixed dataset</span>
+                            <span
+                                id={previewHelpId}
+                                className="max-w-44 text-right text-[10px] text-white/50"
+                            >
+                                Click to select · Delete to remove
+                            </span>
                         </div>
                     </div>
                     <aside className="min-h-0 min-w-0 border-l bg-popover md:overflow-y-auto">
@@ -330,6 +423,9 @@ function NetworkEditor({
                                 <NetworkTopologyEditor
                                     key={topologySession}
                                     data={data}
+                                    selection={selection}
+                                    navigation={navigation}
+                                    onNavigate={setNavigation}
                                     onChange={changeTopology}
                                     onSelect={setSelection}
                                 />
