@@ -486,6 +486,7 @@ function AdminAudits() {
                                 {event.executionContext?.surface && (
                                     <span>Surface: {event.executionContext.surface}</span>
                                 )}
+                                {event.buildCommitSha && <span>Build: {event.buildCommitSha}</span>}
                             </div>
 
                             {hasPayload(event) && (
@@ -499,7 +500,8 @@ function AdminAudits() {
                                                 changes: event.changes ?? null,
                                                 error: event.error ?? null,
                                                 authContext: event.authContext ?? null,
-                                                executionContext: event.executionContext ?? null
+                                                executionContext: event.executionContext ?? null,
+                                                buildCommitSha: event.buildCommitSha ?? null
                                             },
                                             null,
                                             2
