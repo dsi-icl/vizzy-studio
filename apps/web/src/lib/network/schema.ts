@@ -92,7 +92,7 @@ export const NetworkSchema = z
         name: z.string().trim().min(1).max(100),
         data: NetworkDataSchema,
         settings: NetworkSettingsSchema,
-        source: z.enum(['import', 'live-example']).default('import'),
+        source: z.enum(['import', 'live-example', 'custom']).default('import'),
         reheat: z.number().int().nonnegative().default(0),
         // Read old documents as an initial condition only. New saves contain data
         // and settings; ongoing simulation coordinates never dirty the document.

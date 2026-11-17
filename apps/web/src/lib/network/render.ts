@@ -3,6 +3,7 @@ import { initialNetworkPositions } from './document';
 import { NETWORK_HEIGHT, NETWORK_WIDTH, type Network, type NetworkView } from './schema';
 
 export type Rect = { x: number; y: number; w: number; h: number };
+export type NetworkSelection = { nodeId: string } | { edgeIndex: number } | null;
 type Point = { x: number; y: number };
 export const NETWORK_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#c084fc', '#fb7185', '#22d3ee'];
 
@@ -79,7 +80,8 @@ export function drawNetwork(
     width: number,
     height: number,
     viewport?: Rect,
-    live?: NetworkView
+    live?: NetworkView,
+    selection: NetworkSelection = null
 ) {
     ctx.save();
     ctx.beginPath();
@@ -99,7 +101,9 @@ export function drawNetwork(
     };
     const indices = new Map(data.nodes.map((node, index) => [node.id, index]));
     const groups = [...new Set(data.nodes.map((node) => node.group ?? ''))].sort();
-    ctx.strokeStyle = settings.edgeColor;
+    const selectedEdge =
+        selection && 'edgeIndex' in selection ? data.edges[selection.edgeIndex] : undefined;
+    const selectedNode = selection && 'nodeId' in selection ? selection.nodeId : undefined;
     ctx.lineCap = 'round';
     for (const edge of data.edges) {
         const a = positions[indices.get(edge.source)!],
@@ -112,7 +116,9 @@ export function drawNetwork(
             !segmentIntersectsRect(a, b, viewport, loop ? settings.nodeRadius * 4 : edgeWidth)
         )
             continue;
-        ctx.lineWidth = edgeWidth;
+        const selected = edge === selectedEdge;
+        ctx.strokeStyle = selected ? '#a5b4fc' : settings.edgeColor;
+        ctx.lineWidth = selected ? Math.max(3, edgeWidth + 1) : edgeWidth;
         ctx.beginPath();
         if (loop)
             ctx.arc(
@@ -133,10 +139,13 @@ export function drawNetwork(
     data.nodes.forEach((node, index) => {
         const p = positions[index];
         if (!p) return;
-        const label = node.label ?? node.id;
-        const labelWidth = settings.showLabels
-            ? ctx.measureText(label).width + settings.nodeRadius + 5
-            : 0;
+        const selected =
+            node.id === selectedNode ||
+            node.id === selectedEdge?.source ||
+            node.id === selectedEdge?.target;
+        const showLabel = settings.showLabels || selected;
+        const label = node.label || node.id;
+        const labelWidth = showLabel ? ctx.measureText(label).width + settings.nodeRadius + 5 : 0;
         // Labels/partial nodes crossing a tile boundary must survive culling too.
         if (
             viewport &&
@@ -152,7 +161,14 @@ export function drawNetwork(
         ctx.beginPath();
         ctx.arc(p.x, p.y, settings.nodeRadius, 0, Math.PI * 2);
         ctx.fill();
-        if (settings.showLabels) {
+        if (selected) {
+            ctx.strokeStyle = '#a5b4fc';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, settings.nodeRadius + 4, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        if (showLabel) {
             ctx.fillStyle = settings.labelColor;
             ctx.fillText(label, p.x + settings.nodeRadius + 5, p.y);
         }

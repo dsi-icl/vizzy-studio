@@ -163,7 +163,7 @@ describe('Network document and layout', () => {
     });
 
     it('keeps a fixed dataset moving after it would normally cool, without new events', () => {
-        for (const source of ['live-example', 'import'] as const) {
+        for (const source of ['live-example', 'import', 'custom'] as const) {
             const live = { ...network, source };
             const sim = createNetworkSimulation(live);
             for (let i = 0; i < 1200; i++) sim.advance(i * 50);

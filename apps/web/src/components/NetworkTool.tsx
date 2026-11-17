@@ -2,8 +2,7 @@ import {
     GraphIcon,
     UploadSimpleIcon,
     SlidersHorizontalIcon,
-    PaletteIcon,
-    DatabaseIcon
+    PaletteIcon
 } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/components/dialog';
@@ -20,7 +19,7 @@ import {
     type CsvMapping,
     type CsvTable
 } from '~/lib/network/import';
-import { drawNetwork } from '~/lib/network/render';
+import { drawNetwork, type NetworkSelection } from '~/lib/network/render';
 import {
     DEFAULT_NETWORK_SETTINGS,
     EXAMPLE_NETWORK,
@@ -39,6 +38,7 @@ import {
     NetworkStyleSettings,
     NetworkPlaybackControls
 } from './NetworkSettingsControls';
+import { NetworkTopologyEditor } from './NetworkTopologyEditor';
 
 function NetworkEditor({
     initial,
@@ -49,7 +49,7 @@ function NetworkEditor({
     onClose: () => void;
     onSave: (network: Network) => void;
 }) {
-    const [name, setName] = useState(initial?.name ?? 'Example network');
+    const [name, setName] = useState(initial?.name ?? 'Custom network');
     const [source, setSource] = useState<Network['source']>(initial?.source ?? 'live-example');
     const [reheat, setReheat] = useState(initial?.reheat ?? 0);
     const [data, setData] = useState<NetworkData>(initial?.data ?? EXAMPLE_NETWORK);
@@ -64,7 +64,9 @@ function NetworkEditor({
     const readVersion = useRef(0);
     const nameId = useId();
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-    const [tab, setTab] = useState('motion');
+    const [tab, setTab] = useState('custom');
+    const [selection, setSelection] = useState<NetworkSelection>(null);
+    const [topologySession, setTopologySession] = useState(0);
     const [previewError, setPreviewError] = useState('');
     const [ready, setReady] = useState(false);
     const draft = useMemo(
@@ -82,12 +84,20 @@ function NetworkEditor({
         let raf = 0;
         const paint = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawNetwork(ctx, draft, canvas.width, canvas.height, undefined, live.current);
+            drawNetwork(
+                ctx,
+                draft,
+                canvas.width,
+                canvas.height,
+                undefined,
+                live.current,
+                selection
+            );
             raf = requestAnimationFrame(paint);
         };
         paint();
         return () => cancelAnimationFrame(raf);
-    }, [canvas, draft, live, data]);
+    }, [canvas, draft, live, selection]);
 
     useEffect(
         () => () => {
@@ -102,15 +112,16 @@ function NetworkEditor({
         setError('');
         setTable(null);
         setData(EXAMPLE_NETWORK);
-        setName('Example network');
-        setTab('motion');
+        setSelection(null);
+        setTopologySession((value) => value + 1);
+        setTab('custom');
         setSource('live-example');
         setSettings((previous) => ({ ...previous, paused: false }));
         if (fileRef.current) fileRef.current.value = '';
     };
 
     const readFile = async (file: File) => {
-        setTab('data');
+        setTab('custom');
         const version = ++readVersion.current;
         setReading(true);
         setError('');
@@ -136,6 +147,8 @@ function NetworkEditor({
                 setData(parseNetworkJson(text));
             } else throw new Error('Choose a .csv or .json file.');
             setSource('import');
+            setSelection(null);
+            setTopologySession((value) => value + 1);
             setName(file.name.replace(/\.(csv|json)$/i, '').slice(0, 100) || 'Network');
         } catch (err) {
             if (version === readVersion.current)
@@ -153,9 +166,20 @@ function NetworkEditor({
             setData(networkFromCsv(table, next));
             setSource('import');
             setError('');
+            setSelection(null);
+            setTopologySession((value) => value + 1);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Invalid column mapping.');
         }
+    };
+
+    const changeTopology = (next: NetworkData) => {
+        readVersion.current++;
+        setReading(false);
+        setError('');
+        setTable(null);
+        setData(next);
+        setSource('custom');
     };
 
     const changeSettings = (patch: Partial<NetworkSettings>) =>
@@ -191,7 +215,7 @@ function NetworkEditor({
                         </DialogDescription>
                     </div>
                 </header>
-                <div className="grid min-h-0 flex-1 overflow-auto md:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="grid min-h-0 flex-1 overflow-auto md:grid-cols-[minmax(0,1fr)_360px] md:overflow-hidden">
                     <div className="flex min-h-[390px] flex-col bg-black text-white md:min-h-[530px]">
                         <div className="flex items-center justify-between gap-3 px-6 py-5 text-[11px]">
                             <span className="flex items-center gap-2">
@@ -205,7 +229,8 @@ function NetworkEditor({
                                       : 'Natural settling'}
                             </span>
                             <span className="font-mono text-white/50 tabular-nums">
-                                {data.nodes.length} nodes · {data.edges.length} links
+                                {data.nodes.length} {data.nodes.length === 1 ? 'node' : 'nodes'} ·{' '}
+                                {data.edges.length} {data.edges.length === 1 ? 'link' : 'links'}
                             </span>
                         </div>
                         <div className="relative min-h-[250px] flex-1">
@@ -227,7 +252,9 @@ function NetworkEditor({
                                 <p className="text-white/80">
                                     {source === 'live-example'
                                         ? 'Example · simulated data'
-                                        : 'Imported data'}
+                                        : source === 'custom'
+                                          ? 'Custom topology'
+                                          : 'Imported data'}
                                 </p>
                                 <p className="mt-1 text-white/40">
                                     Black preview. Transparent layer.
@@ -236,7 +263,7 @@ function NetworkEditor({
                             <span className="text-[10px] text-white/40">Fixed dataset</span>
                         </div>
                     </div>
-                    <aside className="min-w-0 border-l bg-popover">
+                    <aside className="min-h-0 min-w-0 border-l bg-popover md:overflow-y-auto">
                         <div className="space-y-4 border-b px-5 py-5">
                             <label
                                 htmlFor={nameId}
@@ -259,10 +286,17 @@ function NetworkEditor({
                         </div>
                         <Tabs
                             value={tab}
-                            onValueChange={(value) => setTab(String(value))}
+                            onValueChange={(value) => {
+                                setTab(String(value));
+                                setSelection(null);
+                            }}
                             className="gap-0"
                         >
                             <TabsList className="mx-5 mt-4 w-[calc(100%-2.5rem)]">
+                                <TabsTrigger value="custom" className="text-xs">
+                                    <GraphIcon />
+                                    Custom
+                                </TabsTrigger>
                                 <TabsTrigger value="motion" className="text-xs">
                                     <SlidersHorizontalIcon />
                                     Motion
@@ -270,10 +304,6 @@ function NetworkEditor({
                                 <TabsTrigger value="style" className="text-xs">
                                     <PaletteIcon />
                                     Style
-                                </TabsTrigger>
-                                <TabsTrigger value="data" className="text-xs">
-                                    <DatabaseIcon />
-                                    Data
                                 </TabsTrigger>
                             </TabsList>
                             <TabsContent value="motion" className="p-5">
@@ -288,39 +318,40 @@ function NetworkEditor({
                                     onChange={changeSettings}
                                 />
                             </TabsContent>
-                            <TabsContent value="data" className="space-y-5 p-5">
-                                <div className="space-y-3">
-                                    <div className="rounded-xl border border-dashed p-4">
-                                        <UploadSimpleIcon className="mb-3 size-5 text-muted-foreground" />
-                                        <p className="text-sm font-medium">
-                                            Bring your connections
-                                        </p>
-                                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                                            Import a CSV edge list or JSON network.
-                                        </p>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="mt-4 w-full"
-                                            onClick={() => fileRef.current?.click()}
-                                            disabled={reading}
-                                        >
-                                            {reading ? 'Reading…' : 'Import file'}
-                                        </Button>
-                                    </div>
+                            <TabsContent value="custom" className="space-y-5 p-5">
+                                <div>
+                                    <p className="text-sm font-medium">
+                                        Make the connections your own
+                                    </p>
+                                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                        Start with this example, or import your own graph.
+                                    </p>
+                                </div>
+                                <NetworkTopologyEditor
+                                    key={topologySession}
+                                    data={data}
+                                    onChange={changeTopology}
+                                    onSelect={setSelection}
+                                />
+                                <div className="flex gap-2 border-t pt-4">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="flex-1 text-xs"
+                                        onClick={() => fileRef.current?.click()}
+                                        disabled={reading}
+                                    >
+                                        <UploadSimpleIcon />
+                                        {reading ? 'Reading…' : 'Import file'}
+                                    </Button>
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="w-full"
+                                        className="text-xs"
                                         onClick={useExample}
                                     >
-                                        Use example
+                                        Reset to example
                                     </Button>
-                                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                                        Up to 1,000 nodes · 3,000 links · 2 MB
-                                        <br />
-                                        Motion changes positions, never your data.
-                                    </p>
                                 </div>
                                 {table && (
                                     <fieldset className="grid gap-3 border-t pt-4">
@@ -357,6 +388,9 @@ function NetworkEditor({
                                     <summary className="cursor-pointer font-medium">
                                         Data format examples
                                     </summary>
+                                    <p className="mt-3">
+                                        Up to 1,000 nodes · 3,000 links · 2 MB per file
+                                    </p>
                                     <p className="mt-3">CSV: one connection per row.</p>
                                     <pre className="mt-2 overflow-auto rounded-lg bg-muted p-3">
                                         {'source,target,weight\nAlice,Bob,2\nBob,Carol,1'}
