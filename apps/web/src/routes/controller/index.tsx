@@ -1149,6 +1149,7 @@ function Controller() {
                                                     if (layer.type === 'graph') {
                                                         return (
                                                             <KonvaNetworkLayer
+                                                                frames={engine?.networkFrames}
                                                                 key={`graph_${layer.numericId}`}
                                                                 layer={layer}
                                                             />
