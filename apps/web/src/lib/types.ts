@@ -5,6 +5,7 @@ import {
     type StageLayout
 } from '@repo/db/schema';
 
+import { NetworkSchema } from '~/lib/network/schema';
 import { z } from '~/lib/zod';
 
 /**
@@ -141,7 +142,10 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
             deepZoom: ImageDeepZoomLayer.optional()
         })
         .extend(MediaLayerBaseSchema.shape),
-    z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
+    // Optional for legacy documents which only contained the graph placeholder.
+    z
+        .object({ type: z.literal('graph'), network: NetworkSchema.optional() })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('text'),

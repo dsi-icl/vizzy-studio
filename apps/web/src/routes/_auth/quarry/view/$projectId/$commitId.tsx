@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
+import { KonvaNetworkLayer } from '~/components/KonvaNetworkLayer';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { useFonts } from '~/hooks/useFonts';
@@ -288,6 +289,14 @@ function CommitViewer() {
                                                         return (
                                                             <ReadOnlyMediaLayer
                                                                 key={`web_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'graph') {
+                                                        return (
+                                                            <KonvaNetworkLayer
+                                                                key={`graph_${layer.numericId}`}
                                                                 layer={layer}
                                                             />
                                                         );

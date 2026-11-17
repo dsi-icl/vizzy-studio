@@ -93,6 +93,8 @@ export interface EditorState {
     ) => void;
     addTextLayer: () => void;
     addMapLayer: () => void;
+    addNetworkLayer: (network: import('./network/schema').Network) => void;
+    updateNetworkLayer: (numericId: number, network: import('./network/schema').Network) => void;
     addShapeLayer: (shape: 'rectangle' | 'oval') => void;
     addWebLayer: () => void;
     addBackgroundLayer: () => void;

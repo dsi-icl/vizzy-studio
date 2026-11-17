@@ -8,6 +8,7 @@ import {
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { preserveImageDeepZoom } from './mediaUtils';
+import { NetworkSchema, NETWORK_WIDTH, NETWORK_HEIGHT, type Network } from './network/schema';
 import { getLineBounds } from './stageGeometry';
 import {
     TEXT_DEFAULT_FONT_SIZE_PX,
@@ -537,6 +538,53 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             });
             const engine = EditorEngine.getInstance();
             engine.createLayer('editor:add_text_layer', newLayer);
+            get().markDirty();
+        },
+
+        addNetworkLayer: (input: Network) => {
+            const network = NetworkSchema.parse(input);
+            const { allocateId, allocateZIndex, insertionCenter, insertionViewport } = get();
+            const numericId = allocateId();
+            const fitted = fitSizeToViewport(
+                NETWORK_WIDTH,
+                NETWORK_HEIGHT,
+                insertionViewport.width,
+                insertionViewport.height
+            );
+            const layer: LayerWithEditorState = {
+                numericId,
+                type: 'graph',
+                network,
+                config: {
+                    cx: insertionCenter.x,
+                    cy: insertionCenter.y,
+                    width: fitted.width,
+                    height: fitted.height,
+                    scaleX: 1,
+                    scaleY: 1,
+                    rotation: 0,
+                    zIndex: allocateZIndex(),
+                    visible: true
+                }
+            };
+            set((s) => ({
+                layers: new Map(s.layers).set(numericId, layer),
+                selectedLayerIds: [String(numericId)]
+            }));
+            EditorEngine.getInstance().createLayer('editor:add_network_layer', layer);
+            get().markDirty();
+        },
+
+        updateNetworkLayer: (numericId: number, input: Network) => {
+            const current = get().layers.get(numericId);
+            if (current?.type !== 'graph' || current.config.locked) return;
+            const layer = { ...current, network: NetworkSchema.parse(input) };
+            set((s) => ({ layers: new Map(s.layers).set(numericId, layer) }));
+            EditorEngine.getInstance().sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:update_network_layer',
+                layer
+            });
             get().markDirty();
         },
 

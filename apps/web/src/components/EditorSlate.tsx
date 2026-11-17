@@ -29,6 +29,7 @@ import { EditorToolbar } from '~/components/EditorToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
 import { KonvaMapLayer } from '~/components/KonvaMapLayer';
+import { KonvaNetworkLayer } from '~/components/KonvaNetworkLayer';
 import { KonvaStaticImage } from '~/components/KonvaStaticImage';
 import { KonvaTextLayer } from '~/components/KonvaTextLayer';
 import { KonvaVideo } from '~/components/KonvaVideo';
@@ -2048,6 +2049,15 @@ export function EditorSlate() {
                                                 }}
                                                 onTransform={props.onTransform}
                                                 onTransformEnd={props.onTransformEnd}
+                                            />
+                                        );
+                                    }
+                                    if (layer.type === 'graph') {
+                                        return (
+                                            <KonvaNetworkLayer
+                                                key={`graph_${layer.numericId}`}
+                                                layer={layer}
+                                                {...props}
                                             />
                                         );
                                     }

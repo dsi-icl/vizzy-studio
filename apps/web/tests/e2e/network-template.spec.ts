@@ -1,0 +1,290 @@
+import { expect, test, type Page } from 'playwright/test';
+import type { StoreApi } from 'zustand';
+
+import type { EditorEngine } from '../../src/lib/editorEngine';
+import type { EditorState } from '../../src/lib/editorStore.types';
+import { DEFAULT_NETWORK_SETTINGS } from '../../src/lib/network/schema';
+import type { Layer } from '../../src/lib/types';
+import {
+    actorStorageState,
+    installDeviceIdentity,
+    readHarnessManifest,
+    waitForWallBusReady
+} from '../support/harness';
+
+type RuntimeWindow = Window & {
+    __EDITOR_STORE__: StoreApi<EditorState>;
+    __EDITOR_ENGINE__: Pick<
+        EditorEngine,
+        'connectionStatus' | 'subscribeToSaveResponse' | 'bindWall' | 'sendJSON'
+    >;
+};
+test.use({ storageState: actorStorageState('user_editor') });
+
+async function openEditor(page: Page, multi = false) {
+    const { fixtures: f } = readHarnessManifest();
+    await page.goto(
+        multi
+            ? `/quarry/editor/${f.multiWallProjectId}/${f.multiWallCommitId}/${f.multiWallSlideId}`
+            : `/quarry/editor/${f.interactionProjectId}/${f.interactionCommitId}/${f.interactionSlideId}`
+    );
+    await expect(page.getByText('Loading slide...')).toBeHidden();
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () => (window as unknown as RuntimeWindow).__EDITOR_ENGINE__?.connectionStatus
+            )
+        )
+        .toBe('connected');
+}
+
+async function save(page: Page) {
+    await page.evaluate(async () => {
+        const w = window as unknown as RuntimeWindow;
+        await new Promise<void>((resolve, reject) => {
+            const unsubscribe = w.__EDITOR_ENGINE__.subscribeToSaveResponse((response) => {
+                unsubscribe();
+                if (response.success) resolve();
+                else reject(new Error(response.error));
+            });
+            w.__EDITOR_STORE__.getState().saveProject('Network integration test');
+        });
+    });
+}
+
+test('network example, import, edit, save and reload use native layers', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await openEditor(page);
+    const ids: number[] = [];
+    try {
+        const tools = page
+            .locator('#titlebar')
+            .getByRole('button', { name: 'Add network', exact: true });
+        await tools.click();
+        await expect(page.getByRole('button', { name: 'Add to stage', exact: true })).toBeEnabled();
+        await expect(page.getByText('12 nodes · 17 links', { exact: true })).toBeVisible();
+        await page.screenshot({ path: test.info().outputPath('network-editor.png') });
+        await page.getByLabel('Layer name', { exact: true }).fill('Network integration example');
+        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        const first = (await page.evaluate(() =>
+            [
+                ...(window as unknown as RuntimeWindow).__EDITOR_STORE__.getState().layers.values()
+            ].find((l) => l.type === 'graph' && l.network?.name === 'Network integration example')
+        )) as Extract<Layer, { type: 'graph' }>;
+        expect(first.network?.positions).toHaveLength(12);
+        ids.push(first.numericId);
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByText('Layout settings', { exact: true }).click();
+        await page.getByRole('slider', { name: 'Link distance', exact: true }).fill('160');
+        await expect(
+            page.getByRole('button', { name: 'Apply changes', exact: true })
+        ).toBeEnabled();
+        await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
+        await save(page);
+        await page.reload();
+        await expect
+            .poll(() =>
+                page.evaluate((id) => {
+                    const l = (window as unknown as RuntimeWindow).__EDITOR_STORE__
+                        ?.getState()
+                        .layers.get(id);
+                    return l?.type === 'graph' ? l.network?.settings.linkDistance : undefined;
+                }, first.numericId)
+            )
+            .toBe(160);
+        const positions = await page.evaluate((id) => {
+            const l = (window as unknown as RuntimeWindow).__EDITOR_STORE__
+                .getState()
+                .layers.get(id);
+            return l?.type === 'graph' ? l.network?.positions : undefined;
+        }, first.numericId);
+        expect(positions).not.toEqual(first.network?.positions);
+
+        await tools.click();
+        await page.getByLabel('Network data file', { exact: true }).setInputFiles({
+            name: 'People.csv',
+            mimeType: 'text/csv',
+            buffer: Buffer.from('Person,Colleague,Count\nAlice,Bob,2\nBob,Carol,3')
+        });
+        await page.getByLabel('weight column', { exact: true }).selectOption('Count');
+        await expect(page.getByText('3 nodes · 2 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add to stage', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        const importedId = await page.evaluate(
+            () =>
+                [
+                    ...(window as unknown as RuntimeWindow).__EDITOR_STORE__
+                        .getState()
+                        .layers.values()
+                ].find((l) => l.type === 'graph' && l.network?.name === 'People')?.numericId
+        );
+        expect(importedId).toBeDefined();
+        ids.push(importedId!);
+
+        await tools.click();
+        await page.getByLabel('Network data file', { exact: true }).setInputFiles({
+            name: 'invalid.json',
+            mimeType: 'application/json',
+            buffer: Buffer.from(
+                '{"nodes":[{"id":"a"}],"edges":[{"source":"a","target":"missing"}]}'
+            )
+        });
+        await expect(page.getByRole('alert')).toContainText('Unknown node');
+        await expect(
+            page.getByRole('button', { name: 'Add to stage', exact: true })
+        ).toBeDisabled();
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        expect(errors).toEqual([]);
+    } finally {
+        await page.evaluate((numericIds) => {
+            const store = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
+            numericIds.forEach((id) => store.removeLayer(id));
+        }, ids);
+        await save(page);
+    }
+});
+
+test('wall tiles preserve crossing links and split nodes using saved coordinates', async ({
+    browser,
+    page
+}) => {
+    const manifest = readHarnessManifest();
+    const contexts = [];
+    await openEditor(page, true);
+    const layer: Extract<Layer, { type: 'graph' }> = {
+        numericId: 98765,
+        type: 'graph',
+        config: {
+            cx: 960,
+            cy: 540,
+            width: 5760,
+            height: 3744,
+            rotation: 0,
+            scaleX: 1,
+            scaleY: 1,
+            visible: true,
+            zIndex: 999
+        },
+        network: {
+            name: 'Network seam test',
+            settings: { ...DEFAULT_NETWORK_SETTINGS, showLabels: true },
+            data: {
+                nodes: [
+                    { id: 'a' },
+                    { id: 'b' },
+                    { id: 'seam' },
+                    { id: 'caption', label: 'Cross-screen label' }
+                ],
+                edges: [{ source: 'a', target: 'b' }]
+            },
+            positions: [
+                { x: 50, y: 325 },
+                { x: 950, y: 325 },
+                { x: 2000 / 3, y: 325 },
+                { x: 3760 / 5.76, y: 270 }
+            ]
+        }
+    };
+    try {
+        const pages: Page[] = [];
+        for (const [col, deviceKey] of [
+            [0, 'dev_wall_grid_00'],
+            [1, 'dev_wall_grid_10']
+        ] as const) {
+            const context = await browser.newContext({
+                baseURL: manifest.baseUrl,
+                viewport: { width: 1920, height: 1080 },
+                deviceScaleFactor: 1
+            });
+            contexts.push(context);
+            await installDeviceIdentity(context, {
+                kind: 'wall',
+                device: manifest.devices[deviceKey]!,
+                wallId: manifest.fixtures.multiWallId,
+                col,
+                row: 0
+            });
+            const wall = await context.newPage();
+            pages.push(wall);
+            await wall.goto(`/wall?w=${manifest.fixtures.multiWallId}&c=${col}&r=0`);
+            await waitForWallBusReady(wall);
+        }
+        await page.evaluate(
+            ({ graph, f }) => {
+                const w = window as unknown as RuntimeWindow;
+                w.__EDITOR_ENGINE__.bindWall(
+                    f.multiWallId,
+                    f.multiWallProjectId,
+                    f.multiWallCommitId,
+                    f.multiWallSlideId
+                );
+                w.__EDITOR_STORE__.getState().upsertLayer(graph);
+                w.__EDITOR_ENGINE__.sendJSON({
+                    type: 'upsert_layer',
+                    origin: 'editor:network_test',
+                    layer: graph
+                });
+            },
+            { graph: layer, f: manifest.fixtures }
+        );
+        for (const wall of pages) {
+            const canvas = wall.getByLabel('Network seam test', { exact: true });
+            await expect(canvas).toBeVisible();
+            expect(
+                await canvas.evaluate((element) => [
+                    (element as HTMLCanvasElement).width,
+                    (element as HTMLCanvasElement).height
+                ])
+            ).toEqual([1920, 1080]);
+        }
+        const pixel = (wall: Page, x: number) =>
+            wall
+                .getByLabel('Network seam test', { exact: true })
+                .evaluate(
+                    (element, column) => [
+                        ...(element as HTMLCanvasElement)
+                            .getContext('2d')!
+                            .getImageData(column, 540, 1, 1).data
+                    ],
+                    x
+                );
+        // Left tile sees neither endpoint, yet its middle must contain the edge.
+        await expect.poll(() => pixel(pages[0]!, 1000)).toEqual([130, 149, 184, 255]);
+        await expect.poll(() => pixel(pages[0]!, 1919)).toEqual([96, 165, 250, 255]);
+        await expect.poll(() => pixel(pages[1]!, 0)).toEqual([96, 165, 250, 255]);
+        // The label starts on the left tile and continues on the right; the
+        // right tile must draw text even though its node is entirely offscreen.
+        for (const [wall, x, width] of [
+            [pages[0]!, 1909, 11],
+            [pages[1]!, 0, 150]
+        ] as const) {
+            const countTextPixels = () =>
+                wall.getByLabel('Network seam test', { exact: true }).evaluate(
+                    (element, crop) => {
+                        const pixels = (element as HTMLCanvasElement)
+                            .getContext('2d')!
+                            .getImageData(crop.x, 190, crop.width, 65).data;
+                        let count = 0;
+                        for (let i = 0; i < pixels.length; i += 4) {
+                            if (pixels[i]! > 210 && pixels[i + 1]! > 210 && pixels[i + 2]! > 210)
+                                count++;
+                        }
+                        return count;
+                    },
+                    { x, width }
+                );
+            await expect.poll(countTextPixels).toBeGreaterThan(10);
+        }
+        await pages[1]!.reload();
+        await expect.poll(() => pixel(pages[1]!, 0)).toEqual([96, 165, 250, 255]);
+    } finally {
+        await page.evaluate(
+            (id) =>
+                (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState().removeLayer(id),
+            layer.numericId
+        );
+        await save(page);
+        await Promise.all(contexts.map((context) => context.close()));
+    }
+});

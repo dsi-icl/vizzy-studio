@@ -5,6 +5,7 @@ import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
+import { KonvaNetworkLayer } from '~/components/KonvaNetworkLayer';
 import { PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import type { LayerWithEditorState } from '~/lib/types';
@@ -169,6 +170,14 @@ export function ViewerSlatePreview({
                                         key={shape.numericId}
                                         shape={shape}
                                         stageScaleFactor={1}
+                                    />
+                                );
+                            }
+                            if (shape.type === 'graph') {
+                                return (
+                                    <KonvaNetworkLayer
+                                        key={`graph_${shape.numericId}`}
+                                        layer={shape}
                                     />
                                 );
                             }

@@ -48,6 +48,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { AppearanceToolbar } from '~/components/AppearanceToolbar';
 import { BackgroundLayerPanel } from '~/components/BackgroundLayerPanel';
 import { FilterPanel } from '~/components/FilterPanel';
+import { NetworkTool } from '~/components/NetworkTool';
 import { PlaybackControls } from '~/components/PlaybackControls';
 import { SlidesJsonDialog } from '~/components/SlidesJsonDialog';
 import { VideoScrubber } from '~/components/VideoScrubber';
@@ -275,6 +276,7 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                     >
                         <EraserIcon />
                     </TipButton>
+                    <NetworkTool />
                 </div>
 
                 <div className="w-full grow truncate text-center text-xs text-muted-foreground">
@@ -486,6 +488,10 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                             }
                         />
                     </>
+                )}
+
+                {activeLayer?.type === 'graph' && (
+                    <NetworkTool key={activeLayer.numericId} layer={activeLayer} />
                 )}
 
                 {/* ── Web ── */}

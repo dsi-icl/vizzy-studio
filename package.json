@@ -125,7 +125,11 @@
             "y-websocket": "^3.0.0",
             "yjs": "^13.6.31",
             "zod": "^4.4.3",
-            "zustand": "^5.0.14"
+            "zustand": "^5.0.14",
+            "d3-force": "^3.0.0",
+            "d3-dsv": "^3.0.1",
+            "@types/d3-force": "^3.0.10",
+            "@types/d3-dsv": "^3.0.7"
         }
     },
     "scripts": {
