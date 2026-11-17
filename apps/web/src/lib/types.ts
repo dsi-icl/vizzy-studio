@@ -97,12 +97,13 @@ export const migrateLegacyLayer = (layer: unknown): unknown => {
     if (candidate.type === 'video') {
         // Older direct canvas uploads omitted these fields. A single invalid
         // video otherwise makes the whole slide's hydrate message unreadable.
+        const validPlayback = LayerPlaybackStateSchema.safeParse(candidate.playback).success;
         if (
             typeof candidate.loop === 'boolean' &&
             typeof candidate.duration === 'number' &&
             Number.isFinite(candidate.duration) &&
             typeof candidate.rvfcActive === 'boolean' &&
-            candidate.playback
+            validPlayback
         ) {
             return layer;
         }
@@ -114,11 +115,13 @@ export const migrateLegacyLayer = (layer: unknown): unknown => {
                     ? candidate.duration
                     : 0,
             rvfcActive: typeof candidate.rvfcActive === 'boolean' ? candidate.rvfcActive : false,
-            playback: candidate.playback ?? {
-                status: 'paused',
-                anchorMediaTime: 0,
-                anchorServerTime: 0
-            }
+            playback: validPlayback
+                ? candidate.playback
+                : {
+                      status: 'paused',
+                      anchorMediaTime: 0,
+                      anchorServerTime: 0
+                  }
         };
     }
     if (candidate.type !== 'shape' || candidate.shape !== 'circle') return layer;
