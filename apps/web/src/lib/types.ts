@@ -5,6 +5,7 @@ import {
     type StageLayout
 } from '@repo/db/schema';
 
+import { NetworkTopologySchema } from '~/lib/network/frames';
 import { NetworkSchema } from '~/lib/network/schema';
 import { z } from '~/lib/zod';
 
@@ -260,6 +261,7 @@ export const HelloSchema = z.discriminatedUnion('specimen', [
 // ── Full message schema (kept for diagnostics fallback & client-side use) ────
 
 export const GSMessageSchema = z.discriminatedUnion('type', [
+    NetworkTopologySchema,
     z.object({
         type: z.literal('server_hello'),
         commit: z.string(),

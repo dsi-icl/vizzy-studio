@@ -1,5 +1,6 @@
 import type { LayerPositionState } from '../types';
-import { NETWORK_HEIGHT, NETWORK_WIDTH, type Network } from './schema';
+import { initialNetworkPositions } from './document';
+import { NETWORK_HEIGHT, NETWORK_WIDTH, type Network, type NetworkView } from './schema';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 type Point = { x: number; y: number };
@@ -77,14 +78,13 @@ export function drawNetwork(
     network: Network | undefined,
     width: number,
     height: number,
-    viewport?: Rect
+    viewport?: Rect,
+    live?: NetworkView
 ) {
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, width, height);
     ctx.clip();
-    ctx.fillStyle = network?.settings.background ?? '#101827';
-    ctx.fillRect(0, 0, width, height);
     if (!network) {
         ctx.restore();
         return;
@@ -92,10 +92,14 @@ export function drawNetwork(
     const fit = networkFit(width, height);
     ctx.translate(fit.x, fit.y);
     ctx.scale(fit.scale, fit.scale);
-    const { data, positions, settings } = network;
+    const { settings } = network;
+    const { data, positions } = live ?? {
+        data: network.data,
+        positions: network.positions ?? initialNetworkPositions(network.data)
+    };
     const indices = new Map(data.nodes.map((node, index) => [node.id, index]));
     const groups = [...new Set(data.nodes.map((node) => node.group ?? ''))].sort();
-    ctx.strokeStyle = '#8295b8';
+    ctx.strokeStyle = settings.edgeColor;
     ctx.lineCap = 'round';
     for (const edge of data.edges) {
         const a = positions[indices.get(edge.source)!],
@@ -142,12 +146,14 @@ export function drawNetwork(
                 p.y - Math.max(10, settings.nodeRadius) > viewport.y + viewport.h)
         )
             return;
-        ctx.fillStyle = NETWORK_COLORS[groups.indexOf(node.group ?? '') % NETWORK_COLORS.length]!;
+        ctx.fillStyle = settings.colorByGroup
+            ? NETWORK_COLORS[groups.indexOf(node.group ?? '') % NETWORK_COLORS.length]!
+            : settings.nodeColor;
         ctx.beginPath();
         ctx.arc(p.x, p.y, settings.nodeRadius, 0, Math.PI * 2);
         ctx.fill();
         if (settings.showLabels) {
-            ctx.fillStyle = '#f1f5f9';
+            ctx.fillStyle = settings.labelColor;
             ctx.fillText(label, p.x + settings.nodeRadius + 5, p.y);
         }
     });

@@ -1,7 +1,14 @@
-import { GraphIcon, UploadSimpleIcon } from '@phosphor-icons/react';
+import {
+    GraphIcon,
+    UploadSimpleIcon,
+    SlidersHorizontalIcon,
+    PaletteIcon,
+    DatabaseIcon
+} from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@repo/ui/components/tabs';
 import { TipButton } from '@repo/ui/components/tip-button';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
@@ -13,7 +20,7 @@ import {
     type CsvMapping,
     type CsvTable
 } from '~/lib/network/import';
-import { drawNetwork, NETWORK_COLORS } from '~/lib/network/render';
+import { drawNetwork } from '~/lib/network/render';
 import {
     DEFAULT_NETWORK_SETTINGS,
     EXAMPLE_NETWORK,
@@ -23,17 +30,15 @@ import {
     type NetworkData,
     type NetworkSettings
 } from '~/lib/network/schema';
+import { useNetworkPreview } from '~/lib/network/useNetworkPreview';
 import type { Layer } from '~/lib/types';
 
-function layoutKey(settings: NetworkSettings) {
-    return JSON.stringify([
-        settings.charge,
-        settings.linkDistance,
-        settings.linkStrength,
-        settings.collisionRadius,
-        settings.nodeRadius
-    ]);
-}
+import { NetworkLiveControls } from './NetworkLiveControls';
+import {
+    NetworkMotionSettings,
+    NetworkStyleSettings,
+    NetworkPlaybackControls
+} from './NetworkSettingsControls';
 
 function NetworkEditor({
     initial,
@@ -45,6 +50,8 @@ function NetworkEditor({
     onSave: (network: Network) => void;
 }) {
     const [name, setName] = useState(initial?.name ?? 'Example network');
+    const [source, setSource] = useState<Network['source']>(initial?.source ?? 'live-example');
+    const [reheat, setReheat] = useState(initial?.reheat ?? 0);
     const [data, setData] = useState<NetworkData>(initial?.data ?? EXAMPLE_NETWORK);
     const [settings, setSettings] = useState<NetworkSettings>(
         initial?.settings ?? DEFAULT_NETWORK_SETTINGS
@@ -53,101 +60,34 @@ function NetworkEditor({
     const [mapping, setMapping] = useState<CsvMapping>({ source: '', target: '', weight: '' });
     const [error, setError] = useState('');
     const [reading, setReading] = useState(false);
-    const [result, setResult] = useState<{
-        data: NetworkData;
-        key: string;
-        positions?: Network['positions'];
-        error?: string;
-    } | null>(
-        initial
-            ? { data: initial.data, key: layoutKey(initial.settings), positions: initial.positions }
-            : null
-    );
     const fileRef = useRef<HTMLInputElement>(null);
     const readVersion = useRef(0);
     const nameId = useId();
-    const simulationSettings = useMemo(
-        () => ({
-            ...DEFAULT_NETWORK_SETTINGS,
-            charge: settings.charge,
-            linkDistance: settings.linkDistance,
-            linkStrength: settings.linkStrength,
-            collisionRadius: settings.collisionRadius,
-            nodeRadius: settings.nodeRadius
-        }),
-        [
-            settings.charge,
-            settings.linkDistance,
-            settings.linkStrength,
-            settings.collisionRadius,
-            settings.nodeRadius
-        ]
+    const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+    const [tab, setTab] = useState('motion');
+    const [previewError, setPreviewError] = useState('');
+    const [ready, setReady] = useState(false);
+    const draft = useMemo(
+        () => ({ name, data, settings, source, reheat }),
+        [name, data, settings, source, reheat]
     );
-    const key = layoutKey(settings);
-    const currentResult = useMemo(
-        () =>
-            initial?.data === data && layoutKey(initial.settings) === key
-                ? { positions: initial.positions, error: undefined }
-                : result?.data === data && result.key === key
-                  ? result
-                  : null,
-        [initial, data, key, result]
-    );
-    const busy = !currentResult;
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-
+    const live = useNetworkPreview(draft, true, (message) => {
+        setPreviewError(message ?? '');
+        if (!message) setReady(true);
+    });
+    const busy = !ready && !previewError;
     useEffect(() => {
-        // A worker owns the force simulation. Changing data/settings cancels old work.
-        if (initial?.data === data && layoutKey(initial.settings) === key) {
-            return;
-        }
-        let worker: Worker | undefined;
-        let cancelled = false;
-        const timer = setTimeout(() => {
-            try {
-                worker = new Worker(new URL('../lib/network/layout.worker.ts', import.meta.url), {
-                    type: 'module'
-                });
-                worker.onmessage = (
-                    event: MessageEvent<{ positions?: Network['positions']; error?: string }>
-                ) => {
-                    if (!cancelled) setResult({ data, key, ...event.data });
-                    worker?.terminate();
-                };
-                worker.onerror = () => {
-                    if (cancelled) return;
-                    setResult({
-                        data,
-                        key,
-                        error: 'Layout could not start. Reopen the Network editor to try again.'
-                    });
-                    worker?.terminate();
-                };
-                worker.postMessage({ data, settings: simulationSettings });
-            } catch {
-                setResult({ data, key, error: 'Layout could not start in this browser.' });
-            }
-        }, 120);
-        return () => {
-            cancelled = true;
-            clearTimeout(timer);
-            worker?.terminate();
-        };
-    }, [data, key, initial, simulationSettings]);
-
-    useEffect(() => {
-        const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!canvas || !ctx) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (!currentResult?.positions) return;
-        drawNetwork(
-            ctx,
-            { name, data, settings, positions: currentResult.positions },
-            canvas.width,
-            canvas.height
-        );
-    }, [name, data, settings, currentResult]);
+        let raf = 0;
+        const paint = () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawNetwork(ctx, draft, canvas.width, canvas.height, undefined, live.current);
+            raf = requestAnimationFrame(paint);
+        };
+        paint();
+        return () => cancelAnimationFrame(raf);
+    }, [canvas, draft, live, data]);
 
     useEffect(
         () => () => {
@@ -163,10 +103,14 @@ function NetworkEditor({
         setTable(null);
         setData(EXAMPLE_NETWORK);
         setName('Example network');
+        setTab('motion');
+        setSource('live-example');
+        setSettings((previous) => ({ ...previous, paused: false }));
         if (fileRef.current) fileRef.current.value = '';
     };
 
     const readFile = async (file: File) => {
+        setTab('data');
         const version = ++readVersion.current;
         setReading(true);
         setError('');
@@ -191,6 +135,7 @@ function NetworkEditor({
                 setTable(null);
                 setData(parseNetworkJson(text));
             } else throw new Error('Choose a .csv or .json file.');
+            setSource('import');
             setName(file.name.replace(/\.(csv|json)$/i, '').slice(0, 100) || 'Network');
         } catch (err) {
             if (version === readVersion.current)
@@ -206,58 +151,26 @@ function NetworkEditor({
         if (!table) return;
         try {
             setData(networkFromCsv(table, next));
+            setSource('import');
             setError('');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Invalid column mapping.');
         }
     };
 
-    const sliders: {
-        field: keyof Pick<
-            NetworkSettings,
-            | 'charge'
-            | 'linkDistance'
-            | 'linkStrength'
-            | 'collisionRadius'
-            | 'nodeRadius'
-            | 'edgeWidth'
-        >;
-        label: string;
-        min: number;
-        max: number;
-        step: number;
-    }[] = [
-        { field: 'nodeRadius', label: 'Node size', min: 2, max: 20, step: 1 },
-        { field: 'edgeWidth', label: 'Line width', min: 0.5, max: 5, step: 0.5 },
-        { field: 'charge', label: 'Repulsion', min: -1000, max: 0, step: 10 },
-        { field: 'linkDistance', label: 'Link distance', min: 10, max: 300, step: 5 },
-        { field: 'linkStrength', label: 'Link strength', min: 0, max: 1, step: 0.05 },
-        { field: 'collisionRadius', label: 'Collision spacing', min: 1, max: 80, step: 1 }
-    ];
-    const renderSlider = ({ field, label, min, max, step }: (typeof sliders)[number]) => (
-        <label key={field} className="grid gap-1.5 text-xs">
-            <span className="flex justify-between">
-                <span>{label}</span>
-                <span className="text-muted-foreground tabular-nums">{settings[field]}</span>
-            </span>
-            <input
-                aria-label={label}
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={settings[field]}
-                onChange={(event) =>
-                    setSettings((previous) => ({
-                        ...previous,
-                        [field]: Number(event.target.value)
-                    }))
-                }
-                className="w-full accent-primary"
-            />
-        </label>
-    );
-    const groups = [...new Set(data.nodes.map((node) => node.group ?? ''))].sort();
+    const changeSettings = (patch: Partial<NetworkSettings>) =>
+        setSettings((previous) => ({ ...previous, ...patch }));
+    const nudge = () => {
+        setReheat((value) => value + 1);
+        changeSettings({ paused: false });
+    };
+    const save = () => {
+        try {
+            onSave(NetworkSchema.parse({ name: name.trim(), data, settings, source, reheat }));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Could not save network.');
+        }
+    };
 
     return (
         <Dialog
@@ -266,215 +179,235 @@ function NetworkEditor({
                 if (!open) onClose();
             }}
         >
-            <DialogContent className="flex max-h-[90vh] w-[min(1100px,95vw)] flex-col overflow-hidden">
-                <div className="border-b px-6 py-4">
-                    <DialogTitle>{initial ? 'Edit network' : 'Add network'}</DialogTitle>
-                    <DialogDescription>
-                        Turn relationships into a graph. Place it on your stage and share it across
-                        the wall.
-                    </DialogDescription>
-                </div>
-                <div className="grid min-h-0 gap-6 overflow-auto p-6 md:grid-cols-[270px_minmax(0,1fr)]">
-                    <div className="flex flex-col gap-4">
-                        <label htmlFor={nameId} className="grid gap-1.5 text-xs font-medium">
-                            Layer name
-                            <Input
-                                id={nameId}
-                                maxLength={100}
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                            />
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            <Button variant="outline" onClick={useExample}>
-                                Use example
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => fileRef.current?.click()}
-                                disabled={reading}
-                            >
-                                <UploadSimpleIcon />
-                                {reading ? 'Reading…' : 'Import file'}
-                            </Button>
-                        </div>
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            accept=".csv,.json"
-                            aria-label="Network data file"
-                            className="sr-only"
-                            onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) void readFile(file);
-                                e.target.value = '';
-                            }}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                            CSV or JSON · up to 1,000 nodes and 3,000 links · 2 MB
-                        </p>
-                        {table && (
-                            <fieldset className="grid gap-2 rounded-lg border p-3">
-                                <legend className="px-1 text-xs font-medium">CSV columns</legend>
-                                {(['source', 'target', 'weight'] as const).map((field) => (
-                                    <label className="grid gap-1 text-xs capitalize" key={field}>
-                                        {field}
-                                        {field === 'weight' ? ' (optional)' : ''}
-                                        <select
-                                            aria-label={`${field} column`}
-                                            value={mapping[field]}
-                                            onChange={(event) =>
-                                                changeMapping(field, event.target.value)
-                                            }
-                                            className="h-8 rounded-md border bg-background px-2 text-foreground"
-                                        >
-                                            {field === 'weight' && <option value="">None</option>}
-                                            {table.headers.map((column) => (
-                                                <option key={column} value={column}>
-                                                    {column}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                ))}
-                            </fieldset>
-                        )}
-                        <details className="text-xs text-muted-foreground">
-                            <summary className="cursor-pointer">Data format examples</summary>
-                            <p className="mt-2">
-                                CSV: each row connects two node IDs. Nodes are created from those
-                                IDs.
-                            </p>
-                            <pre className="my-2 overflow-auto rounded bg-muted p-2">
-                                {'source,target,weight\nAlice,Bob,2\nBob,Carol,1'}
-                            </pre>
-                            <p>
-                                JSON: optional labels and groups give nodes names and colours. IDs
-                                must be strings; every edge must reference a node.
-                            </p>
-                            <pre className="mt-2 overflow-auto rounded bg-muted p-2">
-                                {
-                                    '{\n  "nodes": [\n    {"id":"a","label":"Alice","group":"Team"},\n    {"id":"b","label":"Bob"}\n  ],\n  "edges": [{"source":"a","target":"b"}]\n}'
-                                }
-                            </pre>
-                        </details>
-                        <div className="grid gap-3 border-t pt-4">
-                            {sliders.slice(0, 2).map(renderSlider)}
-                            <label className="flex items-center gap-2 text-xs">
-                                <input
-                                    type="checkbox"
-                                    checked={settings.showLabels}
-                                    onChange={(event) =>
-                                        setSettings((previous) => ({
-                                            ...previous,
-                                            showLabels: event.target.checked
-                                        }))
-                                    }
-                                />
-                                Show labels
-                            </label>
-                            <label className="flex items-center justify-between text-xs">
-                                Background
-                                <input
-                                    aria-label="Network background"
-                                    type="color"
-                                    value={settings.background}
-                                    onChange={(event) =>
-                                        setSettings((previous) => ({
-                                            ...previous,
-                                            background: event.target.value
-                                        }))
-                                    }
-                                />
-                            </label>
-                        </div>
-                        <details className="border-t pt-3">
-                            <summary className="cursor-pointer text-xs font-medium">
-                                Layout settings
-                            </summary>
-                            <div className="mt-3 grid gap-3">
-                                {sliders.slice(2).map(renderSlider)}
-                            </div>
-                        </details>
+            <DialogContent className="flex max-h-[90vh] w-[min(1160px,96vw)] flex-col overflow-hidden">
+                <header className="flex items-center gap-3 border-b px-6 py-4">
+                    <span className="flex size-10 items-center justify-center rounded-xl border bg-muted/40">
+                        <GraphIcon className="size-5" />
+                    </span>
+                    <div>
+                        <DialogTitle>{initial ? 'Edit network' : 'Add network'}</DialogTitle>
+                        <DialogDescription className="mt-0.5 text-xs">
+                            Arrange connections. Bring them to life.
+                        </DialogDescription>
                     </div>
-                    <div className="min-w-0">
-                        <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Preview</span>
-                            <span>
+                </header>
+                <div className="grid min-h-0 flex-1 overflow-auto md:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="flex min-h-[390px] flex-col bg-black text-white md:min-h-[530px]">
+                        <div className="flex items-center justify-between gap-3 px-6 py-5 text-[11px]">
+                            <span className="flex items-center gap-2">
+                                <span
+                                    className={`size-1.5 rounded-full ${settings.paused ? 'bg-white/30' : 'bg-white'}`}
+                                />
+                                {settings.paused
+                                    ? 'Paused'
+                                    : settings.motionStrength > 0
+                                      ? 'Live motion'
+                                      : 'Natural settling'}
+                            </span>
+                            <span className="font-mono text-white/50 tabular-nums">
                                 {data.nodes.length} nodes · {data.edges.length} links
                             </span>
                         </div>
-                        <div className="relative overflow-hidden rounded-xl border bg-[#101827]">
+                        <div className="relative min-h-[250px] flex-1">
                             <canvas
-                                ref={canvasRef}
+                                ref={setCanvas}
                                 width={1000}
                                 height={650}
                                 aria-label="Network preview"
-                                className="block aspect-[1000/650] w-full"
+                                className="absolute inset-0 h-full w-full object-contain"
                             />
                             {busy && (
-                                <output className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm text-white">
-                                    Arranging network…
+                                <output className="absolute inset-0 flex items-center justify-center text-xs text-white/60">
+                                    Starting preview…
                                 </output>
                             )}
                         </div>
-                        {groups.some(Boolean) && (
-                            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs">
-                                {groups.map((group, index) => (
-                                    <span key={group} className="flex items-center gap-1.5">
-                                        <span
-                                            className="h-2 w-2 rounded-full"
-                                            style={{
-                                                background:
-                                                    NETWORK_COLORS[index % NETWORK_COLORS.length]
-                                            }}
-                                        />
-                                        {group || 'Ungrouped'}
-                                    </span>
-                                ))}
+                        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
+                            <div className="text-[11px] leading-relaxed">
+                                <p className="text-white/80">
+                                    {source === 'live-example'
+                                        ? 'Example · simulated data'
+                                        : 'Imported data'}
+                                </p>
+                                <p className="mt-1 text-white/40">
+                                    Black preview. Transparent layer.
+                                </p>
                             </div>
-                        )}
-                        <p className="mt-4 text-xs text-muted-foreground">
-                            Move, resize and rotate the network on the stage. All screens share the
-                            same layout, including links across screen boundaries.
-                        </p>
-                        {(error || currentResult?.error) && (
-                            <p
-                                role="alert"
-                                className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                            <span className="text-[10px] text-white/40">Fixed dataset</span>
+                        </div>
+                    </div>
+                    <aside className="min-w-0 border-l bg-popover">
+                        <div className="space-y-4 border-b px-5 py-5">
+                            <label
+                                htmlFor={nameId}
+                                className="grid gap-2 text-[11px] font-medium text-muted-foreground"
                             >
-                                {error || currentResult?.error}
+                                Layer name
+                                <Input
+                                    id={nameId}
+                                    maxLength={100}
+                                    value={name}
+                                    onChange={(event) => setName(event.target.value)}
+                                    className="h-9 rounded-lg border-border bg-background text-sm text-foreground shadow-none"
+                                />
+                            </label>
+                            <NetworkPlaybackControls
+                                paused={settings.paused}
+                                onPause={() => changeSettings({ paused: !settings.paused })}
+                                onNudge={nudge}
+                            />
+                        </div>
+                        <Tabs
+                            value={tab}
+                            onValueChange={(value) => setTab(String(value))}
+                            className="gap-0"
+                        >
+                            <TabsList className="mx-5 mt-4 w-[calc(100%-2.5rem)]">
+                                <TabsTrigger value="motion" className="text-xs">
+                                    <SlidersHorizontalIcon />
+                                    Motion
+                                </TabsTrigger>
+                                <TabsTrigger value="style" className="text-xs">
+                                    <PaletteIcon />
+                                    Style
+                                </TabsTrigger>
+                                <TabsTrigger value="data" className="text-xs">
+                                    <DatabaseIcon />
+                                    Data
+                                </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="motion" className="p-5">
+                                <NetworkMotionSettings
+                                    settings={settings}
+                                    onChange={changeSettings}
+                                />
+                            </TabsContent>
+                            <TabsContent value="style" className="p-5">
+                                <NetworkStyleSettings
+                                    settings={settings}
+                                    onChange={changeSettings}
+                                />
+                            </TabsContent>
+                            <TabsContent value="data" className="space-y-5 p-5">
+                                <div className="space-y-3">
+                                    <div className="rounded-xl border border-dashed p-4">
+                                        <UploadSimpleIcon className="mb-3 size-5 text-muted-foreground" />
+                                        <p className="text-sm font-medium">
+                                            Bring your connections
+                                        </p>
+                                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                            Import a CSV edge list or JSON network.
+                                        </p>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="mt-4 w-full"
+                                            onClick={() => fileRef.current?.click()}
+                                            disabled={reading}
+                                        >
+                                            {reading ? 'Reading…' : 'Import file'}
+                                        </Button>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="w-full"
+                                        onClick={useExample}
+                                    >
+                                        Use example
+                                    </Button>
+                                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                                        Up to 1,000 nodes · 3,000 links · 2 MB
+                                        <br />
+                                        Motion changes positions, never your data.
+                                    </p>
+                                </div>
+                                {table && (
+                                    <fieldset className="grid gap-3 border-t pt-4">
+                                        <legend className="text-xs font-medium">CSV columns</legend>
+                                        {(['source', 'target', 'weight'] as const).map((field) => (
+                                            <label
+                                                className="grid gap-1.5 text-xs capitalize"
+                                                key={field}
+                                            >
+                                                {field}
+                                                {field === 'weight' ? ' (optional)' : ''}
+                                                <select
+                                                    aria-label={`${field} column`}
+                                                    value={mapping[field]}
+                                                    onChange={(event) =>
+                                                        changeMapping(field, event.target.value)
+                                                    }
+                                                    className="h-9 rounded-lg border bg-background px-2 text-foreground"
+                                                >
+                                                    {field === 'weight' && (
+                                                        <option value="">None</option>
+                                                    )}
+                                                    {table.headers.map((column) => (
+                                                        <option key={column} value={column}>
+                                                            {column}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
+                                        ))}
+                                    </fieldset>
+                                )}
+                                <details className="border-t pt-4 text-xs text-muted-foreground">
+                                    <summary className="cursor-pointer font-medium">
+                                        Data format examples
+                                    </summary>
+                                    <p className="mt-3">CSV: one connection per row.</p>
+                                    <pre className="mt-2 overflow-auto rounded-lg bg-muted p-3">
+                                        {'source,target,weight\nAlice,Bob,2\nBob,Carol,1'}
+                                    </pre>
+                                    <p className="mt-3">
+                                        JSON: nodes and edges; labels and groups are optional.
+                                    </p>
+                                    <pre className="mt-2 overflow-auto rounded-lg bg-muted p-3">
+                                        {
+                                            '{\n  "nodes": [{"id":"a"},{"id":"b"}],\n  "edges": [{"source":"a","target":"b"}]\n}'
+                                        }
+                                    </pre>
+                                </details>
+                            </TabsContent>
+                        </Tabs>
+                    </aside>
+                </div>
+                <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".csv,.json"
+                    aria-label="Network data file"
+                    className="sr-only"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void readFile(file);
+                        event.target.value = '';
+                    }}
+                />
+                <footer className="flex items-center justify-between gap-4 border-t px-6 py-4">
+                    <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+                        {error || previewError ? (
+                            <p role="alert" className="text-destructive">
+                                {error || previewError}
                             </p>
+                        ) : (
+                            <span>Same nodes and links. One shared motion across the wall.</span>
                         )}
                     </div>
-                </div>
-                <div className="flex justify-end gap-2 border-t px-6 py-4">
-                    <Button variant="outline" onClick={onClose}>
-                        Cancel
-                    </Button>
-                    <Button
-                        disabled={
-                            busy || reading || !!error || !currentResult?.positions || !name.trim()
-                        }
-                        onClick={() => {
-                            try {
-                                const network = NetworkSchema.parse({
-                                    name: name.trim(),
-                                    data,
-                                    settings,
-                                    positions: currentResult?.positions
-                                });
-                                onSave(network);
-                            } catch (err) {
-                                setError(
-                                    err instanceof Error ? err.message : 'Could not save network.'
-                                );
-                            }
-                        }}
-                    >
-                        {initial ? 'Apply changes' : 'Add to stage'}
-                    </Button>
-                </div>
+                    <div className="flex gap-2">
+                        <Button variant="ghost" onClick={onClose}>
+                            Cancel
+                        </Button>
+                        <Button
+                            disabled={busy || reading || !!error || !!previewError || !name.trim()}
+                            onClick={save}
+                        >
+                            {initial ? 'Apply changes' : 'Add to stage'}
+                        </Button>
+                    </div>
+                </footer>
             </DialogContent>
         </Dialog>
     );
@@ -504,6 +437,7 @@ function NetworkToolForScope({
             >
                 <GraphIcon />
             </TipButton>
+            {layer?.network && <NetworkLiveControls layer={layer} />}
             {draft && draft.scope === scope && (
                 <NetworkEditor
                     initial={draft.initial}

@@ -58,7 +58,7 @@ export function KonvaNetworkLayer({
                 ctx.closePath();
                 ctx.fillStrokeShape(shape);
             }}
-            fill={layer.network?.settings.background ?? '#101827'}
+            fill="transparent"
         />
     );
 }

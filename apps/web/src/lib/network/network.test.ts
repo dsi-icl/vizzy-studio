@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 
 import { GSMessageSchema } from '../types';
+import { initialNetworkPositions, networkDocumentKey } from './document';
+import {
+    encodeNetworkFrame,
+    decodeNetworkFrame,
+    NetworkFrameBuffer,
+    type NetworkTopology
+} from './frames';
 import { networkFromCsv, parseNetworkCsv, parseNetworkJson } from './import';
-import { layoutNetwork } from './layout';
 import { networkViewport, segmentIntersectsRect } from './render';
 import {
     DEFAULT_NETWORK_SETTINGS,
@@ -10,6 +16,7 @@ import {
     MAX_NETWORK_NODES,
     NetworkSchema
 } from './schema';
+import { createNetworkSimulation } from './simulation';
 
 const config = {
     cx: 500,
@@ -26,7 +33,9 @@ const network = {
     name: 'Example',
     data: EXAMPLE_NETWORK,
     settings: DEFAULT_NETWORK_SETTINGS,
-    positions: layoutNetwork(EXAMPLE_NETWORK, DEFAULT_NETWORK_SETTINGS)
+    source: 'import' as const,
+    reheat: 0,
+    positions: initialNetworkPositions(EXAMPLE_NETWORK)
 };
 
 describe('Network data import', () => {
@@ -134,23 +143,97 @@ describe('Network document and layout', () => {
         ).toBe(false);
     });
 
-    it('is deterministic, does not mutate imported data, and accepts isolated/self-linked nodes', () => {
-        const before = JSON.stringify(EXAMPLE_NETWORK);
-        expect(layoutNetwork(EXAMPLE_NETWORK, DEFAULT_NETWORK_SETTINGS)).toEqual(network.positions);
-        expect(JSON.stringify(EXAMPLE_NETWORK)).toBe(before);
-        expect(
-            layoutNetwork(
-                { nodes: [{ id: 'a' }], edges: [{ source: 'a', target: 'a' }] },
-                DEFAULT_NETWORK_SETTINGS
-            )
-        ).toEqual([{ x: 500, y: 325 }]);
-        expect(NetworkSchema.safeParse(network).success).toBe(true);
+    it('keeps moving across ticks without mutating imported data, and reheats after settling', () => {
+        const before = JSON.stringify(network);
+        const still = { ...network, settings: { ...network.settings, motionStrength: 0 } };
+        const sim = createNetworkSimulation(still);
+        sim.advance(1000);
+        const first = sim.view.positions;
+        sim.advance(1050);
+        expect(sim.view.positions).not.toEqual(first);
+        for (let i = 0; i < 200; i++) sim.advance(1100 + i * 50);
+        expect(sim.advance(12000)).toBe(false);
+        const settled = sim.view.positions;
+        sim.configure({ ...still, settings: { ...still.settings, linkDistance: 200 } });
+        expect(sim.advance(12100)).toBe(true);
+        expect(sim.view.positions).not.toEqual(settled);
+        expect(JSON.stringify(network)).toBe(before);
+        expect(sim.view.data.nodes).toHaveLength(12);
+        sim.stop();
     });
 
-    it('changes the saved layout when force settings change', () => {
+    it('keeps a fixed dataset moving after it would normally cool, without new events', () => {
+        for (const source of ['live-example', 'import'] as const) {
+            const live = { ...network, source };
+            const sim = createNetworkSimulation(live);
+            for (let i = 0; i < 1200; i++) sim.advance(i * 50);
+            const before = sim.view.positions;
+            expect(sim.advance(60050)).toBe(true);
+            expect(sim.view.positions).not.toEqual(before);
+            expect(sim.view.data).toEqual(EXAMPLE_NETWORK);
+            expect(sim.topologyVersion).toBe(1);
+            const paused = { ...live, settings: { ...live.settings, paused: true } };
+            sim.configure(paused);
+            sim.advance(60100);
+            const frozen = sim.view;
+            for (let i = 0; i < 100; i++) sim.advance(60150 + i * 50);
+            expect(sim.view).toEqual(frozen);
+            sim.configure(live);
+            sim.advance(66000);
+            expect(sim.view.positions).not.toEqual(frozen.positions);
+            sim.stop();
+        }
+    });
+
+    it('can turn continuous motion off, nudge settled nodes, and keep strong motion bounded', () => {
+        const quiet = { ...network, settings: { ...network.settings, motionStrength: 0 } };
+        const sim = createNetworkSimulation(quiet);
+        for (let i = 0; i < 200; i++) sim.advance(i * 50);
+        expect(sim.advance(11000)).toBe(false);
+        const resting = sim.view.positions;
+        sim.configure({ ...quiet, reheat: 1 });
+        sim.advance(11100);
         expect(
-            layoutNetwork(EXAMPLE_NETWORK, { ...DEFAULT_NETWORK_SETTINGS, linkDistance: 200 })
-        ).not.toEqual(network.positions);
+            sim.view.positions.some(
+                (p, i) => Math.hypot(p.x - resting[i]!.x, p.y - resting[i]!.y) > 1
+            )
+        ).toBe(true);
+        sim.configure({ ...network, settings: { ...network.settings, motionStrength: 2 } });
+        for (let i = 0; i < 1200; i++) sim.advance(12000 + i * 50);
+        expect(
+            sim.view.positions.every(
+                (p) =>
+                    Number.isFinite(p.x) &&
+                    Number.isFinite(p.y) &&
+                    p.x >= 0 &&
+                    p.x <= 1000 &&
+                    p.y >= 0 &&
+                    p.y <= 650
+            )
+        ).toBe(true);
+        expect(sim.view.data).toEqual(EXAMPLE_NETWORK);
+        sim.stop();
+    });
+
+    it('uses the same document key after schema parsing reorders settings', () => {
+        expect(networkDocumentKey(network)).toBe(networkDocumentKey(NetworkSchema.parse(network)));
+    });
+
+    it('stores white nodes and links without a layer background or runtime coordinates', () => {
+        const { positions: _positions, ...document } = network;
+        expect(NetworkSchema.parse(document).positions).toBeUndefined();
+        expect(NetworkSchema.parse(document).settings).toMatchObject({
+            nodeColor: '#ffffff',
+            edgeColor: '#ffffff',
+            colorByGroup: false,
+            showLabels: false
+        });
+        expect(
+            NetworkSchema.parse({
+                ...document,
+                settings: { ...document.settings, background: '#123456' }
+            }).settings
+        ).not.toHaveProperty('background');
     });
 });
 
@@ -189,5 +272,87 @@ describe('Network screen boundaries', () => {
         expect(rotated.y).toBeCloseTo(0);
         expect(rotated.w).toBeCloseTo(1000);
         expect(rotated.h).toBeCloseTo(650);
+    });
+});
+
+describe('Shared network frames', () => {
+    const topology: NetworkTopology = {
+        type: 'network_topology',
+        scopeKey: 'scope-a',
+        scopeId: 1,
+        numericId: 10,
+        epoch: 22,
+        topologyVersion: 3,
+        documentKey: networkDocumentKey(network),
+        data: { nodes: [{ id: 'a' }], edges: [] }
+    };
+    const packet = (sequence: number, time: number, x: number) =>
+        encodeNetworkFrame({
+            scopeId: 1,
+            numericId: 10,
+            epoch: 22,
+            sequence,
+            topologyVersion: 3,
+            serverTime: time,
+            positions: [{ x, y: 30 }]
+        });
+    it('interpolates every screen on the same timeline regardless of arrival times', () => {
+        const left = new NetworkFrameBuffer(() => 1125),
+            right = new NetworkFrameBuffer(() => 1125);
+        for (const tile of [left, right]) {
+            tile.setScope('scope-a');
+            tile.topology(topology);
+            tile.receive(packet(1, 1000, 10));
+        }
+        left.receive(packet(2, 1050, 20));
+        right.receive(packet(2, 1050, 20));
+        expect(left.sample(10, topology.documentKey)?.view.positions).toEqual([{ x: 15, y: 30 }]);
+        expect(right.sample(10, topology.documentKey)).toEqual(
+            left.sample(10, topology.documentKey)
+        );
+        expect(left.sample(10, 'changed-settings')).toBeNull();
+        left.setScope('scope-b');
+        left.topology(topology);
+        left.receive(packet(3, 1100, 30));
+        expect(left.sample(10, topology.documentKey)).toBeNull();
+    });
+    it('lets editor fallback detect stale arrivals without changing the wall timeline', () => {
+        const clock = spyOn(performance, 'now').mockReturnValue(100);
+        try {
+            const frames = new NetworkFrameBuffer(() => 1200);
+            frames.setScope('scope-a');
+            frames.topology(topology);
+            frames.receive(packet(1, 1000, 10));
+            expect(frames.sample(10, topology.documentKey, undefined, 2500)).not.toBeNull();
+            clock.mockReturnValue(3000);
+            expect(frames.sample(10, topology.documentKey, undefined, 2500)).toBeNull();
+            expect(frames.sample(10, topology.documentKey)?.view.positions[0]?.x).toBe(10);
+            frames.receive(packet(2, 1100, 20));
+            expect(
+                frames.sample(10, topology.documentKey, undefined, 2500)?.view.positions[0]?.x
+            ).toBe(20);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+    it('rejects truncated, non-finite, stale and mismatched frames', () => {
+        expect(decodeNetworkFrame(new ArrayBuffer(3))).toBeNull();
+        const broken = packet(1, 1000, NaN);
+        expect(decodeNetworkFrame(broken)).toBeNull();
+        const frames = new NetworkFrameBuffer(() => 1300);
+        frames.setScope('scope-a');
+        frames.topology(topology);
+        frames.receive(packet(2, 1050, 20));
+        frames.receive(packet(1, 1000, 10));
+        const wrong = packet(3, 1100, 50);
+        new DataView(wrong).setUint32(13, 99, true);
+        frames.receive(wrong);
+        expect(frames.sample(10, topology.documentKey)?.view.positions[0]?.x).toBe(20);
+        frames.topology({ ...topology, epoch: 99 });
+        expect(frames.sample(10, topology.documentKey)).toBeNull();
+        frames.receive(wrong);
+        expect(frames.sample(10, topology.documentKey)?.view.positions[0]?.x).toBe(50);
+        frames.remove(10);
+        expect(frames.sample(10, topology.documentKey)).toBeNull();
     });
 });

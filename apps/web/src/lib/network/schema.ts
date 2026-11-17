@@ -53,8 +53,13 @@ export const DEFAULT_NETWORK_SETTINGS = {
     collisionRadius: 18,
     nodeRadius: 7,
     edgeWidth: 1.5,
-    showLabels: true,
-    background: '#101827'
+    showLabels: false,
+    nodeColor: '#ffffff',
+    colorByGroup: false,
+    labelColor: '#ffffff',
+    edgeColor: '#ffffff',
+    motionStrength: 0.65,
+    paused: false
 };
 
 export const NetworkSettingsSchema = z.object({
@@ -65,7 +70,21 @@ export const NetworkSettingsSchema = z.object({
     nodeRadius: z.number().min(2).max(20),
     edgeWidth: z.number().min(0.5).max(5),
     showLabels: z.boolean(),
-    background: z.string().regex(/^#[0-9a-fA-F]{6}$/)
+    nodeColor: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .default('#ffffff'),
+    colorByGroup: z.boolean().default(false),
+    motionStrength: z.number().min(0).max(2).default(0.65),
+    labelColor: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .default('#ffffff'),
+    edgeColor: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .default('#ffffff'),
+    paused: z.boolean().default(false)
 });
 
 export const NetworkSchema = z
@@ -73,8 +92,10 @@ export const NetworkSchema = z
         name: z.string().trim().min(1).max(100),
         data: NetworkDataSchema,
         settings: NetworkSettingsSchema,
-        // Layout is calculated once by the author and saved with the layer.
-        // Every viewer uses these coordinates, including devices which join later.
+        source: z.enum(['import', 'live-example']).default('import'),
+        reheat: z.number().int().nonnegative().default(0),
+        // Read old documents as an initial condition only. New saves contain data
+        // and settings; ongoing simulation coordinates never dirty the document.
         positions: z
             .array(
                 z.object({
@@ -83,9 +104,10 @@ export const NetworkSchema = z
                 })
             )
             .max(MAX_NETWORK_NODES)
+            .optional()
     })
     .superRefine((network, ctx) => {
-        if (network.positions.length !== network.data.nodes.length) {
+        if (network.positions && network.positions.length !== network.data.nodes.length) {
             ctx.addIssue({ code: 'custom', message: 'Each node needs a saved position.' });
         }
     });
@@ -93,6 +115,8 @@ export const NetworkSchema = z
 export type NetworkData = z.infer<typeof NetworkDataSchema>;
 export type NetworkSettings = z.infer<typeof NetworkSettingsSchema>;
 export type Network = z.infer<typeof NetworkSchema>;
+export type NetworkPositions = Array<{ x: number; y: number }>;
+export type NetworkView = { data: NetworkData; positions: NetworkPositions };
 
 export const EXAMPLE_NETWORK: NetworkData = {
     nodes: [
