@@ -1,7 +1,3 @@
-import Uppy from '@uppy/core';
-import Tus from '@uppy/tus';
-import { toast } from 'sonner';
-
 import { $listAssets } from '~/server/projects.fns';
 
 import { EditorEngine } from './editorEngine';
@@ -15,7 +11,6 @@ import {
 import { useEditorStore } from './editorStore';
 import { fitSizeToViewport } from './fitSizeToViewport';
 import {
-    canPreviewImageLocally,
     canPlaceAsset,
     isAssetProcessing,
     createImageDeepZoomLayerDescriptor,
@@ -26,7 +21,6 @@ import {
     type AssetLibraryAsset,
     type MediaDimensions
 } from './mediaUtils';
-import { scrubInsecureTusResumeEntries } from './tusClient';
 import type { LayerWithEditorState } from './types';
 
 export async function readAvailableAssets(projectId: string) {
@@ -167,7 +161,7 @@ export async function placeAssetInEditor(input: {
     }
 }
 
-/** All three entry points use one draft, cleanup and ready handoff. */
+/** Media click and drag share one draft, cleanup and ready handoff. */
 function startImagePlacement(
     session: EditorPlacementSession,
     input: {
@@ -265,110 +259,4 @@ async function finishImagePlacement(
     EditorEngine.getInstance().createLayer(origin, layer);
     useEditorStore.getState().markDirty();
     return layer;
-}
-
-/** Local preview → server preview → ready tiles, keeping the same editable layer. */
-export async function uploadImageForPlacement(
-    file: File,
-    token: string,
-    session: EditorPlacementSession
-) {
-    const placement = startImagePlacement(session, { name: file.name });
-    const { draft } = placement;
-    const previewController = new AbortController();
-    const previewSignal = AbortSignal.any([session.signal, previewController.signal]);
-    let localUrl: string | undefined;
-    // Decode only known, bounded rasters. Large/TIFF images have a movable
-    // placeholder until the worker publishes its small preview.
-    void (async () => {
-        if (!(await canPreviewImageLocally(file)) || previewSignal.aborted) return;
-        const bitmap = await createImageBitmap(file);
-        try {
-            if (previewSignal.aborted) return;
-            const scale = Math.min(1, 1024 / Math.max(bitmap.width, bitmap.height));
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-            canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-            const blob = await new Promise<Blob | null>((resolve) =>
-                canvas.toBlob(resolve, 'image/png')
-            );
-            if (!blob || previewSignal.aborted || draft.current().url) return;
-            localUrl = URL.createObjectURL(blob);
-            draft.update({ url: localUrl }, { width: bitmap.width, height: bitmap.height });
-        } finally {
-            bitmap.close();
-        }
-    })().catch(() => {
-        /* Unsupported/corrupt local images still get a server-side attempt. */
-    });
-    scrubInsecureTusResumeEntries();
-    const uppy = new Uppy().use(Tus, {
-        endpoint: '/api/uploads/',
-        chunkSize: 5 * 1024 * 1024,
-        storeFingerprintForResuming: false,
-        removeFingerprintOnSuccess: true
-    });
-    const toastId = toast.loading(`Uploading ${file.name}`, {
-        action: { label: 'Cancel upload', onClick: session.cancel }
-    });
-    let accepted = false;
-    try {
-        uppy.addFile({
-            name: file.name,
-            type: file.type,
-            data: file,
-            meta: { projectId: session.projectId, uploadToken: token }
-        });
-        uppy.on('upload-progress', (_file, progress) => {
-            if (!session.signal.aborted && progress.bytesTotal) {
-                const percentage = Math.round((progress.bytesUploaded / progress.bytesTotal) * 100);
-                draft.update({ progress: percentage });
-                toast.loading(`Uploading ${file.name}: ${percentage}%`, {
-                    id: toastId,
-                    action: { label: 'Cancel upload', onClick: session.cancel }
-                });
-            }
-        });
-        const result = await withPlacementAbort(uppy.upload(), session.signal);
-        if (result?.failed?.length) throw new Error('Image upload failed.');
-        const uploaded = result?.successful?.[0];
-        if (!uploaded?.uploadURL) throw new Error('The upload did not return an image reference.');
-        accepted = true;
-        session.assertCurrent();
-        const uploadId = new URL(uploaded.uploadURL, window.location.origin).pathname
-            .split('/')
-            .pop();
-        const filename = `${uploadId}${file.name.slice(file.name.lastIndexOf('.')).toLowerCase()}`;
-        toast.loading(`Preparing ${file.name}`, {
-            id: toastId,
-            action: { label: 'Cancel placement', onClick: session.cancel }
-        });
-        await finishImagePlacement(placement, session, 'editor:handle_upload', async () =>
-            (await readAvailableAssets(session.projectId)).find((asset) => asset.url === filename)
-        );
-        toast.dismiss(toastId);
-    } catch (error) {
-        if (session.signal.aborted) {
-            toast.dismiss(toastId);
-        } else if (error instanceof Error && error.name === 'TimeoutError') {
-            toast.info('Still processing. Check Media.', {
-                id: toastId,
-                action: undefined,
-                description: undefined
-            });
-        } else {
-            toast.error(error instanceof Error ? error.message : 'Unable to add the image', {
-                id: toastId,
-                action: undefined,
-                description: accepted ? 'Upload saved. Check Media.' : undefined
-            });
-        }
-    } finally {
-        previewController.abort();
-        placement.dispose();
-        if (localUrl) URL.revokeObjectURL(localUrl);
-        uppy.destroy();
-        session.dispose();
-    }
 }

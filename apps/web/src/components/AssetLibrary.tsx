@@ -209,205 +209,191 @@ export function AssetLibrary({
     return (
         <div className="flex h-full flex-col overflow-hidden bg-muted/30">
             <div className="flex flex-1 flex-col overflow-y-auto p-2">
-                {sortedAssets.length === 0 &&
-                    (isPicker ? (
+                <div
+                    className={sortedAssets.length === 0 ? 'flex flex-1 flex-col' : 'grid gap-1.5'}
+                    style={
+                        sortedAssets.length > 0
+                            ? { gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))' }
+                            : undefined
+                    }
+                >
+                    {isPicker && sortedAssets.length === 0 ? (
                         <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground">
                             No assets available
                         </div>
-                    ) : (
+                    ) : null}
+                    {!isPicker ? (
                         <UploadDialog
                             projectId={projectId}
-                            trigger={emptyTrigger}
+                            trigger={sortedAssets.length === 0 ? emptyTrigger : uploadTrigger}
                             onUploadComplete={handleUploadComplete}
                         />
-                    ))}
+                    ) : null}
+                    {sortedAssets.map((asset, idx) => {
+                        const isVideo =
+                            asset.mimeType?.startsWith('video/') ||
+                            /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.name);
+                        const isFont = isFontAsset(asset);
+                        const canPlace = canPlaceAsset(asset, {
+                            allowProcessing: !isPicker
+                        });
+                        const processingLabel = assetProcessingLabel(asset);
+                        const previewFilename = assetPreviewFilename(asset);
+                        const isSelected =
+                            isPicker &&
+                            selectedAssetUrls
+                                .map(normalizeAssetUrl)
+                                .includes(normalizeAssetUrl(assetPickerFilename(asset)));
+                        const thumbIdentifier = isVideo
+                            ? (asset.previewUrl ?? asset.url)
+                            : previewFilename;
 
-                {sortedAssets.length > 0 && (
-                    <>
-                        <div
-                            className="grid gap-1.5"
-                            style={{
-                                gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))'
-                            }}
-                        >
-                            {!isPicker ? (
-                                <UploadDialog
-                                    key={'upload-dialog'}
-                                    projectId={projectId}
-                                    trigger={uploadTrigger}
-                                    onUploadComplete={handleUploadComplete}
-                                />
-                            ) : null}
-                            {sortedAssets.map((asset, idx) => {
-                                const isVideo =
-                                    asset.mimeType?.startsWith('video/') ||
-                                    /\.(mp4|mov|webm|avi|mkv)$/i.test(asset.name);
-                                const isFont = isFontAsset(asset);
-                                const canPlace = canPlaceAsset(asset, {
-                                    allowProcessing: !isPicker
-                                });
-                                const processingLabel = assetProcessingLabel(asset);
-                                const previewFilename = assetPreviewFilename(asset);
-                                const isSelected =
-                                    isPicker &&
-                                    selectedAssetUrls
-                                        .map(normalizeAssetUrl)
-                                        .includes(normalizeAssetUrl(assetPickerFilename(asset)));
-                                const thumbIdentifier = isVideo
-                                    ? (asset.previewUrl ?? asset.url)
-                                    : previewFilename;
-
-                                const cardContent = (
-                                    <>
-                                        {isFont ? (
-                                            <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-muted text-muted-foreground [--checker-size:10px]">
-                                                <span className="rounded bg-background px-1.5 py-0.5 text-[9px] font-semibold tracking-wide">
-                                                    WOFF2
-                                                </span>
-                                                <span className="max-w-[90%] truncate text-[10px]">
-                                                    {asset.name.replace(/\.woff2$/i, '')}
-                                                </span>
-                                            </div>
-                                        ) : thumbIdentifier ? (
-                                            <ProjectImage
-                                                src={thumbIdentifier}
-                                                blurhash={asset.blurhash}
-                                                sizes={asset.sizes}
-                                                forceOriginal={Boolean(asset.deepZoom)}
-                                                alt={asset.name}
-                                                className="aspect-square w-full [--checker-size:10px]"
-                                                imgClassName="object-cover"
-                                            />
-                                        ) : (
-                                            <div className="flex aspect-square items-center justify-center bg-muted">
-                                                <ImageIcon
-                                                    size={24}
-                                                    className="text-muted-foreground"
-                                                />
-                                            </div>
-                                        )}
-                                        {processingLabel ? (
-                                            <output className="absolute inset-x-0 bottom-0 z-20 bg-black/75 px-1 py-1 text-center text-[10px] text-white">
-                                                {processingLabel}
-                                            </output>
-                                        ) : null}
-                                        <div className="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black/60 to-transparent px-1 pt-3 pb-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100">
-                                            <span className="block truncate text-[10px] text-white">
-                                                {asset.name}
-                                            </span>
-                                        </div>
-                                        {isPicker ? (
-                                            isSelected ? (
-                                                <span className="absolute top-0.5 right-0.5 z-20 rounded-full bg-primary p-1 text-primary-foreground">
-                                                    <CheckIcon size={11} />
-                                                </span>
-                                            ) : null
-                                        ) : (
-                                            <div className="absolute top-0.5 right-0.5 z-20 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100">
-                                                {!isFont ? (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (!previewFilename) return;
-                                                            setPreview({
-                                                                src: `/api/assets/${previewFilename}`,
-                                                                name: asset.name,
-                                                                isVideo: isVideoAsset(asset),
-                                                                blurhash: asset.blurhash,
-                                                                sizes: asset.sizes
-                                                            });
-                                                        }}
-                                                        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-black/80"
-                                                        title="Preview"
-                                                        disabled={!previewFilename}
-                                                    >
-                                                        <EyeIcon size={12} />
-                                                    </button>
-                                                ) : null}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        downloadAsset(
-                                                            `/api/assets/${asset.url}`,
-                                                            asset.name
-                                                        );
-                                                    }}
-                                                    className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-black/80"
-                                                    title="Download"
-                                                >
-                                                    <DownloadIcon size={12} />
-                                                </button>
-                                                {!asset.public ? (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleDeleteClick(asset);
-                                                        }}
-                                                        className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-destructive"
-                                                        title="Delete asset"
-                                                    >
-                                                        <TrashIcon size={12} />
-                                                    </button>
-                                                ) : null}
-                                            </div>
-                                        )}
-                                    </>
-                                );
-
-                                if (isFont) {
-                                    return (
-                                        <div
-                                            key={asset.id}
-                                            className="bg-checkerboard group relative max-w-25 cursor-default overflow-hidden rounded-md border border-border bg-background opacity-90"
-                                            title={asset.name}
-                                            tabIndex={idx}
-                                        >
-                                            {cardContent}
-                                        </div>
-                                    );
-                                }
-
-                                return (
-                                    <div
-                                        key={asset.id}
-                                        onClick={() => {
-                                            if (canPlace || isSelected) onSelectAsset?.(asset);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.target !== e.currentTarget) return;
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault();
-                                                if (canPlace || isSelected) onSelectAsset?.(asset);
-                                            }
-                                        }}
-                                        className={`bg-checkerboard group relative max-w-25 cursor-pointer overflow-hidden rounded-md border bg-background transition-colors hover:border-primary ${
-                                            isSelected
-                                                ? 'border-primary ring-2 ring-primary/40'
-                                                : 'border-border'
-                                        }`}
-                                        title={
-                                            asset.deepZoom?.status === 'failed'
-                                                ? `${asset.name}: ${asset.deepZoom.error}`
-                                                : `${asset.name}${processingLabel ? ` — ${processingLabel}` : ''}`
-                                        }
-                                        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-                                        role="button"
-                                        data-asset-id={asset.id}
-                                        aria-disabled={!canPlace && !isSelected}
-                                        tabIndex={idx}
-                                        draggable={!isPicker && canPlace}
-                                        onDragStart={(e) => {
-                                            if (isPicker) return;
-                                            handleAssetDragStart(e, asset);
-                                        }}
-                                    >
-                                        {cardContent}
+                        const cardContent = (
+                            <>
+                                {isFont ? (
+                                    <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-muted text-muted-foreground [--checker-size:10px]">
+                                        <span className="rounded bg-background px-1.5 py-0.5 text-[9px] font-semibold tracking-wide">
+                                            WOFF2
+                                        </span>
+                                        <span className="max-w-[90%] truncate text-[10px]">
+                                            {asset.name.replace(/\.woff2$/i, '')}
+                                        </span>
                                     </div>
-                                );
-                            })}
-                        </div>
-                    </>
-                )}
+                                ) : thumbIdentifier ? (
+                                    <ProjectImage
+                                        src={thumbIdentifier}
+                                        blurhash={asset.blurhash}
+                                        sizes={asset.sizes}
+                                        forceOriginal={Boolean(asset.deepZoom)}
+                                        alt={asset.name}
+                                        className="aspect-square w-full [--checker-size:10px]"
+                                        imgClassName="object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex aspect-square items-center justify-center bg-muted">
+                                        <ImageIcon size={24} className="text-muted-foreground" />
+                                    </div>
+                                )}
+                                {processingLabel ? (
+                                    <output className="absolute inset-x-0 bottom-0 z-20 bg-black/75 px-1 py-1 text-center text-[10px] text-white">
+                                        {processingLabel}
+                                    </output>
+                                ) : null}
+                                <div className="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black/60 to-transparent px-1 pt-3 pb-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100">
+                                    <span className="block truncate text-[10px] text-white">
+                                        {asset.name}
+                                    </span>
+                                </div>
+                                {isPicker ? (
+                                    isSelected ? (
+                                        <span className="absolute top-0.5 right-0.5 z-20 rounded-full bg-primary p-1 text-primary-foreground">
+                                            <CheckIcon size={11} />
+                                        </span>
+                                    ) : null
+                                ) : (
+                                    <div className="absolute top-0.5 right-0.5 z-20 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 touch-only:opacity-100 last-touch:opacity-100">
+                                        {!isFont ? (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!previewFilename) return;
+                                                    setPreview({
+                                                        src: `/api/assets/${previewFilename}`,
+                                                        name: asset.name,
+                                                        isVideo: isVideoAsset(asset),
+                                                        blurhash: asset.blurhash,
+                                                        sizes: asset.sizes
+                                                    });
+                                                }}
+                                                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-black/80"
+                                                title="Preview"
+                                                disabled={!previewFilename}
+                                            >
+                                                <EyeIcon size={12} />
+                                            </button>
+                                        ) : null}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                downloadAsset(
+                                                    `/api/assets/${asset.url}`,
+                                                    asset.name
+                                                );
+                                            }}
+                                            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-black/80"
+                                            title="Download"
+                                        >
+                                            <DownloadIcon size={12} />
+                                        </button>
+                                        {!asset.public ? (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteClick(asset);
+                                                }}
+                                                className="flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-black/60 text-white hover:bg-destructive"
+                                                title="Delete asset"
+                                            >
+                                                <TrashIcon size={12} />
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                )}
+                            </>
+                        );
+
+                        if (isFont) {
+                            return (
+                                <div
+                                    key={asset.id}
+                                    className="bg-checkerboard group relative max-w-25 cursor-default overflow-hidden rounded-md border border-border bg-background opacity-90"
+                                    title={asset.name}
+                                    tabIndex={idx}
+                                >
+                                    {cardContent}
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div
+                                key={asset.id}
+                                onClick={() => {
+                                    if (canPlace || isSelected) onSelectAsset?.(asset);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.target !== e.currentTarget) return;
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        if (canPlace || isSelected) onSelectAsset?.(asset);
+                                    }
+                                }}
+                                className={`bg-checkerboard group relative max-w-25 cursor-pointer overflow-hidden rounded-md border bg-background transition-colors hover:border-primary ${
+                                    isSelected
+                                        ? 'border-primary ring-2 ring-primary/40'
+                                        : 'border-border'
+                                }`}
+                                title={
+                                    asset.deepZoom?.status === 'failed'
+                                        ? `${asset.name}: ${asset.deepZoom.error}`
+                                        : `${asset.name}${processingLabel ? ` — ${processingLabel}` : ''}`
+                                }
+                                // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+                                role="button"
+                                data-asset-id={asset.id}
+                                aria-disabled={!canPlace && !isSelected}
+                                tabIndex={idx}
+                                draggable={!isPicker && canPlace}
+                                onDragStart={(e) => {
+                                    if (isPicker) return;
+                                    handleAssetDragStart(e, asset);
+                                }}
+                            >
+                                {cardContent}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
             {!isPicker ? (

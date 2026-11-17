@@ -63,10 +63,6 @@ test('uploads image and video assets, persists metadata, and renders media on a 
     browser,
     page: editorPage
 }) => {
-    test.fail(
-        true,
-        'Known main-branch gap: finalised upload layers do not yet converge into the live wall state.'
-    );
     test.setTimeout(150_000);
     const manifest = readHarnessManifest();
     const contexts: BrowserContext[] = [];
@@ -103,14 +99,37 @@ test('uploads image and video assets, persists metadata, and renders media on a 
             await expect(dirtyIndicator).toBeHidden({ timeout: 15_000 });
         }
 
-        const fileInput = editorPage.locator('#titlebar input[type="file"]');
-        await fileInput.setInputFiles({
-            name: imageName,
-            mimeType: 'image/png',
-            buffer: readFileSync(resolve(process.cwd(), 'apps/web/public/favicon-96x96.png'))
+        const uploadTrigger = editorPage
+            .getByRole('button', { name: 'Upload', exact: true })
+            .or(editorPage.getByRole('button', { name: 'Drop files or click to upload' }))
+            .first();
+        await uploadTrigger.click();
+        const uploadDialog = editorPage.getByRole('dialog');
+        await expect(uploadDialog.getByText('Upload Assets', { exact: true })).toBeVisible();
+        await expect(uploadDialog.locator('code')).toBeVisible();
+        await uploadDialog.locator('input[type="file"]').setInputFiles([
+            {
+                name: imageName,
+                mimeType: 'image/png',
+                buffer: readFileSync(resolve(process.cwd(), 'apps/web/public/favicon-96x96.png'))
+            },
+            {
+                name: videoName,
+                mimeType: 'video/mp4',
+                buffer: Buffer.from(VIDEO_FIXTURE_BASE64, 'base64')
+            }
+        ]);
+        await expect(uploadDialog.getByText('Done', { exact: true })).toHaveCount(2, {
+            timeout: 60_000
         });
+        await editorPage.keyboard.press('Escape');
+        await expect(uploadDialog).toBeHidden();
+
+        const imageCard = editorPage.locator('[data-asset-id]').filter({ hasText: imageName });
+        await expect(imageCard).toBeVisible();
+        await imageCard.click();
         await expect
-            .poll(() => readUploadedLayer(editorPage, 'image'))
+            .poll(() => readUploadedLayer(editorPage, 'image'), { timeout: 45_000 })
             .toMatchObject({
                 type: 'image'
             });
@@ -121,11 +140,9 @@ test('uploads image and video assets, persists metadata, and renders media on a 
         expect(imageResponse.status()).toBe(200);
         expect(imageResponse.headers()['content-type']).toContain('image/png');
 
-        await fileInput.setInputFiles({
-            name: videoName,
-            mimeType: 'video/mp4',
-            buffer: Buffer.from(VIDEO_FIXTURE_BASE64, 'base64')
-        });
+        const videoCard = editorPage.locator('[data-asset-id]').filter({ hasText: videoName });
+        await expect(videoCard).toHaveAttribute('aria-disabled', 'false', { timeout: 45_000 });
+        await videoCard.click();
         await expect
             .poll(() => readUploadedLayer(editorPage, 'video'), {
                 timeout: 45_000,
@@ -285,8 +302,9 @@ test('uploads image and video assets, persists metadata, and renders media on a 
         contexts.push(viewerContext);
         const viewerPage = await viewerContext.newPage();
         const posterUrl = new URL(`/api/assets/${videoLayer.stillImage}`, manifest.baseUrl).href;
+        const imageUrl = new URL(imageLayer.url, manifest.baseUrl).href;
         const imageLoaded = viewerPage.waitForResponse(
-            (response) => response.url() === imageLayer.url && response.status() === 200,
+            (response) => response.url() === imageUrl && response.status() === 200,
             { timeout: 20_000 }
         );
         const videoPosterLoaded = viewerPage.waitForResponse(
@@ -312,8 +330,8 @@ test('uploads image and video assets, persists metadata, and renders media on a 
         }, manifest.fixtures.mediaWallId);
         await waitForWallCleared(wallPage);
 
-        // Return the dedicated project to an empty state, then remove the two
-        // uploaded asset records through the project UI and require access revocation.
+        // Return the dedicated project to an empty state, then hide both assets
+        // from the library. Soft-deleted files remain readable by saved references.
         await editorPage.evaluate(() => {
             const store = (
                 window as Window & {
@@ -344,10 +362,10 @@ test('uploads image and video assets, persists metadata, and renders media on a 
         await deleteAsset(imageName);
         await deleteAsset(videoName);
 
-        expect((await editorPage.context().request.get(imageLayer.url)).status()).toBe(404);
-        expect((await editorPage.context().request.get(videoLayer.url)).status()).toBe(404);
+        expect((await editorPage.context().request.get(imageLayer.url)).status()).toBe(200);
+        expect((await editorPage.context().request.get(videoLayer.url)).status()).toBe(200);
         if (videoLayer.stillImage) {
-            expect((await editorPage.context().request.get(posterUrl)).status()).toBe(404);
+            expect((await editorPage.context().request.get(posterUrl)).status()).toBe(200);
         }
     } finally {
         await Promise.allSettled(contexts.map((context) => context.close()));

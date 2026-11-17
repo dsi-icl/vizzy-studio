@@ -15,7 +15,6 @@ import {
     EraserIcon,
     FloppyDiskIcon,
     GridNineIcon,
-    ImageIcon,
     MapPinIcon,
     GlobeSimpleIcon,
     PencilSimpleIcon,
@@ -57,12 +56,7 @@ import { EditorEngine } from '~/lib/editorEngine';
 import { useEditorStore } from '~/lib/editorStore';
 import type { LayerWithEditorState } from '~/lib/types';
 
-interface EditorToolbarProps {
-    fileInputRef: React.RefObject<HTMLInputElement | null>;
-    onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-}
-
-export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
+export function EditorToolbar() {
     const { user } = useAuth();
     const isAdmin = user?.role === 'admin';
 
@@ -184,15 +178,6 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
                 id="titlebar"
                 className="flex items-center gap-1 border-t border-border bg-card/50 px-2 py-1"
             >
-                {/* Hidden file input */}
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="video/mp4, image/*"
-                    onChange={onUpload}
-                    className="hidden"
-                />
-
                 {/* ── Close ── */}
                 {projectId && (
                     <>
@@ -211,9 +196,6 @@ export function EditorToolbar({ fileInputRef, onUpload }: EditorToolbarProps) {
 
                 {/* ── Add Content ── */}
                 <div className="flex items-center gap-0.5">
-                    <TipButton tip="Upload assets" onClick={() => fileInputRef.current?.click()}>
-                        <ImageIcon />
-                    </TipButton>
                     <Popover>
                         <PopoverTrigger nativeButton={false} render={<div />}>
                             <TipButton tip="Add shape">

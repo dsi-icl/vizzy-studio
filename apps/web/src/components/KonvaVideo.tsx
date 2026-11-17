@@ -6,6 +6,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Group, Image, Rect, Text } from 'react-konva';
 
 import { EditorEngine } from '~/lib/editorEngine';
+import { useEditorStore } from '~/lib/editorStore';
 import { applyKonvaFilters } from '~/lib/konvaFilters';
 import type { LayerWithEditorState } from '~/lib/types';
 
@@ -56,6 +57,33 @@ export function KonvaVideo({
         vid.playsInline = true;
         vid.loop = layer.loop ?? true;
 
+        const restoreDuration = () => {
+            if (!Number.isFinite(vid.duration) || vid.duration <= 0) return;
+            const store = useEditorStore.getState();
+            const current = store.layers.get(layer.numericId);
+            if (
+                store.loading ||
+                current?.type !== 'video' ||
+                current.url !== layer.url ||
+                current.isUploading ||
+                current.duration > 0
+            ) {
+                return;
+            }
+
+            // Historic direct uploads saved without duration. Restore it from
+            // the actual file so playback and server loop sync can work again.
+            const repaired = { ...current, duration: vid.duration };
+            store.upsertLayer(repaired);
+            EditorEngine.getInstance().sendJSON({
+                type: 'upsert_layer',
+                origin: 'editor:restore_video_duration',
+                layer: repaired
+            });
+            store.markDirty();
+        };
+        vid.addEventListener('loadedmetadata', restoreDuration);
+
         // Force a canvas paint the exact millisecond the browser has a frame ready
         vid.addEventListener('canplay', () => {
             setImgElement(null);
@@ -66,6 +94,7 @@ export function KonvaVideo({
         setVideoElement(vid);
 
         return () => {
+            vid.removeEventListener('loadedmetadata', restoreDuration);
             vid.pause();
             vid.removeAttribute('src');
             vid.load();
