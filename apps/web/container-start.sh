@@ -129,7 +129,6 @@ if [ "$(id -u)" = "0" ]; then
     "$TMP_PATH" \
     "$ASSET_PATH" \
     "$PW_PATH" \
-    "$BIN_PATH" \
     "$CACHE_PATH" \
     "$FFMPEG_CACHE_PATH" >/dev/null 2>&1 || true
 fi

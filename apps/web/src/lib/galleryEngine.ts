@@ -40,7 +40,7 @@ export class GalleryEngine {
             onOpen: () => {
                 console.log('Gallery Engine: Connected to Server');
                 useGalleryStore.getState().setDeviceEnrollmentId(null);
-                useGalleryStore.getState().setIsEnrolledDevice(false);
+                // A reconnect does not revoke the device's confirmed enrollment.
             },
             onMessage: (event) => {
                 if (typeof event.data !== 'string') return;
@@ -53,7 +53,14 @@ export class GalleryEngine {
                 }
 
                 if (data.type === 'device_enrollment') {
-                    useGalleryStore.getState().setDeviceEnrollmentId(data.id);
+                    const store = useGalleryStore.getState();
+                    store.setIsEnrolledDevice(false);
+                    store.setDeviceEnrollmentId(data.id);
+                    return;
+                }
+
+                if (data.type === 'auth_denied') {
+                    useGalleryStore.getState().setIsEnrolledDevice(false);
                     return;
                 }
 
