@@ -1,5 +1,8 @@
 'use client';
 
+import { NetworkFrameBuffer, NETWORK_FRAME_OPCODE } from '~/lib/network/frames';
+import { makeScopeLabel } from '~/lib/types';
+
 import { BusClient } from './busClient';
 import {
     GSMessageSchema,
@@ -20,6 +23,7 @@ export interface Viewport {
 type LayoutUpdateCallback = (data: GSMessage) => void;
 
 export class WallEngine {
+    public readonly networkFrames = new NetworkFrameBuffer(() => this.getServerTime());
     private bus: BusClient;
     private pingTimer: ReturnType<typeof setTimeout> | null = null;
     private reconnectClearTimer: ReturnType<typeof setTimeout> | null = null;
@@ -69,6 +73,7 @@ export class WallEngine {
                 this.reconnectClearTimer = setTimeout(() => {
                     if (this.bus.status === 'connected') return;
                     this.layers.clear();
+                    this.networkFrames.setScope(null);
                     this.layoutCallbacks.forEach((cb) => cb({ type: 'hydrate', layers: [] }));
                 }, 8_000);
             } else if (status === 'connected') {
@@ -86,6 +91,7 @@ export class WallEngine {
     }
 
     public destroy() {
+        this.networkFrames.setScope(null);
         console.log('Wall Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
         if (this.reconnectClearTimer) clearTimeout(this.reconnectClearTimer);
@@ -203,6 +209,10 @@ export class WallEngine {
         if (event.data instanceof ArrayBuffer) {
             const view = new DataView(event.data);
             const opcode = view.getUint8(0);
+            if (opcode === NETWORK_FRAME_OPCODE) {
+                this.networkFrames.receive(event.data);
+                return;
+            }
 
             if (opcode === 0x09) {
                 const t0 = view.getFloat64(1, true);
@@ -272,7 +282,17 @@ export class WallEngine {
         if (typeof event.data === 'string') {
             const data = GSMessageSchema.parse(JSON.parse(event.data));
 
+            if (data.type === 'network_topology') {
+                this.networkFrames.topology(data);
+                return;
+            }
+            if (data.type === 'delete_layer') this.networkFrames.remove(data.numericId);
             if (data.type === 'hydrate') {
+                this.networkFrames.setScope(
+                    data.projectId && data.commitId && data.slideId
+                        ? makeScopeLabel(data.projectId, data.commitId, data.slideId)
+                        : null
+                );
                 this.customRenderUrl = data.customRender?.url;
                 this.boundSource = data.boundSource;
             }
