@@ -3,6 +3,9 @@
 import { throttle, Throttler } from '@tanstack/pacer';
 import { toast } from 'sonner';
 
+import { NetworkFrameBuffer, NETWORK_FRAME_OPCODE } from '~/lib/network/frames';
+import { makeScopeLabel } from '~/lib/types';
+
 import { BusClient } from './busClient';
 import { type ConnectionStatus } from './reconnectingWs';
 import { GSMessageSchema, type GSMessage, type Layer, type LayerWithEditorState } from './types';
@@ -42,6 +45,7 @@ type BindOverrideResultCallback = (
 const LAYER_CREATE_ACK_TIMEOUT_MS = 15_000;
 
 export class EditorEngine {
+    public readonly networkFrames = new NetworkFrameBuffer(() => this.getServerTime());
     private bus: BusClient;
     private pendingLayerCreates = new Map<
         string,
@@ -127,6 +131,10 @@ export class EditorEngine {
         if (event.data instanceof ArrayBuffer) {
             const view = new DataView(event.data);
             const opcode = view.getUint8(0);
+            if (opcode === NETWORK_FRAME_OPCODE) {
+                this.networkFrames.receive(event.data);
+                return;
+            }
 
             if (opcode === 0x09) {
                 const t0 = view.getFloat64(1, true);
@@ -208,7 +216,18 @@ export class EditorEngine {
                 return;
             }
 
+            if (data.type === 'network_topology') {
+                this.networkFrames.topology(data);
+                return;
+            }
+            if (data.type === 'delete_layer') this.networkFrames.remove(data.numericId);
             if (data.type === 'hydrate') {
+                // Editor hydration is scope-local and may omit the IDs. joinScope
+                // already establishes them; an ordinary rehydrate must retain them.
+                if (data.projectId && data.commitId && data.slideId)
+                    this.networkFrames.setScope(
+                        makeScopeLabel(data.projectId, data.commitId, data.slideId)
+                    );
                 this.bufferedHydration = data;
                 data.layers.forEach((l) => {
                     if (l.type === 'video' && l.playback && !this.playbackStates.has(l.numericId))
@@ -279,6 +298,7 @@ export class EditorEngine {
     }
 
     public destroy() {
+        this.networkFrames.setScope(null);
         console.log('Editor Engine: Assassinating ghost instance...');
         if (this.pingTimer) clearTimeout(this.pingTimer);
         this.binaryMoveThrottler.cancel();
@@ -407,6 +427,7 @@ export class EditorEngine {
             for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
             this.pendingLayerCreates.clear();
         }
+        this.networkFrames.setScope(makeScopeLabel(projectId, commitId, slideId));
         this.currentProjectId = projectId;
         this.currentCommitId = commitId;
         this.currentSlideId = slideId;
@@ -464,6 +485,7 @@ export class EditorEngine {
     }
 
     public leaveScope() {
+        this.networkFrames.setScope(null);
         for (const pending of this.pendingLayerCreates.values()) clearTimeout(pending.timer);
         this.pendingLayerCreates.clear();
         if (!this.currentProjectId) return;

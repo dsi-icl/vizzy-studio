@@ -79,7 +79,7 @@ export function LayerItem({ layer, isSelected }: LayerItemProps) {
             case 'video':
                 return layer.name?.trim() || 'Video';
             case 'graph':
-                return 'Graph';
+                return layer.network?.name || 'Network';
             case 'map':
                 return 'Map';
             case 'web':

@@ -5,6 +5,8 @@ import {
     type StageLayout
 } from '@repo/db/schema';
 
+import { NetworkTopologySchema } from '~/lib/network/frames';
+import { NetworkSchema } from '~/lib/network/schema';
 import { z } from '~/lib/zod';
 
 /**
@@ -196,7 +198,10 @@ const LayerVariantSchema = z.discriminatedUnion('type', [
             deepZoom: ImageDeepZoomLayer.optional()
         })
         .extend(MediaLayerBaseSchema.shape),
-    z.object({ type: z.literal('graph') }).extend(LayerBaseSchema.shape),
+    // Optional for legacy documents which only contained the graph placeholder.
+    z
+        .object({ type: z.literal('graph'), network: NetworkSchema.optional() })
+        .extend(LayerBaseSchema.shape),
     z
         .object({
             type: z.literal('text'),
@@ -315,6 +320,7 @@ export const HelloSchema = z.discriminatedUnion('specimen', [
 // ── Full message schema (kept for diagnostics fallback & client-side use) ────
 
 export const GSMessageSchema = z.discriminatedUnion('type', [
+    NetworkTopologySchema,
     z.object({
         type: z.literal('server_hello'),
         commit: z.string(),

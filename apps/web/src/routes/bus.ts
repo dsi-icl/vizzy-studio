@@ -66,6 +66,7 @@ import {
 import { handleEditorScopeVacated, recomputePeerAuthContexts } from '~/server/bus/bus.peers';
 import { dbCol } from '~/server/collections';
 import { markDeviceDisconnectedById } from '~/server/devices';
+import { startNetworkRuntime } from '~/server/networkRuntime';
 import { startSignageRunner } from '~/server/signageRunner';
 
 // ── Binary opcodes ──────────────────────────────────────────────────────────
@@ -619,6 +620,8 @@ process.__YJS_UPSERT_LAYER__ = (payload: {
     }
 };
 
+const stopNetworkRuntime = startNetworkRuntime();
+
 // ── Background loops ────────────────────────────────────────────────────────
 
 if (process.__VSYNC_INTERVAL__) clearInterval(process.__VSYNC_INTERVAL__);
@@ -701,6 +704,7 @@ process.__REAPER_INTERVAL__ = setInterval(() => {
 
 if (import.meta.hot) {
     import.meta.hot.dispose(() => {
+        stopNetworkRuntime();
         if (process.__VSYNC_INTERVAL__) clearInterval(process.__VSYNC_INTERVAL__);
         if (process.__AUTO_SAVE_INTERVAL__) clearInterval(process.__AUTO_SAVE_INTERVAL__);
         if (process.__REAPER_INTERVAL__) clearInterval(process.__REAPER_INTERVAL__);

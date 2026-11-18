@@ -9,6 +9,7 @@ import { useEffect, useState, useMemo, useRef, type CSSProperties } from 'react'
 import { MapWrapper, type WallMapRenderer } from '~/components/MapWrapper';
 import { TiledImage } from '~/components/TiledImage';
 import { WallBackgroundCanvas } from '~/components/WallBackgroundCanvas';
+import { WallNetworkLayer, type NetworkWallRenderer } from '~/components/WallNetworkLayer';
 import { useWallFonts } from '~/hooks/useWallFonts';
 import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
@@ -123,6 +124,7 @@ function WallApp() {
         height: screenHeight
     });
     const [mapRenderers] = useState(() => new Map<number, WallMapRenderer>());
+    const [networkRenderers] = useState(() => new Map<number, NetworkWallRenderer>());
     const physicalScale = Math.min(
         physicalViewport.width / Math.max(1, screenWidth),
         physicalViewport.height / Math.max(1, screenHeight)
@@ -631,6 +633,13 @@ function WallApp() {
             const serverTime = engine?.getServerTime() ?? Date.now();
             engine?.layers.forEach((layer) => {
                 if (!layer.el) return;
+                if (layer.type === 'graph') {
+                    networkRenderers.get(layer.numericId)?.(
+                        engine.calculateCurrentPosition(layer),
+                        layer.config.visible
+                    );
+                    return;
+                }
                 if (!layer.config.visible) {
                     layer.el.style.opacity = '0';
                     layer.visible = false;
@@ -799,7 +808,7 @@ function WallApp() {
             unsubscribe?.();
             cancelAnimationFrame(frameId);
         };
-    }, [engine, myViewport, mapRenderers]);
+    }, [engine, myViewport, mapRenderers, networkRenderers]);
 
     useEffect(() => {
         const deviceId = deviceEnrollmentId?.trim();
@@ -960,6 +969,19 @@ function WallApp() {
                     zIndex: layer.config.zIndex
                 } as CSSProperties
             };
+
+            if (layer.type === 'graph') {
+                return (
+                    <WallNetworkLayer
+                        key={layer.numericId}
+                        layer={layer}
+                        engine={engine}
+                        viewport={myViewport}
+                        pixelRatio={physicalScale * (isClient ? window.devicePixelRatio : 1)}
+                        renderers={networkRenderers}
+                    />
+                );
+            }
 
             if (layer.type === 'image')
                 return (

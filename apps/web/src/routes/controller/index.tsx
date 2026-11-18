@@ -17,6 +17,7 @@ import { EffectEllipse, EffectRect } from '~/components/AnimatedKonvaShape';
 import { ControllerToolbar } from '~/components/ControllerToolbar';
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
+import { KonvaNetworkLayer } from '~/components/KonvaNetworkLayer';
 import { ReadOnlyMediaLayer, ReadOnlyTextLayer } from '~/components/ReadOnlyLayers';
 import { ViewerSlatePreview } from '~/components/ViewerSlatePreview';
 import { ControllerEngine } from '~/lib/controllerEngine';
@@ -1141,6 +1142,15 @@ function Controller() {
                                                         return (
                                                             <ReadOnlyMediaLayer
                                                                 key={`web_${layer.numericId}`}
+                                                                layer={layer}
+                                                            />
+                                                        );
+                                                    }
+                                                    if (layer.type === 'graph') {
+                                                        return (
+                                                            <KonvaNetworkLayer
+                                                                frames={engine?.networkFrames}
+                                                                key={`graph_${layer.numericId}`}
                                                                 layer={layer}
                                                             />
                                                         );

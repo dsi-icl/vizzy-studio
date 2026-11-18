@@ -2,6 +2,9 @@
 
 import { DEFAULT_STAGE_LAYOUT, type StageLayout } from '@repo/db/schema';
 
+import { NetworkFrameBuffer, NETWORK_FRAME_OPCODE } from '~/lib/network/frames';
+import { makeScopeLabel } from '~/lib/types';
+
 import { BusClient } from './busClient';
 import { GSMessageSchema, type GSMessage } from './types';
 
@@ -49,6 +52,10 @@ type SnapshotCallback = (snapshot: ControllerSnapshot) => void;
 const TEMP_BOUND_SLIDE_ID = '__bound-current__';
 
 export class ControllerEngine {
+    private clockOffset = 0;
+    private bestRTT = Infinity;
+    private clockTimer: ReturnType<typeof setInterval> | undefined;
+    public readonly networkFrames = new NetworkFrameBuffer(() => Date.now() + this.clockOffset);
     private bus: BusClient;
     public wallId: string;
     public portalToken: string | null;
@@ -82,10 +89,48 @@ export class ControllerEngine {
             onOpen: () => {
                 console.log('Controller Engine: Connected to Server');
                 this.lastBindSignature = null;
+                this.networkFrames.clear();
+                this.bestRTT = Infinity;
+                clearInterval(this.clockTimer);
+                this.clockTimer = setInterval(() => {
+                    const packet = new ArrayBuffer(9),
+                        view = new DataView(packet);
+                    view.setUint8(0, 0x08);
+                    view.setFloat64(1, Date.now(), true);
+                    this.bus.sendRaw(packet);
+                }, 2000);
             },
             onMessage: (event) => {
+                if (event.data instanceof ArrayBuffer && event.data.byteLength) {
+                    const view = new DataView(event.data);
+                    if (view.getUint8(0) === NETWORK_FRAME_OPCODE)
+                        this.networkFrames.receive(event.data);
+                    else if (view.getUint8(0) === 0x09 && view.byteLength >= 25) {
+                        const now = Date.now(),
+                            t0 = view.getFloat64(1, true),
+                            t1 = view.getFloat64(9, true),
+                            t2 = view.getFloat64(17, true);
+                        const rtt = now - t0 - (t2 - t1);
+                        if (rtt < this.bestRTT) {
+                            this.bestRTT = rtt;
+                            this.clockOffset = (t1 - t0 + t2 - now) / 2;
+                        }
+                    }
+                    return;
+                }
                 if (typeof event.data !== 'string') return;
                 const data = GSMessageSchema.parse(JSON.parse(event.data));
+                if (data.type === 'network_topology') {
+                    this.networkFrames.topology(data);
+                    return;
+                }
+                if (data.type === 'delete_layer') this.networkFrames.remove(data.numericId);
+                if (data.type === 'hydrate')
+                    this.networkFrames.setScope(
+                        data.projectId && data.commitId && data.slideId
+                            ? makeScopeLabel(data.projectId, data.commitId, data.slideId)
+                            : null
+                    );
                 this.messageCallbacks.forEach((cb) => cb(data));
                 this.reconcileMessage(data);
             }
@@ -117,6 +162,8 @@ export class ControllerEngine {
     }
 
     public destroy() {
+        clearInterval(this.clockTimer);
+        this.networkFrames.setScope(null);
         console.log('Controller Engine: Assassinating ghost instance...');
         this.bus.destroy();
         this.bindingCallbacks.clear();
@@ -198,6 +245,7 @@ export class ControllerEngine {
             this.latestCommitId = data.commitId ?? this.latestCommitId;
 
             if (!data.bound) {
+                this.networkFrames.setScope(null);
                 this.hydratedSlideId = null;
                 this.hasHydration = false;
                 this.layersBySlideId.clear();

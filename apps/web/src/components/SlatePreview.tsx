@@ -4,7 +4,9 @@ import { Ellipse, KonvaNodeEvents, Layer, Rect, Stage } from 'react-konva';
 
 import { KonvaBackgroundLayer } from '~/components/KonvaBackgroundLayer';
 import { KonvaLineSegments } from '~/components/KonvaLineSegments';
+import { KonvaNetworkLayer } from '~/components/KonvaNetworkLayer';
 import { PreviewMapLayer, PreviewMediaLayer, PreviewTextLayer } from '~/components/PreviewLayers';
+import { EditorEngine } from '~/lib/editorEngine';
 import { getStageGridLines, getStageLogicalSize } from '~/lib/editorHelpers';
 import { useEditorStore } from '~/lib/editorStore';
 
@@ -158,6 +160,15 @@ export function SlatePreview({
                                         key={shape.numericId}
                                         shape={shape}
                                         stageScaleFactor={1}
+                                    />
+                                );
+                            }
+                            if (shape.type === 'graph') {
+                                return (
+                                    <KonvaNetworkLayer
+                                        frames={EditorEngine.getInstance().networkFrames}
+                                        key={`graph_${shape.numericId}`}
+                                        layer={shape}
                                     />
                                 );
                             }
