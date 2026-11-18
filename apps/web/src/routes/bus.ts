@@ -35,6 +35,7 @@ import {
     wallsByWallId,
     type PeerEntry
 } from '~/lib/busState';
+import { dropWallPresentationPeer } from '~/lib/busState.presentation';
 import { persistDirtyProjectContexts } from '~/lib/busState.projectContext';
 import { markScopeDirty } from '~/lib/scopePersistence';
 import { GSMessageSchema, makeScopeLabel, type GSMessage, type Layer } from '~/lib/types';
@@ -337,6 +338,7 @@ const hooks = defineHooks({
         }
 
         const meta = unregisterPeer(peer.id);
+        if (meta?.specimen === 'wall') dropWallPresentationPeer(meta.wallId, peer.id);
         const disconnectedDeviceId = meta?.authContext?.device?.id;
         if (typeof disconnectedDeviceId === 'string') {
             void markDeviceDisconnectedById(disconnectedDeviceId);

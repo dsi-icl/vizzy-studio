@@ -157,6 +157,9 @@ export function isWsMessageAuthorized(
     if (type === 'leave_scope') {
         return entry.meta.specimen === 'editor';
     }
+    if (type === 'wall_slide_ready') {
+        return entry.meta.specimen === 'wall' && (isWallDevice(entry) || isAdminUser(entry));
+    }
     if (type === 'bind_override_decision') {
         return entry.meta.specimen === 'gallery' && (isAdminUser(entry) || isGalleryDevice(entry));
     }
