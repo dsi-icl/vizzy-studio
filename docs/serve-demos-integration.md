@@ -155,6 +155,7 @@ If a slow proxy request coincides with no such stall and low Serve in-flight
 counts, inspect that request's upstream connection and response path next.
 
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
+tooling/testing/serve-direct-grant.test.ts
 apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts
 apps/web/tests/unit/iframeSandbox.test.ts`.
 Deployment still needs a pilot with rebuilt demos and a restart test with the
