@@ -38,10 +38,6 @@ export function serveBusPath(projectId: string): string {
     return `${serveBasePath(projectId)}/bus`;
 }
 
-export function serveLaunchPath(projectId: string): string {
-    return `${serveBasePath(projectId)}/_launch`;
-}
-
 export const SERVE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
 export function serveKeepalivePath(projectId: string, routeId: string): string {

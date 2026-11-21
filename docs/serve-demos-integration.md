@@ -20,32 +20,33 @@ port. Set `customStripPrefix` when the demo process expects `/screen` and
 and `/serve/<projectId>/assets/...`. Demo upstreams should only be reachable
 through the gateway.
 
-The app issues a 60-second one-use launch ticket for a bound wall or controller,
-or a signed-in admin preview. Ticket IDs are stored in MongoDB with a TTL index.
-Vizzy consumes the ticket, sets an HttpOnly, Secure, SameSite=None signed cookie
-for that launch at `Path=/serve/<projectId>`, and redirects to `/screen` or
-`/control` below that path. Each launch uses a distinct cookie name, so
-simultaneous screen and controller launches for one project cannot overwrite
-each other's grants. `__vizzySession` in the entry URL selects a grant; its
-cookie is still required. The gateway removes the selector before forwarding a
-request upstream. Existing signed cookies containing several grants remain
-readable during the transition.
+An authenticated ServerFn checks the wall or Gallery device identity and current
+wall binding, or the signed-in admin identity for a preview. Its response directly
+sets an HttpOnly, Secure, SameSite=None signed cookie at
+`Path=/serve/<projectId>` and returns the final `/screen` or `/control` URL.
+There is no launch ticket, MongoDB ticket write, or `/_launch` redirect. Wall
+tiles on one binding share a route ID; the controller gets a separate route ID.
+Admin previews use a random route ID. Each route has its own cookie name, so
+simultaneous screen and controller launches cannot overwrite one another.
+`__vizzySession` in the entry URL selects a grant; its cookie is still required.
+The gateway removes the selector before forwarding a request upstream. Existing
+signed cookies containing several grants remain readable during the transition.
 
-Wall and controller grants last up to two hours and are checked against the live
-wall binding on each HTTP request and WebSocket handshake. Admin previews last
-at most 15 minutes. Signed cookies survive a web process restart. A wall
+Wall and controller cookies have a two-hour lifetime from each issue or renewal.
+The wall and Gallery call `/_keepalive` every minute to renew a live grant; a
+failed refresh starts a new authorization request. Each private HTTP request and
+WebSocket handshake also checks the current wall binding. Admin previews expire
+after 15 minutes and are not renewed. Signed cookies survive a web process restart. A wall
 reconnect restores its binding from the wall record and obtains a new launch.
 Each bind has a random generation that invalidates grants from an earlier bind.
 The Gallery waits for the server's matching wall-binding event before requesting
 a custom controller launch, so it cannot launch against the binding being replaced.
-Wall and gallery clients refresh grants every minute with `/_keepalive`; a
-failed refresh starts a new launch.
 
 ### Public demo paths
 
 Every custom project has a public namespace at `/serve/<projectId>/public`.
-Requests to that path and its descendants do not require a Vizzy launch ticket,
-`__vizzySession`, or serve cookie. There is no project setting or gateway route
+Requests to that path and its descendants do not require `__vizzySession` or a
+Serve cookie. There is no project setting or gateway route
 allowlist for this namespace. Vizzy still requires a configured custom project,
 an allowed upstream host, and an allowed request origin. It strips browser
 cookies and authorization headers before forwarding and marks the request with

@@ -2,6 +2,7 @@
 
 import { mock } from 'bun:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
 
 process.env.NODE_ENV = 'test';
@@ -22,7 +23,6 @@ const scopedState = new Map([
     [7, { projectId }],
     [8, { projectId }]
 ]);
-const storedTickets = new Map<string, Date>();
 const projectSettings = { customPort: 3008, customHost: '127.0.0.1', customStripPrefix: false };
 
 mock.module('~/lib/busState', () => ({ wallBindings, wallBindingIds, scopedState }));
@@ -31,23 +31,9 @@ mock.module('~/server/audit', () => ({
     logAuditDenied: async () => {},
     logAuditFailure: async () => {}
 }));
-mock.module('~/server/collections', () => ({
-    collections: {
-        serveLaunches: {
-            createIndex: async () => 'expiresAt_1',
-            insertOne: async (doc: { _id: string; expiresAt: Date }) => {
-                storedTickets.set(doc._id, doc.expiresAt);
-            },
-            findOneAndDelete: async (query: { _id: string }) => {
-                const expiresAt = storedTickets.get(query._id);
-                storedTickets.delete(query._id);
-                return expiresAt && expiresAt > new Date() ? { _id: query._id, expiresAt } : null;
-            }
-        }
-    }
-}));
-
-const { issueServeLaunch } = await import('../../apps/web/src/server/serveLaunch');
+const { boundServeRouteId, createServeCookie } =
+    await import('../../apps/web/src/server/serveCookie');
+type ServeActor = import('../../apps/web/src/server/serveCookie').ServeActor;
 const { handleServeRequest } = await import('../../apps/web/src/routes/serve.$projectId.$');
 const { resolveServeWebSocketUpstream } = await import('../../apps/web/src/server/serveWebSocket');
 const { servePublicUrl } = await import('../../apps/web/src/server/serveOrigin');
@@ -85,6 +71,25 @@ function request(path: string, cookie?: string, origin = 'https://studio.example
     });
 }
 
+function directGrant(entry: 'screen' | 'control', actor: ServeActor) {
+    const routeId =
+        actor.surface === 'preview'
+            ? randomBytes(16).toString('base64url')
+            : boundServeRouteId({
+                  projectId,
+                  wallId: actor.wallId,
+                  bindingId: actor.bindingId,
+                  entry
+              });
+    const setCookie = createServeCookie({
+        request: request(`/serve/${projectId}/${entry}`),
+        projectId,
+        routeId,
+        actor
+    });
+    return { routeId, setCookie, cookie: setCookie.split(';')[0]! };
+}
+
 describe('sandboxed same-host serve gateway', () => {
     test('publishes demo URLs on the Vizzy FQDN', () => {
         assert.equal(
@@ -95,13 +100,7 @@ describe('sandboxed same-host serve gateway', () => {
 
     test('accepts a control redirect produced from X-Forwarded-Host', async () => {
         const base = `/serve/${projectId}`;
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(request(`${base}/_launch?ticket=${ticket}`));
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie } = directGrant('control', { surface: 'preview' });
         upstreamLocation = `https://studio.example${base}/control/`;
         try {
             const response = await handleServeRequest(
@@ -318,27 +317,19 @@ describe('sandboxed same-host serve gateway', () => {
         }
     });
 
-    test('consumes a launch once and proxies the static project path', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'screen',
-            actor: {
-                surface: 'wall',
-                wallId: 'wall-a',
-                scopeId: 7,
-                bindingId: 'AAAAAAAAAAAAAAAAAAAAAA'
-            }
+    test('uses a direct wall grant, renews it, and rejects old bindings', async () => {
+        const { routeId, cookie, setCookie } = directGrant('screen', {
+            surface: 'wall',
+            wallId: 'wall-a',
+            scopeId: 7,
+            bindingId: 'AAAAAAAAAAAAAAAAAAAAAA'
         });
-        const launchPath = `/serve/${projectId}/_launch?ticket=${encodeURIComponent(ticket)}&c=2&r=3`;
-        const launch = await handleServeRequest(request(launchPath));
-        assert.equal(launch.status, 303);
+        assert.match(setCookie, /Max-Age=7200/);
+        assert.match(setCookie, /SameSite=None; Secure/);
         assert.equal(
-            launch.headers.get('location'),
-            `/serve/${projectId}/screen?__vizzySession=${routeId}&c=2&r=3`
+            (await handleServeRequest(request(`/serve/${projectId}/_launch`))).status,
+            404
         );
-        assert.equal((await handleServeRequest(request(launchPath))).status, 401);
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
-        assert.match(launch.headers.get('set-cookie')!, /SameSite=None; Secure/);
         const page = await handleServeRequest(
             request(
                 `/serve/${projectId}/screen?__vizzySession=${routeId}`,
@@ -371,7 +362,7 @@ describe('sandboxed same-host serve gateway', () => {
         );
         assert.equal(keepalive.status, 200);
         assert.equal(keepalive.headers.get('content-type'), 'image/gif');
-        assert.ok(keepalive.headers.get('set-cookie'));
+        assert.match(keepalive.headers.get('set-cookie') ?? '', /Max-Age=7200/);
         assert.equal(forwarded.length, beforeKeepalive);
         wallBindingIds.set('wall-a', 'CCCCCCCCCCCCCCCCCCCCCC');
         assert.equal(
@@ -394,17 +385,8 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('admin preview works without a wall and has a fixed short cookie lifetime', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
-        );
-        assert.equal(launch.status, 303);
-        assert.ok(launch.headers.get('set-cookie')?.includes('Max-Age=900'));
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie, setCookie } = directGrant('control', { surface: 'preview' });
+        assert.match(setCookie, /Max-Age=900/);
         const page = await handleServeRequest(
             request(`/serve/${projectId}/control?__vizzySession=${routeId}`, cookie)
         );
@@ -416,15 +398,7 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('allows only session-bound nested HTML iframes through the framing policy', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'screen',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
-        );
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie } = directGrant('screen', { surface: 'preview' });
         const nestedPath = `/serve/${projectId}/rio-tinto/index.html?__vizzySession=${routeId}`;
         const nestedRequest = (path: string, destination: string, sessionCookie = cookie) =>
             new Request(`https://studio.example${path}`, {
@@ -471,27 +445,9 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('keeps concurrent preview launches and their static assets on the same project path', async () => {
-        const screenLaunch = await issueServeLaunch({
-            projectId,
-            entry: 'screen',
-            actor: { surface: 'preview' }
-        });
-        const controlLaunch = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const [screen, control] = await Promise.all([
-            handleServeRequest(
-                request(`/serve/${projectId}/_launch?ticket=${screenLaunch.ticket}`)
-            ),
-            handleServeRequest(
-                request(`/serve/${projectId}/_launch?ticket=${controlLaunch.ticket}`)
-            )
-        ]);
-        const cookie = [screen, control]
-            .map((response) => response.headers.get('set-cookie')!.split(';')[0]!)
-            .join('; ');
+        const screenLaunch = directGrant('screen', { surface: 'preview' });
+        const controlLaunch = directGrant('control', { surface: 'preview' });
+        const cookie = [screenLaunch.cookie, controlLaunch.cookie].join('; ');
         assert.equal(
             (
                 await handleServeRequest(
@@ -521,15 +477,7 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('honors customStripPrefix for a root-mounted demo', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
-        );
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie } = directGrant('control', { surface: 'preview' });
         projectSettings.customStripPrefix = true;
         try {
             const response = await handleServeRequest(
@@ -552,15 +500,7 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('authorizes WebSocket upgrades through the project base and strips the session selector', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
-        );
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie } = directGrant('control', { surface: 'preview' });
         const websocket = new Request(
             `https://studio.example/serve/${projectId}/bus?__vizzySession=${routeId}&channel=1`,
             {
@@ -580,15 +520,7 @@ describe('sandboxed same-host serve gateway', () => {
     });
 
     test('requires a selector for opaque-origin API and WebSocket requests', async () => {
-        const { ticket, routeId } = await issueServeLaunch({
-            projectId,
-            entry: 'control',
-            actor: { surface: 'preview' }
-        });
-        const launch = await handleServeRequest(
-            request(`/serve/${projectId}/_launch?ticket=${ticket}`)
-        );
-        const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+        const { routeId, cookie } = directGrant('control', { surface: 'preview' });
         const api = (path: string, origin: string) =>
             new Request(`https://studio.example${path}`, {
                 method: 'POST',

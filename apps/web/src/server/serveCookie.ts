@@ -65,6 +65,20 @@ export function serveCookieName(projectId: string, routeId: string): string {
     return `vizzy_serve_${projectId}_${routeId}`;
 }
 
+/** All tiles of one live binding use one Serve grant for the same surface. */
+export function boundServeRouteId(input: {
+    projectId: string;
+    wallId: string;
+    bindingId: string;
+    entry: 'screen' | 'control';
+}): string {
+    return createHmac('sha256', getSigningSecret())
+        .update('serve-bound-route-v1:')
+        .update(JSON.stringify(input))
+        .digest('base64url')
+        .slice(0, 22);
+}
+
 function legacyServeCookieName(projectId: string): string {
     if (!/^[a-f\d]{24}$/i.test(projectId)) throw new Error('Invalid project ID');
     return `vizzy_serve_${projectId}`;

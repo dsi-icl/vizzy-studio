@@ -5,6 +5,7 @@ import { describe, test } from 'node:test';
 import { env } from '@repo/env';
 
 import {
+    boundServeRouteId,
     createServeCookie,
     obsoleteServeCookieHeaders,
     resolveServeCookieGrant,
@@ -31,6 +32,18 @@ const request = (path = `/serve/${PROJECT}/screen`, cookie?: string, referer?: s
     });
 
 describe('serve cookie', () => {
+    test('one binding shares a screen route while control and rebinds stay separate', () => {
+        const input = { projectId: PROJECT, wallId: 'wall-a', bindingId: ROUTE_A };
+        const screen = boundServeRouteId({ ...input, entry: 'screen' });
+        assert.equal(screen, boundServeRouteId({ ...input, entry: 'screen' }));
+        assert.match(screen, /^[A-Za-z0-9_-]{22}$/);
+        assert.notEqual(screen, boundServeRouteId({ ...input, entry: 'control' }));
+        assert.notEqual(
+            screen,
+            boundServeRouteId({ ...input, bindingId: ROUTE_B, entry: 'screen' })
+        );
+    });
+
     test('clears older bindings for the same wall while preserving concurrent grants', () => {
         const old = value(
             createServeCookie({ request: request(), projectId: PROJECT, routeId: ROUTE_A, actor })
@@ -53,7 +66,7 @@ describe('serve cookie', () => {
             })
         );
         const deletions = obsoleteServeCookieHeaders(
-            request(`/serve/${PROJECT}/_launch`, `${old}; ${current}; ${otherWall}`),
+            request(`/serve/${PROJECT}/screen`, `${old}; ${current}; ${otherWall}`),
             PROJECT,
             currentActor
         );
@@ -82,6 +95,7 @@ describe('serve cookie', () => {
         assert.ok(setCookie.includes('HttpOnly'));
         assert.ok(setCookie.includes('Secure'));
         assert.ok(setCookie.includes('SameSite=None'));
+        assert.ok(setCookie.includes('Max-Age=7200'));
     });
 
     test('keeps screen and control grants when launches are sequential', () => {
@@ -90,7 +104,7 @@ describe('serve cookie', () => {
         );
         const second = value(
             createServeCookie({
-                request: request(`/serve/${PROJECT}/_launch`, first),
+                request: request(`/serve/${PROJECT}/control`, first),
                 projectId: PROJECT,
                 routeId: ROUTE_B,
                 actor: { surface: 'control', wallId: 'wall-b', scopeId: 8, bindingId: ROUTE_B }
@@ -134,7 +148,7 @@ describe('serve cookie', () => {
     });
 
     test('concurrent launches for one project keep both grants in the browser cookie jar', () => {
-        const launchRequest = request(`/serve/${PROJECT}/_launch`);
+        const launchRequest = request(`/serve/${PROJECT}/screen`);
         const screenCookie = value(
             createServeCookie({
                 request: launchRequest,

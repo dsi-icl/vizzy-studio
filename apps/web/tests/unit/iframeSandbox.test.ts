@@ -66,10 +66,10 @@ describe('resolveIframeSandbox', () => {
         );
     });
 
-    test('keeps an absolute serve launch opaque during server rendering', () => {
+    test('keeps an absolute serve screen opaque during server rendering', () => {
         expect(
             resolveIframeSandbox(
-                'https://vizzy.example.ac.uk/serve/507f1f77bcf86cd799439011/_launch?ticket=x',
+                'https://vizzy.example.ac.uk/serve/507f1f77bcf86cd799439011/screen?__vizzySession=AAAAAAAAAAAAAAAAAAAAAA',
                 ''
             )
         ).toBe('allow-scripts allow-forms allow-same-site-none-cookies');

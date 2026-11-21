@@ -26,12 +26,10 @@ import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
     createServeCookie,
-    obsoleteServeCookieHeaders,
     resolveServeCookieGrant,
     shouldRefreshServeCookie,
     type ServeActor
 } from '~/server/serveCookie';
-import { consumeServeLaunch } from '~/server/serveLaunch';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
 import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 import {
@@ -67,55 +65,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     if (!parsed || parsed.rest.startsWith('/s/')) return notFound();
     const publicRequest = isPublicServePath(parsed);
 
-    if (parsed.rest === '/_launch') {
-        if (request.method !== 'GET' || isWebSocketUpgrade(request))
-            return new Response('Method not allowed', { status: 405 });
-        const ticket = url.searchParams.get('ticket') ?? '';
-        const launch = await consumeServeLaunch(ticket);
-        if (
-            !launch ||
-            launch.projectId !== parsed.projectId ||
-            !actorIsLive(launch.actor, parsed.projectId)
-        ) {
-            return new Response('Invalid demo launch', { status: 401 });
-        }
-        const project = await getProject(parsed.projectId).catch(() => null);
-        if (!project || !isCustomProject(project)) return notFound();
-        const destination = new URL(
-            `${serveBasePath(parsed.projectId)}/${launch.entry}`,
-            serveOrigin
-        );
-        destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, launch.routeId);
-        if (launch.entry === 'screen') {
-            for (const name of ['c', 'r']) {
-                const value = url.searchParams.get(name);
-                if (value && /^\d{1,3}$/.test(value)) destination.searchParams.set(name, value);
-            }
-        } else if (launch.actor.surface === 'control') {
-            destination.searchParams.set('l', 'gallery');
-            destination.searchParams.set('w', launch.actor.wallId);
-        } else if (launch.actor.surface === 'preview') {
-            destination.searchParams.set('preview', '1');
-        }
-        const headers = new Headers({
-            Location: `${destination.pathname}${destination.search}`,
-            'Cache-Control': 'no-store',
-            'Referrer-Policy': 'no-referrer'
-        });
-        for (const stale of obsoleteServeCookieHeaders(request, parsed.projectId, launch.actor)) {
-            headers.append('Set-Cookie', stale);
-        }
-        headers.append(
-            'Set-Cookie',
-            createServeCookie({
-                request,
-                projectId: parsed.projectId,
-                routeId: launch.routeId,
-                actor: launch.actor
-            })
-        );
-        return new Response(null, { status: 303, headers });
-    }
+    if (parsed.rest === '/_launch') return notFound();
 
     if (!isAllowedServeRequest(request, serveOrigin.origin)) {
         return new Response('Forbidden', { status: 403 });
