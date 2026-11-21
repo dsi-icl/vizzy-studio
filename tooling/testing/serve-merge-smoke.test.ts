@@ -26,10 +26,14 @@ const scopedState = new Map([
 const projectSettings = { customPort: 3008, customHost: '127.0.0.1', customStripPrefix: false };
 
 mock.module('~/lib/busState', () => ({ wallBindings, wallBindingIds, scopedState }));
-mock.module('~/server/projects', () => ({ getProject: async () => projectSettings }));
+mock.module('~/server/serveProject', () => ({ getServeProject: async () => projectSettings }));
 mock.module('~/server/audit', () => ({
     logAuditDenied: async () => {},
     logAuditFailure: async () => {}
+}));
+mock.module('~/server/serveControlHttp', () => ({
+    fetchServeControlDocument: (url: string, headers: Headers, signal: AbortSignal) =>
+        globalThis.fetch(url, { method: 'GET', headers, signal })
 }));
 const { boundServeRouteId, createServeCookie } =
     await import('../../apps/web/src/server/serveCookie');

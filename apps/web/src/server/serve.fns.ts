@@ -13,7 +13,6 @@ import {
 } from '~/lib/serveUrls';
 import { z } from '~/lib/zod';
 import { actorAuthContextMiddleware } from '~/server/auth-context.middleware';
-import { getProject } from '~/server/projects';
 import type { AuthContext } from '~/server/requestAuthContext';
 import { isWallBoundToProject } from '~/server/serveAuthz';
 import {
@@ -23,6 +22,7 @@ import {
     type ServeActor
 } from '~/server/serveCookie';
 import { servePublicUrl } from '~/server/serveOrigin';
+import { getServeProject } from '~/server/serveProject';
 import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 
 const projectId = z.string().regex(/^[a-f\d]{24}$/i);
@@ -79,7 +79,7 @@ export const $issueBoundServeLaunch = createServerFn({ method: 'POST' })
         ) {
             throw new Error('Wall is not bound to this project');
         }
-        const project = await getProject(data.projectId);
+        const project = await getServeProject(data.projectId);
         if (!project || !isCustomProject(project)) throw new Error('Custom project not found');
         const projectResolvedAt = performance.now();
         const actor: ServeActor = {
@@ -116,7 +116,7 @@ export const $issueAdminServePreview = createServerFn({ method: 'POST' })
     .handler(async ({ data, context }) => {
         const auth = (context as { authContext?: AuthContext } | undefined)?.authContext;
         if (auth?.user?.role !== 'admin') throw new Error('Forbidden');
-        const project = await getProject(data.projectId);
+        const project = await getServeProject(data.projectId);
         if (!project || !isCustomProject(project)) throw new Error('Custom project not found');
         const routeId = randomBytes(16).toString('base64url');
         const actor: ServeActor = { surface: 'preview' };

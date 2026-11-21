@@ -22,8 +22,8 @@ import {
     upstreamPathname
 } from '~/lib/serveUrls';
 import { logAuditDenied, logAuditFailure } from '~/server/audit';
-import { getProject } from '~/server/projects';
 import { isWallBoundToProject } from '~/server/serveAuthz';
+import { fetchServeControlDocument } from '~/server/serveControlHttp';
 import {
     createServeCookie,
     resolveServeCookieGrant,
@@ -31,6 +31,7 @@ import {
     type ServeActor
 } from '~/server/serveCookie';
 import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
+import { getServeProject } from '~/server/serveProject';
 import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
 import {
     isWebSocketUpgrade,
@@ -39,7 +40,8 @@ import {
 } from '~/server/serveWebSocket';
 
 const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
-const SERVE_SCREEN_FRESH_CONNECTION = process.env.SERVE_SCREEN_FRESH_CONNECTION !== '0';
+const SERVE_ENTRY_FRESH_CONNECTION =
+    (process.env.SERVE_ENTRY_FRESH_CONNECTION ?? process.env.SERVE_SCREEN_FRESH_CONNECTION) !== '0';
 let pendingServeUpstreamFetches = 0;
 const KEEPALIVE_GIF = Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64');
 const SERVE_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-same-site-none-cookies';
@@ -92,7 +94,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     )
         return new Response('Forbidden', { status: 403 });
     const { projectId } = parsed;
-    const project = await getProject(projectId).catch(() => null);
+    const project = await getServeProject(projectId).catch(() => null);
     if (!project || !isCustomProject(project)) return notFound();
 
     const port = project.customPort;
@@ -178,8 +180,11 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     const logSample = requestKind !== 'other';
     const freshConnection =
         request.method === 'GET' &&
-        (parsed.rest === '/screen' || parsed.rest === '/screen/') &&
-        SERVE_SCREEN_FRESH_CONNECTION;
+        ['/screen', '/screen/', '/control', '/control/'].includes(parsed.rest) &&
+        SERVE_ENTRY_FRESH_CONNECTION;
+    const isolatedControl =
+        request.method === 'GET' && ['/control', '/control/'].includes(parsed.rest);
+    const transport = isolatedControl ? 'node-http' : 'bun-fetch';
     const upstreamUrl = buildServeUpstreamUrl({
         host,
         port,
@@ -195,19 +200,20 @@ export async function handleServeRequest(request: Request): Promise<Response> {
     let serveFetchesAtHeaders = 0;
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     try {
-        upstream = await fetch(upstreamUrl, {
-            method: request.method,
-            headers: buildForwardedHeaders(request, actor, publicBase),
-            body: request.body,
-            duplex: 'half',
-            redirect: 'manual',
-            // The wall's entry document is a short request. A fresh socket
-            // avoids a stale idle connection in the long-lived Web process.
-            ...(freshConnection ? { keepalive: false } : {}),
-            // A wall navigation cancels the browser request. Release its old
-            // upstream poll instead of letting it hold a Bun fetch slot.
-            signal: AbortSignal.any([request.signal, timeoutSignal])
-        } as RequestInit & { duplex: 'half' });
+        const signal = AbortSignal.any([request.signal, timeoutSignal]);
+        const forwardedHeaders = buildForwardedHeaders(request, actor, publicBase);
+        upstream = isolatedControl
+            ? await fetchServeControlDocument(upstreamUrl, forwardedHeaders, signal)
+            : await fetch(upstreamUrl, {
+                  method: request.method,
+                  headers: forwardedHeaders,
+                  body: request.body,
+                  duplex: 'half',
+                  redirect: 'manual',
+                  ...(freshConnection ? { keepalive: false } : {}),
+                  // Release abandoned polls instead of holding a Bun fetch slot.
+                  signal
+              } as RequestInit & { duplex: 'half' });
         serveFetchesAtHeaders = pendingServeUpstreamFetches;
     } catch (error) {
         const clientAborted = request.signal.aborted;
@@ -222,6 +228,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 requestKind,
                 status: 499,
                 freshConnection,
+                transport,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorCode: 'client-aborted'
@@ -234,6 +241,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             requestKind,
             status: 502,
             freshConnection,
+            transport,
             serveFetchesAtStart,
             serveFetchesAtFailure: pendingServeUpstreamFetches,
             errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
@@ -248,6 +256,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
                 elapsedMs: Math.round(upstreamMs),
                 timeoutMs,
                 freshConnection,
+                transport,
                 serveFetchesAtStart,
                 serveFetchesAtFailure: pendingServeUpstreamFetches,
                 errorName: error instanceof Error ? error.name : 'unknown',
@@ -296,6 +305,7 @@ export async function handleServeRequest(request: Request): Promise<Response> {
             requestKind,
             status: upstream.status,
             freshConnection,
+            transport,
             serveFetchesAtStart,
             serveFetchesAtHeaders
         },

@@ -36,7 +36,9 @@ mock.module('@tanstack/react-start/server', () => ({
 mock.module('~/lib/busState', () => ({ wallBindings, wallBindingIds }));
 mock.module('~/lib/customProject', () => ({ isCustomProject: () => true }));
 mock.module('~/server/auth-context.middleware', () => ({ actorAuthContextMiddleware: {} }));
-mock.module('~/server/projects', () => ({ getProject: async () => ({ customPort: 3008 }) }));
+mock.module('~/server/serveProject', () => ({
+    getServeProject: async () => ({ customPort: 3008 })
+}));
 mock.module('~/server/serveAuthz', () => ({
     isWallBoundToProject: (
         _wallId: string,

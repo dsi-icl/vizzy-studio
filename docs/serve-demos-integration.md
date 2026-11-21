@@ -134,6 +134,10 @@ The proxy also forwards client cancellation to the upstream fetch. When a wall
 navigates away, its pending Socket.IO poll should end promptly and log
 `errorCode: client-aborted` with internal status `499`; these cancellations
 are expected and do not generate an upstream failure audit or a 502.
+Serve requests get a 65-second Bun idle timeout so the 30-second proxy timeout
+and 55-second Socket.IO polling timeout can complete. Concurrent reads of the
+same project are coalesced only while they are in flight; later requests still
+see project edits.
 
 For a comparable wall switch, inspect `[ServeTiming]` samples for one trace ID.
 `proxy-upstream` includes the time Bun may spend waiting for a fetch slot and
@@ -146,17 +150,20 @@ old `socket-io-polling` requests remain pending after each wall switch.
 
 `[ServeTimingSummary]` separates `completed`, `canceled`, and `failed`
 `proxy-upstream` requests; a canceled wall navigation must not inflate the
-completed screen p95. Screen entry documents use a fresh upstream TCP connection
-by default to test for stale connection reuse in the long-lived Web process;
-set `SERVE_SCREEN_FRESH_CONNECTION=0` to restore pooled connections without a
-rebuild. The per-request log includes `freshConnection` so the test mode is
-visible. `[ServeRuntime]` reports Web event loop stalls over 500 ms.
+completed screen p95. Screen and control entry documents use fresh upstream TCP
+connections by default. Control document GETs use a separate Node HTTP transport
+so screen fetch traffic cannot hold their connection slots. Set
+`SERVE_ENTRY_FRESH_CONNECTION=0` to restore pooled screen connections without a
+rebuild (`SERVE_SCREEN_FRESH_CONNECTION` remains a fallback). The per-request log
+includes `freshConnection` and `transport`. `[ServeRuntime]` reports Web event
+loop stalls over 500 ms.
 If a slow proxy request coincides with no such stall and low Serve in-flight
 counts, inspect that request's upstream connection and response path next.
 
 Run `bun test tooling/testing/serve-merge-smoke.test.ts
 tooling/testing/serve-direct-grant.test.ts
-apps/web/src/server/serveCookie.test.ts apps/web/src/lib/galleryBindAck.test.ts
+apps/web/src/server/serveCookie.test.ts apps/web/src/server/serveControlHttp.test.ts
+apps/web/src/lib/coalesceInFlight.test.ts apps/web/src/lib/galleryBindAck.test.ts
 apps/web/tests/unit/iframeSandbox.test.ts`.
 Deployment still needs a pilot with rebuilt demos and a restart test with the
 actual load balancer, MongoDB, and wall reconnection flow.
