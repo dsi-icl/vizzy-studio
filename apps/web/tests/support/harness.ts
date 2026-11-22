@@ -33,6 +33,9 @@ export interface HarnessManifest {
         publicProjectId: string;
         publicCommitId: string;
         publicSlideId: string;
+        privatePublishedProjectId: string;
+        privatePublishedCommitId: string;
+        privatePublishedSlideId: string;
         renderingProjectId: string;
         renderingCommitId: string;
         renderingSlideId: string;
@@ -76,7 +79,9 @@ export function readHarnessManifest(): HarnessManifest {
     };
 }
 
-export function actorStorageState(actor: 'user_admin' | 'user_editor' | 'user_viewer'): string {
+export function actorStorageState(
+    actor: 'user_admin' | 'user_editor' | 'user_viewer' | 'user_signout'
+): string {
     return resolve(process.cwd(), `apps/web/tests/.auth/${actor}.json`);
 }
 

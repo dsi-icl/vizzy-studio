@@ -267,5 +267,6 @@ export interface AuditLogDocument {
     error?: string | null;
     authContext?: AuthContext | null;
     executionContext?: AuditExecutionContext | null;
+    buildCommitSha?: string | null;
     createdAt: number;
 }

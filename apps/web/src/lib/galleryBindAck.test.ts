@@ -58,6 +58,24 @@ test('gallery reports a bind that was not sent to its socket', async () => {
     assert.equal(unsubscribed, true);
 });
 
+test('gallery waits for confirmation when sendJSON returns no status', async () => {
+    let unsubscribed = false;
+    await assert.rejects(
+        bindGalleryWallAndWait(
+            {
+                sendJSON: () => {},
+                onWallBindingChanged: () => () => {
+                    unsubscribed = true;
+                }
+            },
+            { wallId: 'wall-a', projectId: 'project-a', commitId: 'commit-a' },
+            1
+        ),
+        /Could not load project on wall/
+    );
+    assert.equal(unsubscribed, true);
+});
+
 test('gallery stops waiting when the server never confirms the binding', async () => {
     let unsubscribed = false;
     await assert.rejects(
@@ -71,7 +89,7 @@ test('gallery stops waiting when the server never confirms the binding', async (
             { wallId: 'wall-a', projectId: 'project-a', commitId: 'commit-a' },
             1
         ),
-        /Timed out waiting for the wall to load this project/
+        /Could not load project on wall/
     );
     assert.equal(unsubscribed, true);
 });

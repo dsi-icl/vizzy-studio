@@ -14,11 +14,11 @@ interface BindWallMessage {
 }
 
 interface GalleryBindingClient {
-    sendJSON(message: BindWallMessage): boolean;
+    sendJSON(message: BindWallMessage): boolean | void;
     onWallBindingChanged(callback: (change: WallBindingChanged) => void): () => void;
 }
 
-/** Do not issue a controller launch until the server has installed this binding. */
+/** Confirm the requested binding before reporting success or issuing a controller grant. */
 export function bindGalleryWallAndWait(
     client: GalleryBindingClient,
     input: { wallId: string; projectId: string; commitId: string },
@@ -41,10 +41,10 @@ export function bindGalleryWallAndWait(
         });
         timeoutId = setTimeout(() => {
             unsubscribe();
-            reject(new Error('Timed out waiting for the wall to load this project'));
+            reject(new Error('Could not load project on wall'));
         }, timeoutMs);
         try {
-            if (!client.sendJSON({ type: 'bind_wall', ...input, slideId: 'default' })) {
+            if (client.sendJSON({ type: 'bind_wall', ...input, slideId: 'default' }) === false) {
                 throw new Error('Gallery connection is not ready');
             }
         } catch (error) {
