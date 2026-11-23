@@ -5,6 +5,7 @@ import type {
     JsonValue
 } from '@repo/db/documents';
 
+import { buildInfo } from '~/lib/buildInfo';
 import { dbCol } from '~/server/collections';
 import { getClientIpFromHeaders } from '~/server/rateLimit';
 
@@ -223,7 +224,8 @@ export async function logAudit(input: AuditLogInput): Promise<void> {
             changes: input.changes ?? null,
             error: input.error ?? null,
             authContext: normalized.authContext,
-            executionContext: normalized.executionContext
+            executionContext: normalized.executionContext,
+            buildCommitSha: cleanString(buildInfo.commitSha)
         });
     } catch (error) {
         // Audit logging must not break business flows.

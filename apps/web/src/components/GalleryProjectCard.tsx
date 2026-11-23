@@ -11,6 +11,8 @@ import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
 import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
+const BIND_ACK_TIMEOUT_MS = 5000;
+
 interface GalleryProjectCardProps {
     project: Project & {
         id: string;
@@ -43,8 +45,7 @@ export function GalleryProjectCard({
     const wallId = useGalleryStore((s) => s.wallId);
     const isEnrolledDevice = useGalleryStore((s) => s.isEnrolledDevice);
     const canAdminBindWall = user?.role === 'admin';
-    const canDeviceBindWall = isEnrolledDevice && !user;
-    const canBindWall = allowWallActions && (canAdminBindWall || canDeviceBindWall);
+    const canBindWall = allowWallActions && (canAdminBindWall || isEnrolledDevice);
 
     const isCustom = Boolean(project.controlPath);
 
@@ -69,14 +70,16 @@ export function GalleryProjectCard({
                     // bind immediately invalidates.
                     await bindGalleryWallAndWait(engine, binding);
                 } else {
-                    if (!engine.sendJSON({ type: 'bind_wall', ...binding, slideId: 'default' })) {
-                        throw new Error('Gallery connection is not ready');
-                    }
+                    await bindGalleryWallAndWait(engine, binding, BIND_ACK_TIMEOUT_MS);
                 }
                 toast.success('Project loaded on wall');
                 return true;
             } catch (e: any) {
-                toast.error(e?.message ?? 'Could not load project on wall');
+                toast.error(
+                    isCustom
+                        ? (e?.message ?? 'Could not load project on wall')
+                        : 'Could not load project on wall'
+                );
                 return false;
             }
         },
@@ -216,7 +219,7 @@ export function GalleryProjectCard({
                 canBindWall && isCustom ? handleControllerLaunchRequest : undefined
             }
             presetWallId={wallId}
-            hideWallPicker={canDeviceBindWall}
+            hideWallPicker={!canAdminBindWall && isEnrolledDevice}
         />
     );
 }

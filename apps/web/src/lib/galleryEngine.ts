@@ -1,7 +1,11 @@
 'use client';
 
 import { BusClient } from './busClient';
-import { useGalleryStore } from './galleryStore';
+import {
+    forgetEnrolledGalleryUrl,
+    rememberEnrolledGalleryUrl,
+    useGalleryStore
+} from './galleryStore';
 import { GSMessageSchema, type GSMessage } from './types';
 
 type GalleryState = Extract<GSMessage, { type: 'gallery_state' }>;
@@ -56,11 +60,13 @@ export class GalleryEngine {
                     const store = useGalleryStore.getState();
                     store.setIsEnrolledDevice(false);
                     store.setDeviceEnrollmentId(data.id);
+                    forgetEnrolledGalleryUrl();
                     return;
                 }
 
                 if (data.type === 'auth_denied') {
                     useGalleryStore.getState().setIsEnrolledDevice(false);
+                    forgetEnrolledGalleryUrl();
                     return;
                 }
 
@@ -72,6 +78,7 @@ export class GalleryEngine {
                         }
                         if (!store.deviceEnrollmentId) {
                             store.setIsEnrolledDevice(true);
+                            rememberEnrolledGalleryUrl();
                         }
                     }
                     this.galleryStateCallbacks.forEach((cb) => cb(data));

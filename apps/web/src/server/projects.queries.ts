@@ -67,9 +67,9 @@ export const projectQueryOptions = (id: string) =>
         queryFn: () => $getProject({ data: { id } })
     });
 
-export const publishedProjectsQueryOptions = () =>
+export const publishedProjectsQueryOptions = (viewerEmail: string | null = null) =>
     queryOptions({
-        queryKey: ['projects', 'published'],
+        queryKey: ['projects', 'published', viewerEmail],
         queryFn: () => $listPublishedProjects()
     });
 
