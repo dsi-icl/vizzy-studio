@@ -6,6 +6,7 @@ import { Window } from 'happy-dom';
 import { $getRoot } from 'lexical';
 import * as Y from 'yjs';
 
+import { createTextExportMap } from './lexicalExport';
 import { $appendHtmlToRoot } from './lexicalHtml';
 
 // ── Lexical namespace ─────────────────────────────────────────────────────────
@@ -184,7 +185,11 @@ async function yDocToLexical<Result>(
     const tempDoc = new Y.Doc();
     const docMap = new Map<string, Y.Doc>([[docName, tempDoc]]);
     const provider = createNoopProvider();
-    const editor = createHeadlessEditor({ namespace: LEXICAL_NAMESPACE, nodes: [] });
+    const editor = createHeadlessEditor({
+        namespace: LEXICAL_NAMESPACE,
+        nodes: [],
+        html: { export: createTextExportMap() }
+    });
     const binding = createBinding(editor, provider as any, docName, tempDoc, docMap);
 
     const observer = (events: any[], transaction: Y.Transaction) => {
