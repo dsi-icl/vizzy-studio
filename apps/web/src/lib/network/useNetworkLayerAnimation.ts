@@ -47,11 +47,12 @@ export function useNetworkLayerAnimation(
                 )
             );
             const fallback = authored.positions ?? initialNetworkPositions(authored.data);
-            const positions = authored.data.nodes.map(
-                (node, i) => previous.get(node.id) ?? fallback[i]!
-            );
+            const positions =
+                authored.settings.paused && authored.positions
+                    ? authored.positions
+                    : authored.data.nodes.map((node, i) => previous.get(node.id) ?? fallback[i]!);
             local = { data: authored.data, positions };
-            // Reuse an existing simulation across settings changes, including Nudge.
+            // Reuse an existing simulation across settings changes.
             const next = worker ? authored : { ...authored, positions };
             workerKey = networkDocumentKey(next);
             if (worker) {

@@ -97,8 +97,15 @@ function NetworkEditor({
     const [previewError, setPreviewError] = useState('');
     const [ready, setReady] = useState(false);
     const draft = useMemo(
-        () => ({ name, data, settings, source, reheat }),
-        [name, data, settings, source, reheat]
+        () => ({
+            name,
+            data,
+            settings,
+            source,
+            reheat,
+            positions: initial?.data === data ? initial.positions : undefined
+        }),
+        [name, data, settings, source, reheat, initial]
     );
     const live = useNetworkPreview(draft, true, (message) => {
         setPreviewError(message ?? '');
@@ -113,7 +120,13 @@ function NetworkEditor({
         let view: NetworkView | undefined;
         const paint = () => {
             if (!view || previousLive !== live.current) {
-                view = networkPreviewView(draft.data, live.current);
+                view = networkPreviewView(
+                    draft.data,
+                    live.current ??
+                        (draft.positions
+                            ? { data: draft.data, positions: draft.positions }
+                            : undefined)
+                );
                 previousLive = live.current;
             }
             paintedView.current = view;
@@ -304,7 +317,22 @@ function NetworkEditor({
         setSettings((previous) => ({ ...previous, ...patch }));
     const save = () => {
         try {
-            onSave(NetworkSchema.parse({ name: name.trim(), data, settings, source, reheat }));
+            const positions = settings.paused
+                ? networkPreviewView(data, paintedView.current).positions.map(({ x, y }) => ({
+                      x,
+                      y
+                  }))
+                : undefined;
+            onSave(
+                NetworkSchema.parse({
+                    name: name.trim(),
+                    data,
+                    settings,
+                    source,
+                    reheat,
+                    positions
+                })
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not save network.');
         }

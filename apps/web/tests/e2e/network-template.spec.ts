@@ -674,6 +674,88 @@ test('canvas selection locates nodes and links in the panel and keeps draft shor
     }
 });
 
+test('pausing a network keeps the preview layout on the editor stage', async ({ page }) => {
+    await observePreviewNodes(page);
+    await openEditor(page);
+    let numericId: number | undefined;
+    try {
+        await page
+            .locator('#titlebar')
+            .getByRole('button', { name: 'Add network', exact: true })
+            .click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
+        const created = await page.evaluate(() => {
+            const store = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
+            return store.layers.get(Number(store.selectedLayerIds[0])) as Extract<
+                Layer,
+                { type: 'graph' }
+            >;
+        });
+        numericId = created.numericId;
+        await expectEditorNetworkMotion(page, numericId);
+
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        const preview = page.getByLabel('Network preview', { exact: true });
+        await expect
+            .poll(() => preview.evaluate((el) => (el as PreviewTestCanvas).paintedNodes?.length))
+            .toBe(created.network!.data.nodes.length);
+        await page.getByRole('button', { name: 'Pause', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+        await expect
+            .poll(async () => {
+                const before = await preview.evaluate(
+                    (el) => (el as PreviewTestCanvas).paintedNodes
+                );
+                await page.waitForTimeout(120);
+                const after = await preview.evaluate(
+                    (el) => (el as PreviewTestCanvas).paintedNodes
+                );
+                return JSON.stringify(before) === JSON.stringify(after);
+            })
+            .toBe(true);
+        const frozen = await preview.evaluate((el) => (el as PreviewTestCanvas).paintedNodes!);
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
+
+        const paused = await page.evaluate((id) => {
+            const layer = (window as unknown as RuntimeWindow).__EDITOR_STORE__
+                .getState()
+                .layers.get(id);
+            return layer?.type === 'graph' ? layer.network : undefined;
+        }, numericId);
+        expect(paused?.settings.paused).toBe(true);
+        expect(paused?.positions).toEqual(frozen);
+        const key = networkDocumentKey(paused!);
+        const stagePositions = () =>
+            page.evaluate(
+                ({ id, key }) =>
+                    (window as unknown as RuntimeWindow).__EDITOR_ENGINE__.networkFrames.sample(
+                        id,
+                        key
+                    )?.view.positions,
+                { id: numericId!, key }
+            );
+        await expect.poll(stagePositions).toBeTruthy();
+        expect(
+            (await stagePositions())!.every(
+                (position, i) =>
+                    Math.hypot(position.x - frozen[i]!.x, position.y - frozen[i]!.y) < 0.01
+            )
+        ).toBe(true);
+
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await expect
+            .poll(async () => preview.evaluate((el) => (el as PreviewTestCanvas).paintedNodes))
+            .toEqual(frozen);
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    } finally {
+        if (numericId !== undefined)
+            await page.evaluate((id) => {
+                (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState().removeLayer(id);
+            }, numericId);
+        await save(page);
+    }
+});
+
 test('wall tiles share live motion, transparency, crossing edges and reconnect state', async ({
     browser,
     page

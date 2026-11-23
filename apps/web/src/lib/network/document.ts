@@ -6,7 +6,7 @@ import {
     type NetworkPositions
 } from './schema';
 
-/** Stable identifier for the authored document, independent of geometry and runtime frames. */
+/** Stable identifier for authored settings and any frozen layout, independent of runtime frames. */
 export function networkDocumentKey(network: Network): string {
     const text = JSON.stringify([
         network.source,

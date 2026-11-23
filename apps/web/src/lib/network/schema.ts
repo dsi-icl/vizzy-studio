@@ -94,8 +94,8 @@ export const NetworkSchema = z
         settings: NetworkSettingsSchema,
         source: z.enum(['import', 'live-example', 'custom']).default('import'),
         reheat: z.number().int().nonnegative().default(0),
-        // Read old documents as an initial condition only. New saves contain data
-        // and settings; ongoing simulation coordinates never dirty the document.
+        // A paused network stores the preview's frozen layout. Running networks
+        // omit positions so ongoing simulation frames never dirty the document.
         positions: z
             .array(
                 z.object({
