@@ -1,13 +1,42 @@
-import { PauseIcon, PlayIcon, ShuffleIcon } from '@phosphor-icons/react';
+import { PauseIcon, PlayIcon, QuestionIcon } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
-import { useId } from 'react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
+import { useId, useState } from 'react';
 
-import type { NetworkSettings } from '~/lib/network/schema';
+import { DEFAULT_NETWORK_SETTINGS, type NetworkSettings } from '~/lib/network/schema';
 
 type SettingsProps = {
     settings: NetworkSettings;
     onChange: (patch: Partial<NetworkSettings>) => void;
 };
+
+function NetworkRangeHelp({ label, help }: { label: string; help: string }) {
+    const triggerId = useId();
+    const [open, setOpen] = useState(false);
+    return (
+        <Tooltip open={open} onOpenChange={setOpen} triggerId={triggerId}>
+            <TooltipTrigger
+                id={triggerId}
+                delay={0}
+                closeOnClick={false}
+                onClick={() => setOpen(true)}
+                render={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Help: ${label}`}
+                        className="size-5 rounded-full text-muted-foreground hover:text-foreground"
+                    />
+                }
+            >
+                <QuestionIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipContent role="tooltip" side="left" className="max-w-56 leading-relaxed">
+                {help}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
 
 function NetworkRange({
     label,
@@ -16,7 +45,8 @@ function NetworkRange({
     max,
     step,
     onChange,
-    display
+    display,
+    help
 }: {
     label: string;
     value: number;
@@ -25,16 +55,20 @@ function NetworkRange({
     step: number;
     onChange: (value: number) => void;
     display?: string;
+    help?: string;
 }) {
     const id = useId();
     return (
         <div className="grid gap-2.5">
-            <label htmlFor={id} className="flex items-center justify-between text-xs font-medium">
-                {label}
+            <div className="flex items-center justify-between gap-2 text-xs font-medium">
+                <div className="flex min-w-0 items-center gap-1">
+                    <label htmlFor={id}>{label}</label>
+                    {help && <NetworkRangeHelp label={label} help={help} />}
+                </div>
                 <span className="min-w-10 rounded-md bg-muted px-2 py-1 text-right font-mono text-[11px] text-muted-foreground tabular-nums">
                     {display ?? value}
                 </span>
-            </label>
+            </div>
             <input
                 id={id}
                 aria-label={label}
@@ -52,89 +86,102 @@ function NetworkRange({
 
 export function NetworkPlaybackControls({
     paused,
-    onPause,
-    onNudge
+    onPause
 }: {
     paused: boolean;
     onPause: () => void;
-    onNudge: () => void;
 }) {
     return (
-        <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onPause}>
-                {paused ? <PlayIcon weight="fill" /> : <PauseIcon weight="fill" />}
-                {paused ? 'Resume' : 'Pause'}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onNudge}>
-                <ShuffleIcon />
-                Nudge
-            </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={onPause}>
+            {paused ? <PlayIcon weight="fill" /> : <PauseIcon weight="fill" />}
+            {paused ? 'Resume' : 'Pause'}
+        </Button>
     );
 }
 
 export function NetworkMotionSettings({ settings, onChange }: SettingsProps) {
     return (
-        <div className="space-y-6">
-            <div className="space-y-3">
-                <NetworkRange
-                    label="Random motion"
-                    min={0}
-                    max={2}
-                    step={0.05}
-                    value={settings.motionStrength}
-                    display={`${Math.round(settings.motionStrength * 100)}%`}
-                    onChange={(motionStrength) => onChange({ motionStrength })}
-                />
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                    A gentle random push keeps existing nodes moving. Set to 0 to let the graph
-                    settle.
-                </p>
-            </div>
-            <div className="space-y-5 border-t pt-5">
-                <p className="text-[11px] font-medium tracking-wide text-muted-foreground">
-                    Layout
-                </p>
-                <NetworkRange
-                    label="Link distance"
-                    min={10}
-                    max={300}
-                    step={5}
-                    value={settings.linkDistance}
-                    onChange={(linkDistance) => onChange({ linkDistance })}
-                />
-                <NetworkRange
-                    label="Repulsion"
-                    min={-1000}
-                    max={0}
-                    step={10}
-                    value={settings.charge}
-                    onChange={(charge) => onChange({ charge })}
-                />
-            </div>
-            <details className="group border-t pt-4">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                    More force settings
-                </summary>
-                <div className="mt-5 space-y-5">
-                    <NetworkRange
-                        label="Link strength"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={settings.linkStrength}
-                        onChange={(linkStrength) => onChange({ linkStrength })}
-                    />
-                    <NetworkRange
-                        label="Collision spacing"
-                        min={1}
-                        max={80}
-                        step={1}
-                        value={settings.collisionRadius}
-                        onChange={(collisionRadius) => onChange({ collisionRadius })}
-                    />
-                </div>
-            </details>
+        <div className="space-y-5">
+            <NetworkRange
+                label="Random motion"
+                help="Adds a gentle random push to keep nodes moving. Set to 0 to let the network settle."
+                min={0}
+                max={2}
+                step={0.05}
+                value={settings.motionStrength}
+                display={`${Math.round(settings.motionStrength * 100)}%`}
+                onChange={(motionStrength) => onChange({ motionStrength })}
+            />
+            <NetworkRange
+                label="Link distance"
+                help="Sets the preferred distance between linked nodes. The visible length can differ as other forces act on them."
+                min={10}
+                max={300}
+                step={5}
+                value={settings.linkDistance}
+                onChange={(linkDistance) => onChange({ linkDistance })}
+            />
+            <NetworkRange
+                label="Repulsion"
+                help="Controls how strongly nodes push apart. More negative values spread the network wider."
+                min={-1000}
+                max={0}
+                step={10}
+                value={settings.charge}
+                onChange={(charge) => onChange({ charge })}
+            />
+            <NetworkRange
+                label="Link strength"
+                help="Controls how firmly links push or pull nodes toward the Link distance target. Changing this can alter their visible length without changing that target."
+                min={0}
+                max={1}
+                step={0.05}
+                value={settings.linkStrength}
+                onChange={(linkStrength) => onChange({ linkStrength })}
+            />
+            <NetworkRange
+                label="Collision spacing"
+                help="Sets the space around each node so nearby nodes overlap less."
+                min={1}
+                max={80}
+                step={1}
+                value={settings.collisionRadius}
+                onChange={(collisionRadius) => onChange({ collisionRadius })}
+            />
+            <NetworkRange
+                label="Node size"
+                min={2}
+                max={20}
+                step={1}
+                value={settings.nodeRadius}
+                onChange={(nodeRadius) => onChange({ nodeRadius })}
+            />
+            <NetworkRange
+                label="Line width"
+                min={0.5}
+                max={5}
+                step={0.5}
+                value={settings.edgeWidth}
+                onChange={(edgeWidth) => onChange({ edgeWidth })}
+            />
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() =>
+                    onChange({
+                        motionStrength: DEFAULT_NETWORK_SETTINGS.motionStrength,
+                        linkDistance: DEFAULT_NETWORK_SETTINGS.linkDistance,
+                        charge: DEFAULT_NETWORK_SETTINGS.charge,
+                        linkStrength: DEFAULT_NETWORK_SETTINGS.linkStrength,
+                        collisionRadius: DEFAULT_NETWORK_SETTINGS.collisionRadius,
+                        nodeRadius: DEFAULT_NETWORK_SETTINGS.nodeRadius,
+                        edgeWidth: DEFAULT_NETWORK_SETTINGS.edgeWidth
+                    })
+                }
+            >
+                Reset to default
+            </Button>
         </div>
     );
 }
@@ -175,23 +222,7 @@ function NetworkColour({
 export function NetworkStyleSettings({ settings, onChange }: SettingsProps) {
     return (
         <div className="space-y-5">
-            <NetworkRange
-                label="Node size"
-                min={2}
-                max={20}
-                step={1}
-                value={settings.nodeRadius}
-                onChange={(nodeRadius) => onChange({ nodeRadius })}
-            />
-            <NetworkRange
-                label="Line width"
-                min={0.5}
-                max={5}
-                step={0.5}
-                value={settings.edgeWidth}
-                onChange={(edgeWidth) => onChange({ edgeWidth })}
-            />
-            <div className="space-y-3 border-t pt-5">
+            <div className="space-y-3">
                 <label className="flex items-center justify-between text-xs font-medium">
                     Colour nodes by group
                     <input

@@ -54,34 +54,45 @@ async function observePreviewNodes(page: Page) {
     });
 }
 
+async function previewPoint(page: Page, target: number | [number, number] | 'empty') {
+    return page.getByLabel('Network preview', { exact: true }).evaluate((el, target) => {
+        const canvas = el as PreviewTestCanvas;
+        const nodes = canvas.paintedNodes!;
+        let point = { x: 5, y: 5 };
+        if (typeof target === 'number') point = nodes[target]!;
+        else if (Array.isArray(target)) {
+            const a = nodes[target[0]]!,
+                b = nodes[target[1]]!;
+            const candidates = [0.5, 0.35, 0.65, 0.2, 0.8].map((t) => ({
+                x: a.x + (b.x - a.x) * t,
+                y: a.y + (b.y - a.y) * t
+            }));
+            point = candidates.find((p) =>
+                nodes.every((n) => Math.hypot(p.x - n.x, p.y - n.y) > 30)
+            )!;
+            if (!point) throw new Error('No unobstructed point on test link');
+        }
+        const bounds = canvas.getBoundingClientRect();
+        const scale = Math.min(bounds.width / canvas.width, bounds.height / canvas.height);
+        return {
+            x: bounds.left + (bounds.width - canvas.width * scale) / 2 + point.x * scale,
+            y: bounds.top + (bounds.height - canvas.height * scale) / 2 + point.y * scale
+        };
+    }, target);
+}
+
 async function clickPreview(page: Page, target: number | [number, number] | 'empty') {
-    const point = await page
-        .getByLabel('Network preview', { exact: true })
-        .evaluate((el, target) => {
-            const canvas = el as PreviewTestCanvas;
-            const nodes = canvas.paintedNodes!;
-            let point = { x: 5, y: 5 };
-            if (typeof target === 'number') point = nodes[target]!;
-            else if (Array.isArray(target)) {
-                const a = nodes[target[0]]!,
-                    b = nodes[target[1]]!;
-                const candidates = [0.5, 0.35, 0.65, 0.2, 0.8].map((t) => ({
-                    x: a.x + (b.x - a.x) * t,
-                    y: a.y + (b.y - a.y) * t
-                }));
-                point = candidates.find((p) =>
-                    nodes.every((n) => Math.hypot(p.x - n.x, p.y - n.y) > 30)
-                )!;
-                if (!point) throw new Error('No unobstructed point on test link');
-            }
-            const bounds = canvas.getBoundingClientRect();
-            const scale = Math.min(bounds.width / canvas.width, bounds.height / canvas.height);
-            return {
-                x: bounds.left + (bounds.width - canvas.width * scale) / 2 + point.x * scale,
-                y: bounds.top + (bounds.height - canvas.height * scale) / 2 + point.y * scale
-            };
-        }, target);
+    const point = await previewPoint(page, target);
     await page.mouse.click(point.x, point.y);
+}
+
+async function dragPreviewLink(page: Page, source: number, target: number) {
+    const from = await previewPoint(page, source);
+    const to = await previewPoint(page, target);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await page.mouse.up();
 }
 
 // Read the already painted canvas, without forcing a redraw via node.toDataURL().
@@ -168,8 +179,8 @@ test('network example, import, edit, save and reload use native layers', async (
             .locator('#titlebar')
             .getByRole('button', { name: 'Add network', exact: true });
         await tools.click();
-        await expect(page.getByRole('button', { name: 'Add to stage', exact: true })).toBeEnabled();
-        await expect(page.getByText('Example · simulated data', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeEnabled();
+        await expect(page.getByTestId('network-preview-pane')).toHaveText('');
         const preview = page.getByLabel('Network preview', { exact: true });
         await expect
             .poll(() =>
@@ -215,15 +226,43 @@ test('network example, import, edit, save and reload use native layers', async (
         await page.getByLabel('Colour nodes by group', { exact: true }).uncheck();
         await expect.poll(async () => (await colours()).coloured).toBe(0);
         await expect(page.getByLabel('Show labels', { exact: true })).not.toBeChecked();
+        await expect(page.getByRole('slider', { name: 'Node size' })).toHaveCount(0);
+        await expect(page.getByRole('slider', { name: 'Line width' })).toHaveCount(0);
         await page.getByRole('tab', { name: 'Motion', exact: true }).click();
         await expect(page.getByRole('tab', { name: 'Motion', exact: true })).toHaveAttribute(
             'aria-selected',
             'true'
         );
-        await expect(page.getByText('12 nodes · 17 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: /^Help: / })).toHaveCount(5);
+        await expect(page.getByText('More force settings')).toHaveCount(0);
+        await expect(page.getByRole('slider', { name: 'Link strength' })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'Collision spacing' })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'Node size' })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'Line width' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Help: Node size' })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Help: Line width' })).toHaveCount(0);
+        await page.getByRole('slider', { name: 'Node size' }).fill('12');
+        await page.getByRole('slider', { name: 'Line width' }).fill('3');
+        await page.getByRole('slider', { name: 'Link distance' }).fill('140');
+        await page.getByRole('button', { name: 'Reset to default' }).click();
+        await expect(page.getByRole('slider', { name: 'Node size' })).toHaveValue(
+            String(DEFAULT_NETWORK_SETTINGS.nodeRadius)
+        );
+        await expect(page.getByRole('slider', { name: 'Line width' })).toHaveValue(
+            String(DEFAULT_NETWORK_SETTINGS.edgeWidth)
+        );
+        await expect(page.getByRole('slider', { name: 'Link distance' })).toHaveValue(
+            String(DEFAULT_NETWORK_SETTINGS.linkDistance)
+        );
+        await page.getByRole('button', { name: 'Help: Link distance' }).hover();
+        await expect(page.getByRole('tooltip')).toContainText('target distance');
+        await page.mouse.move(0, 0);
+        await page.getByRole('button', { name: 'Help: Repulsion' }).click();
+        await expect(page.getByRole('tooltip')).toContainText('push apart');
+        await page.getByLabel('Layer name', { exact: true }).focus();
         await page.screenshot({ path: test.info().outputPath('network-editor.png') });
         await page.getByLabel('Layer name', { exact: true }).fill('Network integration example');
-        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
         const first = (await page.evaluate(() => {
             const store = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
             return store.layers.get(Number(store.selectedLayerIds[0]));
@@ -246,10 +285,8 @@ test('network example, import, edit, save and reload use native layers', async (
         await page.getByRole('button', { name: 'Edit network', exact: true }).click();
         await page.getByRole('tab', { name: 'Motion', exact: true }).click();
         await page.getByRole('slider', { name: 'Link distance', exact: true }).fill('160');
-        await expect(
-            page.getByRole('button', { name: 'Apply changes', exact: true })
-        ).toBeEnabled();
-        await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
         await expect
             .poll(
                 () => page.workers().filter((worker) => worker.url().includes('live.worker')).length
@@ -316,8 +353,12 @@ test('network example, import, edit, save and reload use native layers', async (
                 }),
             first.numericId
         );
-        await page.getByRole('button', { name: 'Live network controls', exact: true }).click();
+        await expect(
+            page.getByRole('button', { name: 'Live network controls', exact: true })
+        ).toHaveCount(0);
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
         await page.getByRole('button', { name: 'Pause', exact: true }).click();
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
         await expect
             .poll(() =>
                 page.evaluate((id) => {
@@ -328,18 +369,19 @@ test('network example, import, edit, save and reload use native layers', async (
                 }, first.numericId)
             )
             .toBe(true);
-        await page.getByRole('button', { name: 'Nudge', exact: true }).click();
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('button', { name: 'Resume', exact: true }).click();
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
         await expect
             .poll(() =>
                 page.evaluate((id) => {
                     const layer = (window as unknown as RuntimeWindow).__EDITOR_STORE__
                         .getState()
                         .layers.get(id);
-                    return layer?.type === 'graph' && layer.network?.reheat;
+                    return layer?.type === 'graph' && layer.network?.settings.paused;
                 }, first.numericId)
             )
-            .toBe(1);
-        await page.keyboard.press('Escape');
+            .toBe(false);
 
         await tools.click();
         await page.getByLabel('Network data file', { exact: true }).setInputFiles({
@@ -348,9 +390,10 @@ test('network example, import, edit, save and reload use native layers', async (
             buffer: Buffer.from('Person,Colleague,Count\nAlice,Bob,2\nBob,Carol,3')
         });
         await page.getByLabel('weight column', { exact: true }).selectOption('Count');
-        await expect(page.getByText('3 nodes · 2 links', { exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Add to stage', exact: true })).toBeEnabled();
-        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Nodes 3', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 2', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeEnabled();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
         const importedId = await page.evaluate(() => {
             const store = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
             const layer = store.layers.get(Number(store.selectedLayerIds[0]));
@@ -370,9 +413,7 @@ test('network example, import, edit, save and reload use native layers', async (
             )
         });
         await expect(page.getByRole('alert')).toContainText('Unknown node');
-        await expect(
-            page.getByRole('button', { name: 'Add to stage', exact: true })
-        ).toBeDisabled();
+        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
         await page.getByRole('button', { name: 'Cancel', exact: true }).click();
         expect(errors).toEqual([]);
     } finally {
@@ -407,7 +448,8 @@ test('custom topology edits the example and imported data, persists and keeps an
             'aria-selected',
             'true'
         );
-        await expect(page.getByText('12 nodes · 17 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Nodes 12', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 17', exact: true })).toBeVisible();
         await page.getByLabel('Node name Vizzy', { exact: true }).fill('My hub');
         await page.getByRole('button', { name: 'Add node', exact: true }).click();
         await page.getByLabel('Node name node-1', { exact: true }).fill('My new node');
@@ -415,9 +457,10 @@ test('custom topology edits the example and imported data, persists and keeps an
         await page.getByRole('button', { name: 'Add link', exact: true }).click();
         await page.getByLabel('From node', { exact: true }).selectOption('Vizzy');
         await page.getByLabel('To node', { exact: true }).selectOption('node-1');
-        await expect(page.getByText('13 nodes · 18 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Nodes 13', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 18', exact: true })).toBeVisible();
         await page.screenshot({ path: test.info().outputPath('custom-network-links.png') });
-        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
         const created = (await selectedNetwork())!;
         ids.push(created.numericId);
         expect(created.network!.source).toBe('custom');
@@ -429,10 +472,11 @@ test('custom topology edits the example and imported data, persists and keeps an
 
         await page.getByRole('button', { name: 'Edit network', exact: true }).click();
         await page.getByRole('button', { name: 'Delete node Research', exact: true }).click();
-        await expect(page.getByText('12 nodes · 15 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Nodes 12', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 15', exact: true })).toBeVisible();
         await page.getByRole('button', { name: /^Links \d+$/ }).click();
         await page.getByRole('button', { name: 'Delete link 1', exact: true }).click();
-        await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
         const modified = (await selectedNetwork())!;
         expect(modified.network!.data.nodes.some((node) => node.id === 'Research')).toBe(false);
         expect(modified.network!.data.edges).toHaveLength(14);
@@ -462,12 +506,13 @@ test('custom topology edits the example and imported data, persists and keeps an
             created.numericId
         );
 
-        // Cancel leaves the existing layer untouched, including a draft reset.
+        // Cancel leaves the existing layer untouched after draft setting changes.
         await page.getByRole('button', { name: 'Edit network', exact: true }).click();
-        await page.getByRole('button', { name: 'Reset to example', exact: true }).click();
-        await expect(page.getByText('12 nodes · 17 links', { exact: true })).toBeVisible();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await page.getByRole('slider', { name: 'Node size' }).fill('12');
         await page.getByRole('button', { name: 'Cancel', exact: true }).click();
         expect((await selectedNetwork())?.network?.data).toEqual(modified.network!.data);
+        expect((await selectedNetwork())?.network?.settings).toEqual(modified.network!.settings);
 
         // Imported topology opens in the very same controls.
         await page.getByRole('button', { name: 'Edit network', exact: true }).click();
@@ -480,11 +525,12 @@ test('custom topology edits the example and imported data, persists and keeps an
         });
         await page.getByLabel('Node name alice', { exact: true }).fill('Alice renamed');
         await page.getByRole('button', { name: 'Delete node bob', exact: true }).click();
-        await expect(page.getByText('1 node · 0 links', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Nodes 1', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 0', exact: true })).toBeVisible();
         await expect(
             page.getByRole('button', { name: 'Delete node alice', exact: true })
         ).toBeDisabled();
-        await page.getByRole('button', { name: 'Apply changes', exact: true }).click();
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
         expect((await selectedNetwork())?.network?.data).toEqual({
             nodes: [{ id: 'alice', label: 'Alice renamed' }],
             edges: []
@@ -586,10 +632,21 @@ test('canvas selection locates nodes and links in the panel and keeps draft shor
         await clickPreview(page, 0);
         await expect(page.getByLabel('Node name n0', { exact: true })).toBeVisible();
         await preview.press('Delete');
-        await expect(page.getByText('7 nodes · 1 link', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Nodes 7', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Links 1', exact: true })).toBeVisible();
         expect(await layerIds()).toEqual(before);
+        await expect
+            .poll(() => preview.evaluate((el) => (el as PreviewTestCanvas).paintedNodes?.length))
+            .toBe(7);
+        await dragPreviewLink(page, 0, 1);
+        await expect(page.getByRole('button', { name: 'Links 2', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        await expect(page.getByLabel('From node', { exact: true })).toHaveValue('n1');
+        await expect(page.getByLabel('To node', { exact: true })).toHaveValue('n2');
         await page.getByRole('button', { name: 'Resume', exact: true }).click();
-        await page.getByRole('button', { name: 'Add to stage', exact: true }).click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
         const created = await page.evaluate(() => {
             const state = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
             return state.layers.get(Number(state.selectedLayerIds[0])) as Extract<
@@ -603,7 +660,10 @@ test('canvas selection locates nodes and links in the panel and keeps draft shor
         expect(created.network!.data.nodes.find((node) => node.id === 'n7')?.label).toBe(
             'Canvas chosen node'
         );
-        expect(created.network!.data.edges).toEqual([{ source: 'n6', target: 'n6' }]);
+        expect(created.network!.data.edges).toEqual([
+            { source: 'n6', target: 'n6' },
+            { source: 'n1', target: 'n2' }
+        ]);
         await expectEditorNetworkMotion(page, created.numericId);
     } finally {
         await page.evaluate((ids) => {
