@@ -103,6 +103,22 @@ export function NetworkMotionSettings({ settings, onChange }: SettingsProps) {
     return (
         <div className="space-y-5">
             <NetworkRange
+                label="Node size"
+                min={2}
+                max={20}
+                step={1}
+                value={settings.nodeRadius}
+                onChange={(nodeRadius) => onChange({ nodeRadius })}
+            />
+            <NetworkRange
+                label="Line width"
+                min={0.5}
+                max={5}
+                step={0.5}
+                value={settings.edgeWidth}
+                onChange={(edgeWidth) => onChange({ edgeWidth })}
+            />
+            <NetworkRange
                 label="Random motion"
                 help="Adds a gentle random push to keep nodes moving. Set to 0 to let the network settle."
                 min={0}
@@ -147,22 +163,6 @@ export function NetworkMotionSettings({ settings, onChange }: SettingsProps) {
                 step={1}
                 value={settings.collisionRadius}
                 onChange={(collisionRadius) => onChange({ collisionRadius })}
-            />
-            <NetworkRange
-                label="Node size"
-                min={2}
-                max={20}
-                step={1}
-                value={settings.nodeRadius}
-                onChange={(nodeRadius) => onChange({ nodeRadius })}
-            />
-            <NetworkRange
-                label="Line width"
-                min={0.5}
-                max={5}
-                step={0.5}
-                value={settings.edgeWidth}
-                onChange={(edgeWidth) => onChange({ edgeWidth })}
             />
             <Button
                 variant="outline"

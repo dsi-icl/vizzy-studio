@@ -240,6 +240,37 @@ describe('Network document and layout', () => {
         expect(networkDocumentKey(network)).toBe(networkDocumentKey(NetworkSchema.parse(network)));
     });
 
+    it('keeps visual changes on the same frame stream without reheating the layout', () => {
+        const quiet = { ...network, settings: { ...network.settings, motionStrength: 0 } };
+        const sim = createNetworkSimulation(quiet);
+        for (let i = 0; i < 200; i++) sim.advance(i * 50);
+        expect(sim.advance(11000)).toBe(false);
+        const resting = sim.view.positions;
+        const visual = {
+            ...quiet,
+            settings: {
+                ...quiet.settings,
+                colorByGroup: true,
+                showLabels: true,
+                nodeColor: '#ff0000',
+                labelColor: '#00ff00',
+                edgeColor: '#0000ff',
+                edgeWidth: 3
+            }
+        };
+        expect(networkDocumentKey(visual)).toBe(networkDocumentKey(quiet));
+        sim.configure(visual);
+        expect(sim.advance(11050)).toBe(false);
+        expect(sim.view.positions).toEqual(resting);
+        expect(
+            networkDocumentKey({
+                ...visual,
+                settings: { ...visual.settings, linkDistance: 200 }
+            })
+        ).not.toBe(networkDocumentKey(visual));
+        sim.stop();
+    });
+
     it('stores white nodes and links without a layer background or runtime coordinates', () => {
         const { positions: _positions, ...document } = network;
         expect(NetworkSchema.parse(document).positions).toBeUndefined();

@@ -2,13 +2,15 @@ import {
     GraphIcon,
     UploadSimpleIcon,
     SlidersHorizontalIcon,
-    PaletteIcon
+    PaletteIcon,
+    QuestionIcon
 } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
 import { Dialog, DialogContent, DialogTitle } from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@repo/ui/components/tabs';
 import { TipButton } from '@repo/ui/components/tip-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
@@ -59,6 +61,47 @@ type NetworkLinkDrag = {
     point: { x: number; y: number } | null;
     targetId: string | null;
 };
+
+function NetworkEditorHelp() {
+    const triggerId = useId();
+    const [open, setOpen] = useState(false);
+    return (
+        <Tooltip open={open} onOpenChange={setOpen} triggerId={triggerId}>
+            <TooltipTrigger
+                id={triggerId}
+                delay={0}
+                closeOnClick={false}
+                onClick={() => setOpen(true)}
+                render={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Network preview help"
+                        className="size-6 rounded-full text-muted-foreground hover:text-foreground"
+                    />
+                }
+            >
+                <QuestionIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent
+                role="tooltip"
+                side="bottom"
+                align="start"
+                className="w-64 max-w-[calc(100vw-2rem)] py-3 leading-relaxed"
+            >
+                <div className="space-y-2">
+                    <p>Click a node or link in the preview to select it.</p>
+                    <p>Drag from one node to another to add a link.</p>
+                    <p>
+                        With the preview focused, press Delete or Backspace to remove the selection,
+                        or Escape to clear it.
+                    </p>
+                    <p>Click empty space to clear the selection.</p>
+                </div>
+            </TooltipContent>
+        </Tooltip>
+    );
+}
 
 function NetworkEditor({
     initial,
@@ -354,8 +397,9 @@ function NetworkEditor({
                             <GraphIcon className="size-5" />
                         )}
                     </span>
-                    <div>
+                    <div className="flex items-center gap-1">
                         <DialogTitle>{initial ? 'Edit network' : 'Add network'}</DialogTitle>
+                        <NetworkEditorHelp />
                     </div>
                 </header>
                 <div className="grid min-h-0 flex-1 overflow-auto md:grid-cols-[minmax(0,1fr)_360px] md:overflow-hidden">
