@@ -62,11 +62,12 @@ export function createNetworkSimulation(initial: Network) {
         }
     });
 
-    function setTopology(next: NetworkData, seed?: NetworkPositions) {
+    function setTopology(next: NetworkData, seed?: NetworkPositions, useSeed = false) {
         const previous = new Map(nodes.map((node) => [node.id, node]));
         const fallback = seed ?? initialNetworkPositions(next);
         nodes = next.nodes.map(
-            (node, i) => previous.get(node.id) ?? { id: node.id, ...fallback[i] }
+            (node, i) =>
+                (useSeed ? undefined : previous.get(node.id)) ?? { id: node.id, ...fallback[i] }
         );
         data = next;
         const ids = new Set(nodes.map((node) => node.id));
@@ -91,11 +92,14 @@ export function createNetworkSimulation(initial: Network) {
             !documentKey ||
             network.source !== next.source ||
             JSON.stringify(network.data) !== JSON.stringify(next.data);
+        const pausedSnapshot = next.settings.paused && !!next.positions;
+        const positionsChanged =
+            pausedSnapshot && JSON.stringify(network.positions) !== JSON.stringify(next.positions);
         const nudged = !!documentKey && next.reheat !== network.reheat;
         network = next;
         documentKey = key;
-        if (topologyChanged) {
-            setTopology(next.data, next.positions);
+        if (topologyChanged || positionsChanged) {
+            setTopology(next.data, next.positions, pausedSnapshot);
         }
         const s = next.settings;
         simulation

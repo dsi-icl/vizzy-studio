@@ -2,13 +2,15 @@ import {
     GraphIcon,
     UploadSimpleIcon,
     SlidersHorizontalIcon,
-    PaletteIcon
+    PaletteIcon,
+    QuestionIcon
 } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@repo/ui/components/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@repo/ui/components/dialog';
 import { Input } from '@repo/ui/components/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@repo/ui/components/tabs';
 import { TipButton } from '@repo/ui/components/tip-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react';
 
 import { useEditorStore } from '~/lib/editorStore';
@@ -24,7 +26,7 @@ import {
     networkPointerPosition,
     networkPreviewView
 } from '~/lib/network/interaction';
-import { drawNetwork, type NetworkSelection } from '~/lib/network/render';
+import { drawNetwork, networkFit, type NetworkSelection } from '~/lib/network/render';
 import {
     DEFAULT_NETWORK_SETTINGS,
     EXAMPLE_NETWORK,
@@ -35,11 +37,10 @@ import {
     type NetworkSettings,
     type NetworkView
 } from '~/lib/network/schema';
-import { removeNetworkNode } from '~/lib/network/topology';
+import { appendNetworkLink, removeNetworkNode } from '~/lib/network/topology';
 import { useNetworkPreview } from '~/lib/network/useNetworkPreview';
 import type { Layer } from '~/lib/types';
 
-import { NetworkLiveControls } from './NetworkLiveControls';
 import {
     NetworkMotionSettings,
     NetworkStyleSettings,
@@ -50,6 +51,57 @@ import {
     NETWORK_TOPOLOGY_PAGE_SIZE,
     type NetworkTopologyNavigation
 } from './NetworkTopologyEditor';
+
+type NetworkLinkDrag = {
+    pointerId: number;
+    sourceId: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+    point: { x: number; y: number } | null;
+    targetId: string | null;
+};
+
+function NetworkEditorHelp() {
+    const triggerId = useId();
+    const [open, setOpen] = useState(false);
+    return (
+        <Tooltip open={open} onOpenChange={setOpen} triggerId={triggerId}>
+            <TooltipTrigger
+                id={triggerId}
+                delay={0}
+                closeOnClick={false}
+                onClick={() => setOpen(true)}
+                render={
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Network preview help"
+                        className="size-6 rounded-full text-muted-foreground hover:text-foreground"
+                    />
+                }
+            >
+                <QuestionIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent
+                role="tooltip"
+                side="bottom"
+                align="start"
+                className="w-64 max-w-[calc(100vw-2rem)] py-3 leading-relaxed"
+            >
+                <div className="space-y-2">
+                    <p>Click a node or link in the preview to select it.</p>
+                    <p>Drag from one node to another to add a link.</p>
+                    <p>
+                        With the preview focused, press Delete or Backspace to remove the selection,
+                        or Escape to clear it.
+                    </p>
+                    <p>Click empty space to clear the selection.</p>
+                </div>
+            </TooltipContent>
+        </Tooltip>
+    );
+}
 
 function NetworkEditor({
     initial,
@@ -62,7 +114,7 @@ function NetworkEditor({
 }) {
     const [name, setName] = useState(initial?.name ?? 'Custom network');
     const [source, setSource] = useState<Network['source']>(initial?.source ?? 'live-example');
-    const [reheat, setReheat] = useState(initial?.reheat ?? 0);
+    const reheat = initial?.reheat ?? 0;
     const [data, setData] = useState<NetworkData>(initial?.data ?? EXAMPLE_NETWORK);
     const [settings, setSettings] = useState<NetworkSettings>(
         initial?.settings ?? DEFAULT_NETWORK_SETTINGS
@@ -76,6 +128,7 @@ function NetworkEditor({
     const nameId = useId();
     const previewHelpId = useId();
     const paintedView = useRef<NetworkView | undefined>(undefined);
+    const linkDrag = useRef<NetworkLinkDrag | null>(null);
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
     const [tab, setTab] = useState('custom');
     const [selection, setSelection] = useState<NetworkSelection>(null);
@@ -87,8 +140,15 @@ function NetworkEditor({
     const [previewError, setPreviewError] = useState('');
     const [ready, setReady] = useState(false);
     const draft = useMemo(
-        () => ({ name, data, settings, source, reheat }),
-        [name, data, settings, source, reheat]
+        () => ({
+            name,
+            data,
+            settings,
+            source,
+            reheat,
+            positions: initial?.data === data ? initial.positions : undefined
+        }),
+        [name, data, settings, source, reheat, initial]
     );
     const live = useNetworkPreview(draft, true, (message) => {
         setPreviewError(message ?? '');
@@ -103,32 +163,71 @@ function NetworkEditor({
         let view: NetworkView | undefined;
         const paint = () => {
             if (!view || previousLive !== live.current) {
-                view = networkPreviewView(draft.data, live.current);
+                view = networkPreviewView(
+                    draft.data,
+                    live.current ??
+                        (draft.positions
+                            ? { data: draft.data, positions: draft.positions }
+                            : undefined)
+                );
                 previousLive = live.current;
             }
             paintedView.current = view;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawNetwork(ctx, draft, canvas.width, canvas.height, undefined, view, selection);
+            const drag = linkDrag.current;
+            if (drag?.active && drag.point) {
+                const sourceIndex = view.data.nodes.findIndex((node) => node.id === drag.sourceId);
+                const source = view.positions[sourceIndex];
+                if (source) {
+                    const fit = networkFit(canvas.width, canvas.height);
+                    ctx.save();
+                    ctx.translate(fit.x, fit.y);
+                    ctx.scale(fit.scale, fit.scale);
+                    ctx.strokeStyle = drag.targetId ? '#a5b4fc' : '#ffffff';
+                    ctx.lineWidth = Math.max(2, settings.edgeWidth);
+                    ctx.setLineDash([8, 6]);
+                    ctx.beginPath();
+                    ctx.moveTo(source.x, source.y);
+                    ctx.lineTo(drag.point.x, drag.point.y);
+                    ctx.stroke();
+                    if (drag.targetId) {
+                        const targetIndex = view.data.nodes.findIndex(
+                            (node) => node.id === drag.targetId
+                        );
+                        const target = view.positions[targetIndex];
+                        if (target) {
+                            ctx.setLineDash([]);
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.arc(target.x, target.y, settings.nodeRadius + 6, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                    }
+                    ctx.restore();
+                }
+            }
             raf = requestAnimationFrame(paint);
         };
         paint();
         return () => cancelAnimationFrame(raf);
-    }, [canvas, draft, live, selection]);
+    }, [canvas, draft, live, selection, settings.edgeWidth, settings.nodeRadius]);
 
-    const canvasTarget = (event: PointerEvent<HTMLCanvasElement>) => {
-        if (!paintedView.current) return null;
+    const canvasPoint = (event: PointerEvent<HTMLCanvasElement>) => {
         const bounds = event.currentTarget.getBoundingClientRect();
-        const point = networkPointerPosition(event.clientX, event.clientY, {
+        return networkPointerPosition(event.clientX, event.clientY, {
             x: bounds.left,
             y: bounds.top,
             w: bounds.width,
             h: bounds.height
         });
+    };
+    const canvasTarget = (event: PointerEvent<HTMLCanvasElement>) => {
+        if (!paintedView.current) return null;
+        const point = canvasPoint(event);
         return point ? hitTestNetwork(paintedView.current, settings, point) : null;
     };
-    const selectFromCanvas = (event: PointerEvent<HTMLCanvasElement>) => {
-        if (event.button !== 0) return;
-        const target = canvasTarget(event);
+    const selectFromCanvas = (target: NetworkSelection) => {
         setSelection(target);
         if (!target) return;
         const index =
@@ -142,6 +241,49 @@ function NetworkEditor({
             page: Math.floor(index / NETWORK_TOPOLOGY_PAGE_SIZE)
         });
     };
+    const moveLinkDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+        const drag = linkDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) {
+            event.currentTarget.style.cursor = canvasTarget(event) ? 'pointer' : 'default';
+            return;
+        }
+        if (
+            !drag.active &&
+            Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 6
+        )
+            drag.active = true;
+        if (!drag.active) return;
+        const point = canvasPoint(event);
+        drag.point = point ? { x: point.x, y: point.y } : null;
+        const target = canvasTarget(event);
+        drag.targetId =
+            target && 'nodeId' in target && target.nodeId !== drag.sourceId ? target.nodeId : null;
+        event.currentTarget.style.cursor = drag.targetId ? 'copy' : 'crosshair';
+    };
+    const finishLinkDrag = (event: PointerEvent<HTMLCanvasElement>) => {
+        const drag = linkDrag.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        linkDrag.current = null;
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        const target = canvasTarget(event);
+        event.currentTarget.style.cursor = target ? 'pointer' : 'default';
+        if (!drag.active || !target || !('nodeId' in target) || target.nodeId === drag.sourceId)
+            return;
+        try {
+            const next = appendNetworkLink(data, drag.sourceId, target.nodeId);
+            changeTopology(next);
+            const edgeIndex = next.edges.length - 1;
+            setSelection({ edgeIndex });
+            setTab('custom');
+            setNavigation({
+                section: 'links',
+                page: Math.floor(edgeIndex / NETWORK_TOPOLOGY_PAGE_SIZE)
+            });
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : 'Could not add link.');
+        }
+    };
 
     useEffect(
         () => () => {
@@ -149,21 +291,6 @@ function NetworkEditor({
         },
         []
     );
-
-    const useExample = () => {
-        readVersion.current++;
-        setReading(false);
-        setError('');
-        setTable(null);
-        setData(EXAMPLE_NETWORK);
-        setSelection(null);
-        setNavigation({ section: 'nodes', page: 0 });
-        setTopologySession((value) => value + 1);
-        setTab('custom');
-        setSource('live-example');
-        setSettings((previous) => ({ ...previous, paused: false }));
-        if (fileRef.current) fileRef.current.value = '';
-    };
 
     const readFile = async (file: File) => {
         setTab('custom');
@@ -231,13 +358,24 @@ function NetworkEditor({
 
     const changeSettings = (patch: Partial<NetworkSettings>) =>
         setSettings((previous) => ({ ...previous, ...patch }));
-    const nudge = () => {
-        setReheat((value) => value + 1);
-        changeSettings({ paused: false });
-    };
     const save = () => {
         try {
-            onSave(NetworkSchema.parse({ name: name.trim(), data, settings, source, reheat }));
+            const positions = settings.paused
+                ? networkPreviewView(data, paintedView.current).positions.map(({ x, y }) => ({
+                      x,
+                      y
+                  }))
+                : undefined;
+            onSave(
+                NetworkSchema.parse({
+                    name: name.trim(),
+                    data,
+                    settings,
+                    source,
+                    reheat,
+                    positions
+                })
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Could not save network.');
         }
@@ -253,34 +391,23 @@ function NetworkEditor({
             <DialogContent className="flex max-h-[90vh] w-[min(1160px,96vw)] flex-col overflow-hidden">
                 <header className="flex items-center gap-3 border-b px-6 py-4">
                     <span className="flex size-10 items-center justify-center rounded-xl border bg-muted/40">
-                        <GraphIcon className="size-5" />
+                        {initial ? (
+                            <SlidersHorizontalIcon className="size-5" />
+                        ) : (
+                            <GraphIcon className="size-5" />
+                        )}
                     </span>
-                    <div>
+                    <div className="flex items-center gap-1">
                         <DialogTitle>{initial ? 'Edit network' : 'Add network'}</DialogTitle>
-                        <DialogDescription className="mt-0.5 text-xs">
-                            Arrange connections. Bring them to life.
-                        </DialogDescription>
+                        <NetworkEditorHelp />
                     </div>
                 </header>
                 <div className="grid min-h-0 flex-1 overflow-auto md:grid-cols-[minmax(0,1fr)_360px] md:overflow-hidden">
-                    <div className="flex min-h-[390px] flex-col bg-black text-white md:min-h-[530px]">
-                        <div className="flex items-center justify-between gap-3 px-6 py-5 text-[11px]">
-                            <span className="flex items-center gap-2">
-                                <span
-                                    className={`size-1.5 rounded-full ${settings.paused ? 'bg-white/30' : 'bg-white'}`}
-                                />
-                                {settings.paused
-                                    ? 'Paused'
-                                    : settings.motionStrength > 0
-                                      ? 'Live motion'
-                                      : 'Natural settling'}
-                            </span>
-                            <span className="font-mono text-white/50 tabular-nums">
-                                {data.nodes.length} {data.nodes.length === 1 ? 'node' : 'nodes'} ·{' '}
-                                {data.edges.length} {data.edges.length === 1 ? 'link' : 'links'}
-                            </span>
-                        </div>
-                        <div className="relative min-h-[250px] flex-1">
+                    <div
+                        data-testid="network-preview-pane"
+                        className="relative min-h-[390px] bg-black md:min-h-[530px]"
+                    >
+                        <div className="absolute inset-0">
                             <canvas
                                 ref={setCanvas}
                                 width={1000}
@@ -288,22 +415,58 @@ function NetworkEditor({
                                 aria-label="Network preview"
                                 aria-describedby={previewHelpId}
                                 tabIndex={0}
-                                onPointerDown={selectFromCanvas}
+                                onPointerDown={(event) => {
+                                    if (event.button !== 0) return;
+                                    const target = canvasTarget(event);
+                                    selectFromCanvas(target);
+                                    if (target && 'nodeId' in target) {
+                                        linkDrag.current = {
+                                            pointerId: event.pointerId,
+                                            sourceId: target.nodeId,
+                                            startX: event.clientX,
+                                            startY: event.clientY,
+                                            active: false,
+                                            point: null,
+                                            targetId: null
+                                        };
+                                        event.currentTarget.setPointerCapture(event.pointerId);
+                                    }
+                                }}
                                 onPointerMove={(event) => {
-                                    event.currentTarget.style.cursor = canvasTarget(event)
-                                        ? 'pointer'
-                                        : 'default';
+                                    moveLinkDrag(event);
+                                }}
+                                onPointerUp={finishLinkDrag}
+                                onPointerCancel={(event) => {
+                                    if (linkDrag.current?.pointerId === event.pointerId)
+                                        linkDrag.current = null;
+                                    event.currentTarget.style.cursor = 'default';
+                                }}
+                                onLostPointerCapture={(event) => {
+                                    if (linkDrag.current?.pointerId === event.pointerId)
+                                        linkDrag.current = null;
                                 }}
                                 onPointerLeave={(event) => {
-                                    event.currentTarget.style.cursor = 'default';
+                                    if (!linkDrag.current)
+                                        event.currentTarget.style.cursor = 'default';
                                 }}
                                 onKeyDown={(event) => {
                                     // Keep canvas shortcuts inside this draft, not the editor
                                     // underneath the dialog (where Delete removes a whole layer).
-                                    if (event.key === 'Escape' && !selection) return;
+                                    if (event.key === 'Escape' && !selection && !linkDrag.current)
+                                        return;
                                     event.stopPropagation();
                                     if (event.key === 'Escape') {
                                         event.preventDefault();
+                                        const drag = linkDrag.current;
+                                        if (
+                                            drag &&
+                                            event.currentTarget.hasPointerCapture(drag.pointerId)
+                                        )
+                                            event.currentTarget.releasePointerCapture(
+                                                drag.pointerId
+                                            );
+                                        linkDrag.current = null;
+                                        event.currentTarget.style.cursor = 'default';
                                         setSelection(null);
                                     } else if (
                                         event.key === 'Delete' ||
@@ -327,36 +490,23 @@ function NetworkEditor({
                                         setSelection(null);
                                     }
                                 }}
-                                className="absolute inset-0 h-full w-full object-contain"
+                                className="absolute inset-0 h-full w-full touch-none object-contain"
                             />
                             {busy && (
-                                <output className="absolute inset-0 flex items-center justify-center text-xs text-white/60">
-                                    Starting preview…
+                                <output
+                                    aria-label="Starting preview"
+                                    className="absolute inset-0 flex items-center justify-center"
+                                >
+                                    <span className="size-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                                 </output>
                             )}
                         </div>
-                        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-4">
-                            <div className="text-[11px] leading-relaxed">
-                                <p className="text-white/80">
-                                    {source === 'live-example'
-                                        ? 'Example · simulated data'
-                                        : source === 'custom'
-                                          ? 'Custom topology'
-                                          : 'Imported data'}
-                                </p>
-                                <p className="mt-1 text-white/40">
-                                    Black preview. Transparent layer.
-                                </p>
-                            </div>
-                            <span
-                                id={previewHelpId}
-                                className="max-w-44 text-right text-[10px] text-white/50"
-                            >
-                                Click to select · Delete to remove
-                            </span>
-                        </div>
                     </div>
                     <aside className="min-h-0 min-w-0 border-l bg-popover md:overflow-y-auto">
+                        <span id={previewHelpId} className="sr-only">
+                            Click to select a node or link. Drag from one node to another to add a
+                            link. Press Delete to remove a selection.
+                        </span>
                         <div className="space-y-4 border-b px-5 py-5">
                             <label
                                 htmlFor={nameId}
@@ -374,7 +524,6 @@ function NetworkEditor({
                             <NetworkPlaybackControls
                                 paused={settings.paused}
                                 onPause={() => changeSettings({ paused: !settings.paused })}
-                                onNudge={nudge}
                             />
                         </div>
                         <Tabs
@@ -429,24 +578,16 @@ function NetworkEditor({
                                     onChange={changeTopology}
                                     onSelect={setSelection}
                                 />
-                                <div className="flex gap-2 border-t pt-4">
+                                <div className="border-t pt-4">
                                     <Button
                                         variant="outline"
                                         size="sm"
-                                        className="flex-1 text-xs"
+                                        className="w-full text-xs"
                                         onClick={() => fileRef.current?.click()}
                                         disabled={reading}
                                     >
                                         <UploadSimpleIcon />
                                         {reading ? 'Reading…' : 'Import file'}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-xs"
-                                        onClick={useExample}
-                                    >
-                                        Reset to example
                                     </Button>
                                 </div>
                                 {table && (
@@ -516,16 +657,12 @@ function NetworkEditor({
                         event.target.value = '';
                     }}
                 />
-                <footer className="flex items-center justify-between gap-4 border-t px-6 py-4">
-                    <div className="min-w-0 flex-1 text-xs text-muted-foreground">
-                        {error || previewError ? (
-                            <p role="alert" className="text-destructive">
-                                {error || previewError}
-                            </p>
-                        ) : (
-                            <span>Same nodes and links. One shared motion across the wall.</span>
-                        )}
-                    </div>
+                <footer className="flex flex-col items-end gap-2 border-t px-6 py-4">
+                    {(error || previewError) && (
+                        <p role="alert" className="max-w-full text-right text-xs text-destructive">
+                            {error || previewError}
+                        </p>
+                    )}
                     <div className="flex gap-2">
                         <Button variant="ghost" onClick={onClose}>
                             Cancel
@@ -534,7 +671,7 @@ function NetworkEditor({
                             disabled={busy || reading || !!error || !!previewError || !name.trim()}
                             onClick={save}
                         >
-                            {initial ? 'Apply changes' : 'Add to stage'}
+                            {initial ? 'Apply' : 'Add'}
                         </Button>
                     </div>
                 </footer>
@@ -565,9 +702,8 @@ function NetworkToolForScope({
                 disabled={!!layer?.config.locked}
                 onClick={() => setDraft({ initial: layer?.network, scope })}
             >
-                <GraphIcon />
+                {layer ? <SlidersHorizontalIcon /> : <GraphIcon />}
             </TipButton>
-            {layer?.network && <NetworkLiveControls layer={layer} />}
             {draft && draft.scope === scope && (
                 <NetworkEditor
                     initial={draft.initial}

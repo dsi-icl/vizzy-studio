@@ -185,6 +185,27 @@ describe('Network document and layout', () => {
         }
     });
 
+    it('uses a paused preview snapshot when an existing layer is frozen', () => {
+        const { positions: _positions, ...live } = network;
+        const sim = createNetworkSimulation(live);
+        for (let i = 0; i < 10; i++) sim.advance(i * 50);
+        const snapshot = live.data.nodes.map((_, i) => ({ x: 80 + i * 25, y: 100 + i * 20 }));
+        const paused = {
+            ...live,
+            settings: { ...live.settings, paused: true },
+            positions: snapshot
+        };
+        const previousVersion = sim.topologyVersion;
+        sim.configure(paused);
+        expect(sim.topologyVersion).toBeGreaterThan(previousVersion);
+        expect(sim.view.positions).toEqual(snapshot);
+        for (let i = 0; i < 10; i++) sim.advance(1000 + i * 50);
+        expect(sim.view.positions).toEqual(snapshot);
+        sim.configure({ ...paused, settings: { ...paused.settings, linkDistance: 180 } });
+        expect(sim.view.positions).toEqual(snapshot);
+        sim.stop();
+    });
+
     it('can turn continuous motion off, nudge settled nodes, and keep strong motion bounded', () => {
         const quiet = { ...network, settings: { ...network.settings, motionStrength: 0 } };
         const sim = createNetworkSimulation(quiet);
@@ -217,6 +238,37 @@ describe('Network document and layout', () => {
 
     it('uses the same document key after schema parsing reorders settings', () => {
         expect(networkDocumentKey(network)).toBe(networkDocumentKey(NetworkSchema.parse(network)));
+    });
+
+    it('keeps visual changes on the same frame stream without reheating the layout', () => {
+        const quiet = { ...network, settings: { ...network.settings, motionStrength: 0 } };
+        const sim = createNetworkSimulation(quiet);
+        for (let i = 0; i < 200; i++) sim.advance(i * 50);
+        expect(sim.advance(11000)).toBe(false);
+        const resting = sim.view.positions;
+        const visual = {
+            ...quiet,
+            settings: {
+                ...quiet.settings,
+                colorByGroup: true,
+                showLabels: true,
+                nodeColor: '#ff0000',
+                labelColor: '#00ff00',
+                edgeColor: '#0000ff',
+                edgeWidth: 3
+            }
+        };
+        expect(networkDocumentKey(visual)).toBe(networkDocumentKey(quiet));
+        sim.configure(visual);
+        expect(sim.advance(11050)).toBe(false);
+        expect(sim.view.positions).toEqual(resting);
+        expect(
+            networkDocumentKey({
+                ...visual,
+                settings: { ...visual.settings, linkDistance: 200 }
+            })
+        ).not.toBe(networkDocumentKey(visual));
+        sim.stop();
     });
 
     it('stores white nodes and links without a layer background or runtime coordinates', () => {

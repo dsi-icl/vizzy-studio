@@ -6,13 +6,22 @@ import {
     type NetworkPositions
 } from './schema';
 
-/** Stable identifier for the authored document, independent of geometry and runtime frames. */
+/** Identity of the simulated layout. Paint-only settings leave the frame stream intact. */
 export function networkDocumentKey(network: Network): string {
+    const {
+        charge,
+        linkDistance,
+        linkStrength,
+        collisionRadius,
+        nodeRadius,
+        motionStrength,
+        paused
+    } = network.settings;
     const text = JSON.stringify([
         network.source,
         network.data.nodes.map(({ id, label, group }) => [id, label, group]),
         network.data.edges.map(({ source, target, weight }) => [source, target, weight]),
-        Object.entries(network.settings).sort(([a], [b]) => a.localeCompare(b)),
+        [charge, linkDistance, linkStrength, collisionRadius, nodeRadius, motionStrength, paused],
         network.reheat,
         network.positions?.map(({ x, y }) => [x, y])
     ]);
