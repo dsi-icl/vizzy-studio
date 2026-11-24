@@ -29,7 +29,7 @@ describe('selected map gestures', () => {
 
     test('small movement stays undecided and camera limits match the parameter fields', () => {
         expect(classifyMapTouchGesture(100, 101, 250, 253)).toBeNull();
-        expect(clampMapView(-1, 95)).toEqual({ zoom: 0, pitch: 90 });
+        expect(clampMapView(-1, 95)).toEqual({ zoom: 0, pitch: 80 });
         expect(clampMapView(21, -2)).toEqual({ zoom: 20, pitch: 0 });
     });
 
@@ -43,7 +43,7 @@ describe('selected map gestures', () => {
                 minZoom: 0,
                 maxZoom: 22,
                 minPitch: 0,
-                maxPitch: 90,
+                maxPitch: 80,
                 renderWorldCopies: true
             });
             transform.resize(160, 60);

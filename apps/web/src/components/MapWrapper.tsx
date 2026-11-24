@@ -69,6 +69,9 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     // Render the authored editor viewport, then enlarge it to the layer bounds.
     // Camera zoom alone cannot preserve framing across different viewport sizes.
     const viewportScale = layer.viewportScale ?? 1;
+    const pitch = Math.max(0, Math.min(80, layer.view.pitch));
+    const renderedLayer =
+        pitch === layer.view.pitch ? layer : { ...layer, view: { ...layer.view, pitch } };
     const mapPixelRatio =
         (pixelRatio ?? (typeof window === 'undefined' ? 1 : window.devicePixelRatio)) /
         viewportScale;
@@ -87,7 +90,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     }, [mapPixelRatio]);
 
     const styleId = layer.style ?? DEFAULT_MAP_STYLE_ID;
-    const showBuildings = layer.view.pitch > 0;
+    const showBuildings = pitch > 0;
     const tileUrl = useMemo(() => {
         const path = `/api/projects/${encodeURIComponent(projectId)}/tiles/protomaps/{z}/{x}/{y}`;
         return typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
@@ -139,7 +142,7 @@ export const MapWrapper: FC<MapWrapperProps> = ({
         >
             {wall ? (
                 <WallMapCanvas
-                    layer={layer}
+                    layer={renderedLayer}
                     wall={wall}
                     mapStyle={mapStyle}
                     pixelRatio={mapPixelRatio}
@@ -155,8 +158,8 @@ export const MapWrapper: FC<MapWrapperProps> = ({
                     longitude={layer.view.longitude}
                     latitude={layer.view.latitude}
                     zoom={layer.view.zoom}
-                    maxPitch={90}
-                    pitch={layer.view.pitch}
+                    maxPitch={80}
+                    pitch={pitch}
                     bearing={layer.view.bearing}
                     attributionControl={false}
                     transformRequest={transformRequest}
@@ -217,7 +220,7 @@ function WallMapCanvas({
             // Zero forces full symbol placement on every render. A minimal
             // nonzero duration lets MapLibre schedule it incrementally.
             fadeDuration: 1,
-            maxPitch: 90,
+            maxPitch: 80,
             transformRequest
         });
         const canvas = map.getCanvas();

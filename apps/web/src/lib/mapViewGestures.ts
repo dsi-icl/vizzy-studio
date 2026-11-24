@@ -2,15 +2,13 @@ import { LngLat, Point, type Map as MapLibreMap } from 'maplibre-gl';
 
 export const MAP_ZOOM_MIN = 0;
 export const MAP_ZOOM_MAX = 20;
-export const MAP_PITCH_MIN = 0;
-export const MAP_PITCH_MAX = 90;
 
 export type MapTouchGestureKind = 'zoom' | 'pitch';
 
 export function clampMapView(zoom: number, pitch: number) {
     return {
         zoom: Math.max(MAP_ZOOM_MIN, Math.min(MAP_ZOOM_MAX, zoom)),
-        pitch: Math.max(MAP_PITCH_MIN, Math.min(MAP_PITCH_MAX, pitch))
+        pitch: Math.max(0, Math.min(80, pitch))
     };
 }
 
@@ -74,7 +72,7 @@ export function mapZoomCenterAtLocalPoint(
     // MapLibre camera moves until its controlled props have been updated.
     const camera = map.transform.clone();
     camera.setZoom(view.zoom);
-    camera.setPitch(view.pitch);
+    camera.setPitch(Math.max(0, Math.min(80, view.pitch)));
     camera.setBearing(view.bearing);
     camera.setCenter(new LngLat(view.longitude, view.latitude));
     const location = camera.screenPointToLocation(mapPoint);

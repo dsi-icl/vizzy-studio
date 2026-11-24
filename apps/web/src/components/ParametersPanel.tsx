@@ -332,8 +332,11 @@ export function ParametersPanel({
                                             step={1}
                                             smallStep={0.25}
                                             min={0}
-                                            max={90}
-                                            value={selectedLayer.view.pitch}
+                                            max={80}
+                                            value={Math.max(
+                                                0,
+                                                Math.min(80, selectedLayer.view.pitch)
+                                            )}
                                             onValueChange={(v) => {
                                                 if (v !== null) updateMapView('pitch', v);
                                             }}
