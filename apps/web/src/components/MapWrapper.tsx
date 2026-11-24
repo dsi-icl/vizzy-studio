@@ -70,10 +70,8 @@ export const MapWrapper: FC<MapWrapperProps> = ({
     // Camera zoom alone cannot preserve framing across different viewport sizes.
     const viewportScale = layer.viewportScale ?? 1;
     const pitch = Math.max(0, Math.min(80, layer.view.pitch));
-    const renderedLayer = useMemo(
-        () => (pitch === layer.view.pitch ? layer : { ...layer, view: { ...layer.view, pitch } }),
-        [layer, pitch]
-    );
+    const renderedLayer =
+        pitch === layer.view.pitch ? layer : { ...layer, view: { ...layer.view, pitch } };
     const mapPixelRatio =
         (pixelRatio ?? (typeof window === 'undefined' ? 1 : window.devicePixelRatio)) /
         viewportScale;
