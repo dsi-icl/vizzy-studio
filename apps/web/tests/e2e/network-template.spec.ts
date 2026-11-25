@@ -169,6 +169,96 @@ async function save(page: Page) {
     });
 }
 
+test('closing the network editor saves a draft until Add or Apply', async ({ page }) => {
+    await openEditor(page);
+    const addNetwork = page
+        .locator('#titlebar')
+        .getByRole('button', { name: 'Add network', exact: true });
+    const layerIds = () =>
+        page.evaluate(() => [
+            ...(window as unknown as RuntimeWindow).__EDITOR_STORE__.getState().layers.keys()
+        ]);
+    const selectedNetwork = () =>
+        page.evaluate(() => {
+            const store = (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState();
+            const layer = store.layers.get(Number(store.selectedLayerIds[0]));
+            return layer?.type === 'graph' ? layer : undefined;
+        });
+    const dismiss = () =>
+        page.locator('[data-slot="dialog-backdrop"]').click({ position: { x: 10, y: 10 } });
+    const before = await layerIds();
+    let createdId: number | undefined;
+    try {
+        await addNetwork.click();
+        await dismiss();
+        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeHidden();
+        expect(await layerIds()).toEqual(before);
+
+        await addNetwork.click();
+        await page.getByLabel('Node name Vizzy', { exact: true }).fill('Changed node');
+        await dismiss();
+        await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeHidden();
+        expect(await layerIds()).toEqual(before);
+
+        await addNetwork.click();
+        await expect(page.getByLabel('Node name Vizzy', { exact: true })).toHaveValue(
+            'Changed node'
+        );
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
+        const created = (await selectedNetwork())!;
+        createdId = created.numericId;
+        expect(created.network?.data.nodes[0]?.label).toBe('Changed node');
+
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await page.getByRole('slider', { name: 'Link distance' }).fill('160');
+        await dismiss();
+        await expect(page.getByRole('button', { name: 'Apply', exact: true })).toBeHidden();
+        expect((await selectedNetwork())?.network?.settings.linkDistance).toBe(
+            created.network?.settings.linkDistance
+        );
+
+        // The edit tool unmounts when selection changes; its draft still survives.
+        await page.evaluate(() => {
+            (window as unknown as RuntimeWindow).__EDITOR_STORE__.setState({
+                selectedLayerIds: []
+            });
+        });
+        await expect(page.getByRole('button', { name: 'Edit network', exact: true })).toBeHidden();
+        await page.evaluate((id) => {
+            (window as unknown as RuntimeWindow).__EDITOR_STORE__.setState({
+                selectedLayerIds: [String(id)]
+            });
+        }, createdId);
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Link distance' })).toHaveValue('160');
+        await page.getByRole('button', { name: 'Apply', exact: true }).click();
+        expect((await selectedNetwork())?.network?.settings.linkDistance).toBe(160);
+
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await page.getByRole('slider', { name: 'Link distance' }).fill('200');
+        await dismiss();
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Link distance' })).toHaveValue('200');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await page.getByRole('button', { name: 'Edit network', exact: true }).click();
+        await page.getByRole('tab', { name: 'Motion', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Link distance' })).toHaveValue('160');
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        expect((await selectedNetwork())?.network?.settings.linkDistance).toBe(160);
+    } finally {
+        if (createdId !== undefined) {
+            await page.evaluate((id) => {
+                (window as unknown as RuntimeWindow).__EDITOR_STORE__.getState().removeLayer(id);
+            }, createdId);
+            await save(page);
+        }
+    }
+});
+
 test('network example, import, edit, save and reload use native layers', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

@@ -62,6 +62,22 @@ type NetworkLinkDrag = {
     targetId: string | null;
 };
 
+type NetworkEditorDraft = {
+    name: string;
+    source: Network['source'];
+    data: NetworkData;
+    settings: NetworkSettings;
+    table: CsvTable | null;
+    mapping: CsvMapping;
+    tab: string;
+    selection: NetworkSelection;
+    navigation: NetworkTopologyNavigation;
+    positions?: Network['positions'];
+    error: string;
+};
+
+const networkEditorDrafts = new Map<string, NetworkEditorDraft>();
+
 function NetworkEditorHelp() {
     const triggerId = useId();
     const [open, setOpen] = useState(false);
@@ -105,23 +121,33 @@ function NetworkEditorHelp() {
 
 function NetworkEditor({
     initial,
+    savedDraft,
     onClose,
+    onDismiss,
     onSave
 }: {
     initial?: Network;
+    savedDraft?: NetworkEditorDraft;
     onClose: () => void;
+    onDismiss: (draft: NetworkEditorDraft | null) => void;
     onSave: (network: Network) => void;
 }) {
-    const [name, setName] = useState(initial?.name ?? 'Custom network');
-    const [source, setSource] = useState<Network['source']>(initial?.source ?? 'live-example');
-    const reheat = initial?.reheat ?? 0;
-    const [data, setData] = useState<NetworkData>(initial?.data ?? EXAMPLE_NETWORK);
-    const [settings, setSettings] = useState<NetworkSettings>(
-        initial?.settings ?? DEFAULT_NETWORK_SETTINGS
+    const [name, setName] = useState(savedDraft?.name ?? initial?.name ?? 'Custom network');
+    const [source, setSource] = useState<Network['source']>(
+        savedDraft?.source ?? initial?.source ?? 'live-example'
     );
-    const [table, setTable] = useState<CsvTable | null>(null);
-    const [mapping, setMapping] = useState<CsvMapping>({ source: '', target: '', weight: '' });
-    const [error, setError] = useState('');
+    const reheat = initial?.reheat ?? 0;
+    const [data, setData] = useState<NetworkData>(
+        savedDraft?.data ?? initial?.data ?? EXAMPLE_NETWORK
+    );
+    const [settings, setSettings] = useState<NetworkSettings>(
+        savedDraft?.settings ?? initial?.settings ?? DEFAULT_NETWORK_SETTINGS
+    );
+    const [table, setTable] = useState<CsvTable | null>(savedDraft?.table ?? null);
+    const [mapping, setMapping] = useState<CsvMapping>(
+        savedDraft?.mapping ?? { source: '', target: '', weight: '' }
+    );
+    const [error, setError] = useState(savedDraft?.error ?? '');
     const [reading, setReading] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
     const readVersion = useRef(0);
@@ -130,12 +156,11 @@ function NetworkEditor({
     const paintedView = useRef<NetworkView | undefined>(undefined);
     const linkDrag = useRef<NetworkLinkDrag | null>(null);
     const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-    const [tab, setTab] = useState('custom');
-    const [selection, setSelection] = useState<NetworkSelection>(null);
-    const [navigation, setNavigation] = useState<NetworkTopologyNavigation>({
-        section: 'nodes',
-        page: 0
-    });
+    const [tab, setTab] = useState(savedDraft?.tab ?? 'custom');
+    const [selection, setSelection] = useState<NetworkSelection>(savedDraft?.selection ?? null);
+    const [navigation, setNavigation] = useState<NetworkTopologyNavigation>(
+        savedDraft?.navigation ?? { section: 'nodes', page: 0 }
+    );
     const [topologySession, setTopologySession] = useState(0);
     const [previewError, setPreviewError] = useState('');
     const [ready, setReady] = useState(false);
@@ -146,9 +171,14 @@ function NetworkEditor({
             settings,
             source,
             reheat,
-            positions: initial?.data === data ? initial.positions : undefined
+            positions:
+                savedDraft?.data === data
+                    ? savedDraft.positions
+                    : initial?.data === data
+                      ? initial.positions
+                      : undefined
         }),
-        [name, data, settings, source, reheat, initial]
+        [name, data, settings, source, reheat, initial, savedDraft]
     );
     const live = useNetworkPreview(draft, true, (message) => {
         setPreviewError(message ?? '');
@@ -358,6 +388,21 @@ function NetworkEditor({
 
     const changeSettings = (patch: Partial<NetworkSettings>) =>
         setSettings((previous) => ({ ...previous, ...patch }));
+    const hasChanges = () => {
+        const originalName = initial?.name ?? 'Custom network';
+        const originalSource = initial?.source ?? 'live-example';
+        const originalData = initial?.data ?? EXAMPLE_NETWORK;
+        const originalSettings = initial?.settings ?? DEFAULT_NETWORK_SETTINGS;
+        return (
+            name !== originalName ||
+            source !== originalSource ||
+            (data !== originalData && JSON.stringify(data) !== JSON.stringify(originalData)) ||
+            (settings !== originalSettings &&
+                JSON.stringify(settings) !== JSON.stringify(originalSettings)) ||
+            table !== null ||
+            Boolean(mapping.source || mapping.target || mapping.weight || error)
+        );
+    };
     const save = () => {
         try {
             const positions = settings.paused
@@ -380,12 +425,36 @@ function NetworkEditor({
             setError(err instanceof Error ? err.message : 'Could not save network.');
         }
     };
+    const dismiss = () => {
+        if (reading) return;
+        onDismiss(
+            hasChanges()
+                ? {
+                      name,
+                      source,
+                      data,
+                      settings,
+                      table,
+                      mapping,
+                      tab,
+                      selection,
+                      navigation,
+                      positions: settings.paused
+                          ? networkPreviewView(data, paintedView.current).positions.map(
+                                ({ x, y }) => ({ x, y })
+                            )
+                          : undefined,
+                      error
+                  }
+                : null
+        );
+    };
 
     return (
         <Dialog
             open
             onOpenChange={(open) => {
-                if (!open) onClose();
+                if (!open) dismiss();
             }}
         >
             <DialogContent className="flex max-h-[90vh] w-[min(1160px,96vw)] flex-col overflow-hidden">
@@ -517,7 +586,10 @@ function NetworkEditor({
                                     id={nameId}
                                     maxLength={100}
                                     value={name}
-                                    onChange={(event) => setName(event.target.value)}
+                                    onChange={(event) => {
+                                        setName(event.target.value);
+                                        setError('');
+                                    }}
                                     className="h-9 rounded-lg border-border bg-background text-sm text-foreground shadow-none"
                                 />
                             </label>
@@ -693,11 +765,15 @@ function NetworkToolForScope({
     scope: string;
 }) {
     const [draft, setDraft] = useState<{ initial?: Network; scope: string } | null>(null);
-    const close = () => setDraft(null);
+    const draftKey = `${scope}/${layer?.numericId ?? 'new'}`;
+    const close = () => {
+        networkEditorDrafts.delete(draftKey);
+        setDraft(null);
+    };
     return (
         <>
             <TipButton
-                tip={layer ? 'Edit network' : 'Add network'}
+                tip={`${layer ? 'Edit network' : 'Add network'}${networkEditorDrafts.has(draftKey) ? ' (draft saved)' : ''}`}
                 aria-label={layer ? 'Edit network' : 'Add network'}
                 disabled={!!layer?.config.locked}
                 onClick={() => setDraft({ initial: layer?.network, scope })}
@@ -707,7 +783,13 @@ function NetworkToolForScope({
             {draft && draft.scope === scope && (
                 <NetworkEditor
                     initial={draft.initial}
+                    savedDraft={networkEditorDrafts.get(draftKey)}
                     onClose={close}
+                    onDismiss={(value) => {
+                        if (value) networkEditorDrafts.set(draftKey, value);
+                        else networkEditorDrafts.delete(draftKey);
+                        setDraft(null);
+                    }}
                     onSave={(network) => {
                         const store = useEditorStore.getState();
                         if (
