@@ -324,12 +324,12 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         projectId: z.string().optional(),
         commitId: z.string().optional(),
         slideId: z.string().optional(),
+        bindingId: z.string().optional(),
         layout: StageLayoutSchema.optional(),
         customRender: z
             .object({
                 url: z.string(),
-                compat: z.boolean().default(false),
-                proxy: z.boolean().default(false)
+                compat: z.boolean().default(false)
             })
             .optional(),
         boundSource: z.enum(['live', 'gallery', 'signage']).optional()
@@ -405,6 +405,11 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         progress: z.number()
     }),
     z.object({ type: z.literal('clear_stage') }),
+    z.object({
+        type: z.literal('wall_serve_loaded'),
+        bindingId: z.string().regex(/^[A-Za-z0-9_-]{22}$/),
+        elapsedMs: z.number().min(0).max(120_000)
+    }),
     z.object({ type: z.literal('ping') }),
     z.object({ type: z.literal('pong'), t0: z.number(), t1: z.number(), t2: z.number() }),
     z.object({ type: z.literal('reboot'), immediate: z.boolean().optional() }),
@@ -596,12 +601,10 @@ export interface ScopeState {
     mutationRevision?: number;
     /** Cached JSON payload for hydrate messages. Invalidated on any layer mutation. */
     hydrateCache: string | null;
-    /** Optional custom render URL from the project configuration. */
+    /** Derived `/serve/<projectId>` path for a custom project; never a public demo URL. */
     customRenderUrl?: string;
     /** Whether the custom render URL should be displayed in compatibility mode. */
     customRenderCompat?: boolean;
-    /** Whether custom render should be loaded via the built-in proxy. */
-    customRenderProxy?: boolean;
 }
 
 export interface Slide {

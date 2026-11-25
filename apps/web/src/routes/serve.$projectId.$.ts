@@ -1,0 +1,402 @@
+import { env } from '@repo/env';
+import { createFileRoute } from '@tanstack/react-router';
+
+import { isCustomProject } from '~/lib/customProject';
+import { buildForwardedHeaders, buildRelayedHeaders } from '~/lib/serveHeaders';
+import {
+    addServeCorsHeaders,
+    isAllowedServeRequest,
+    servePreflightResponse
+} from '~/lib/serveRequestPolicy';
+import {
+    buildServeUpstreamUrl,
+    isSocketIoPollingRequest,
+    isPublicServePath,
+    parseServePath,
+    resolveDemoHost,
+    rewriteServeLocation,
+    serveBasePath,
+    serveFetchTimeoutMs,
+    servePublicBasePath,
+    SERVE_SESSION_QUERY_PARAM,
+    upstreamPathname
+} from '~/lib/serveUrls';
+import { logAuditDenied, logAuditFailure } from '~/server/audit';
+import { isWallBoundToProject } from '~/server/serveAuthz';
+import { fetchServeControlDocument } from '~/server/serveControlHttp';
+import {
+    createServeCookie,
+    resolveServeCookieGrant,
+    shouldRefreshServeCookie,
+    type ServeActor
+} from '~/server/serveCookie';
+import { getServeOrigin, isServeOriginRequest } from '~/server/serveOrigin';
+import { getServeProject } from '~/server/serveProject';
+import { recordServeTiming, serveTraceId } from '~/server/serveTiming';
+import {
+    isWebSocketUpgrade,
+    resolveServeWebSocketUpstream,
+    serveWebSocketHooks
+} from '~/server/serveWebSocket';
+
+const SERVE_FETCH_TIMEOUT_MS = Number(process.env.SERVE_FETCH_TIMEOUT_MS ?? 30_000);
+const SERVE_ENTRY_FRESH_CONNECTION =
+    (process.env.SERVE_ENTRY_FRESH_CONNECTION ?? process.env.SERVE_SCREEN_FRESH_CONNECTION) !== '0';
+let pendingServeUpstreamFetches = 0;
+const KEEPALIVE_GIF = Buffer.from('R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=', 'base64');
+const SERVE_SANDBOX_CSP = 'sandbox allow-scripts allow-forms allow-same-site-none-cookies';
+const SERVE_CONTENT_RESTRICTIONS = "object-src 'none'; base-uri 'self'";
+
+function actorIsLive(actor: ServeActor, projectId: string): boolean {
+    if (actor.surface === 'wall' || actor.surface === 'control') {
+        return isWallBoundToProject(actor.wallId, projectId, actor.scopeId, actor.bindingId);
+    }
+    return true;
+}
+
+function notFound(): Response {
+    return new Response('Not found', { status: 404 });
+}
+
+export async function handleServeRequest(request: Request): Promise<Response> {
+    const requestStartedAt = performance.now();
+    if (!isServeOriginRequest(request)) return notFound();
+    const serveOrigin = getServeOrigin()!;
+    const url = new URL(request.url);
+    const parsed = parseServePath(url.pathname);
+    if (!parsed || parsed.rest.startsWith('/s/')) return notFound();
+    const publicRequest = isPublicServePath(parsed);
+
+    if (parsed.rest === '/_launch') return notFound();
+
+    if (!isAllowedServeRequest(request, serveOrigin.origin)) {
+        return new Response('Forbidden', { status: 403 });
+    }
+
+    if (isWebSocketUpgrade(request)) {
+        if (
+            !['null', serveOrigin.origin].includes(request.headers.get('origin') ?? '') ||
+            !(await resolveServeWebSocketUpstream(request))
+        ) {
+            return new Response('Forbidden', { status: 403 });
+        }
+        return Object.assign(new Response('WebSocket upgrade is required.', { status: 426 }), {
+            crossws: serveWebSocketHooks
+        });
+    }
+
+    const preflight = servePreflightResponse(request);
+    if (preflight) return preflight;
+    if (
+        !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+        request.headers.get('origin') !== 'null' &&
+        request.headers.get('origin') !== serveOrigin.origin
+    )
+        return new Response('Forbidden', { status: 403 });
+    const { projectId } = parsed;
+    const project = await getServeProject(projectId).catch(() => null);
+    if (!project || !isCustomProject(project)) return notFound();
+
+    const port = project.customPort;
+    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1024 || port > 65535) {
+        await logAuditFailure({
+            action: 'SERVE_PROXY_FAILED',
+            reasonCode: 'CUSTOM_PORT_NOT_CONFIGURED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Custom project has no port configured', { status: 503 });
+    }
+
+    const grant = publicRequest
+        ? null
+        : resolveServeCookieGrant(request, projectId, (actor) => actorIsLive(actor, projectId));
+    if (!publicRequest && !grant) {
+        await logAuditDenied({
+            action: 'SERVE_DENIED',
+            reasonCode: 'NOT_BOUND_OR_NO_CREDENTIAL',
+            resourceType: 'project',
+            resourceId: projectId,
+            authContext: { guest: true },
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Forbidden', { status: 403 });
+    }
+    if (parsed.rest === '/_keepalive') {
+        if (!grant) return new Response('Forbidden', { status: 403 });
+        const { actor, routeId } = grant;
+        if (request.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+        return new Response(KEEPALIVE_GIF, {
+            headers: {
+                'Content-Type': 'image/gif',
+                'Cache-Control': 'private, no-store',
+                'Referrer-Policy': 'same-origin',
+                ...(actor.surface !== 'preview'
+                    ? { 'Set-Cookie': createServeCookie({ request, projectId, routeId, actor }) }
+                    : {})
+            }
+        });
+    }
+
+    const publicBase = publicRequest ? servePublicBasePath(projectId) : serveBasePath(projectId);
+    const actor = grant?.actor ?? { surface: 'public' as const };
+    const traceId =
+        grant && 'bindingId' in grant.actor ? serveTraceId(grant.actor.bindingId) : null;
+
+    const host = resolveDemoHost(env.DEMOS_HOSTS, project.customHost);
+    if (!host) {
+        await logAuditFailure({
+            action: 'SERVE_PROXY_FAILED',
+            reasonCode: 'DEMO_HOST_NOT_ALLOWED',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Demo host is not configured', { status: 503 });
+    }
+
+    url.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
+    const timeoutMs = serveFetchTimeoutMs(parsed.rest, url.searchParams, SERVE_FETCH_TIMEOUT_MS);
+    const requestKind = isSocketIoPollingRequest(parsed.rest, url.searchParams)
+        ? 'socket-io-polling'
+        : parsed.rest.startsWith('/control')
+          ? 'control'
+          : parsed.rest.startsWith('/screen')
+            ? 'screen'
+            : 'other';
+    const logSample = requestKind !== 'other';
+    const freshConnection =
+        request.method === 'GET' &&
+        ['/screen', '/screen/', '/control', '/control/'].includes(parsed.rest) &&
+        SERVE_ENTRY_FRESH_CONNECTION;
+    const isolatedControl =
+        request.method === 'GET' && ['/control', '/control/'].includes(parsed.rest);
+    const transport = isolatedControl ? 'node-http' : 'bun-fetch';
+    const upstreamUrl = buildServeUpstreamUrl({
+        host,
+        port,
+        pathname: upstreamPathname(parsed, url.pathname, project.customStripPrefix),
+        search: url.search
+    });
+    const setupMs = performance.now() - requestStartedAt;
+    recordServeTiming('proxy-setup', setupMs, { traceId, projectId, requestKind }, logSample);
+
+    let upstream: Response;
+    const upstreamStartedAt = performance.now();
+    const serveFetchesAtStart = ++pendingServeUpstreamFetches;
+    let serveFetchesAtHeaders = 0;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    try {
+        const signal = AbortSignal.any([request.signal, timeoutSignal]);
+        const forwardedHeaders = buildForwardedHeaders(request, actor, publicBase);
+        upstream = isolatedControl
+            ? await fetchServeControlDocument(upstreamUrl, forwardedHeaders, signal)
+            : await fetch(upstreamUrl, {
+                  method: request.method,
+                  headers: forwardedHeaders,
+                  body: request.body,
+                  duplex: 'half',
+                  redirect: 'manual',
+                  ...(freshConnection ? { keepalive: false } : {}),
+                  // Release abandoned polls instead of holding a Bun fetch slot.
+                  signal
+              } as RequestInit & { duplex: 'half' });
+        serveFetchesAtHeaders = pendingServeUpstreamFetches;
+    } catch (error) {
+        const clientAborted = request.signal.aborted;
+        const timedOut =
+            !clientAborted &&
+            (timeoutSignal.aborted || (error instanceof Error && error.name === 'TimeoutError'));
+        const upstreamMs = performance.now() - upstreamStartedAt;
+        if (clientAborted) {
+            recordServeTiming('proxy-upstream', upstreamMs, {
+                traceId,
+                projectId,
+                requestKind,
+                status: 499,
+                freshConnection,
+                transport,
+                serveFetchesAtStart,
+                serveFetchesAtFailure: pendingServeUpstreamFetches,
+                errorCode: 'client-aborted'
+            });
+            return new Response(null, { status: 499 });
+        }
+        recordServeTiming('proxy-upstream', upstreamMs, {
+            traceId,
+            projectId,
+            requestKind,
+            status: 502,
+            freshConnection,
+            transport,
+            serveFetchesAtStart,
+            serveFetchesAtFailure: pendingServeUpstreamFetches,
+            errorCode: timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
+        });
+        console.warn(
+            '[Serve] Upstream fetch failed',
+            JSON.stringify({
+                projectId,
+                method: request.method,
+                surface: requestKind,
+                traceId,
+                elapsedMs: Math.round(upstreamMs),
+                timeoutMs,
+                freshConnection,
+                transport,
+                serveFetchesAtStart,
+                serveFetchesAtFailure: pendingServeUpstreamFetches,
+                errorName: error instanceof Error ? error.name : 'unknown',
+                causeCode:
+                    error instanceof Error &&
+                    error.cause &&
+                    typeof error.cause === 'object' &&
+                    'code' in error.cause &&
+                    typeof error.cause.code === 'string'
+                        ? error.cause.code
+                        : undefined,
+                kind: timedOut ? 'timeout' : 'fetch-failed'
+            })
+        );
+        await logAuditFailure({
+            action: 'SERVE_PROXY_FAILED',
+            reasonCode: timedOut ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNREACHABLE',
+            resourceType: 'project',
+            resourceId: projectId,
+            executionContext: {
+                surface: 'http',
+                operation: `${request.method} /serve/$projectId/$`,
+                request
+            }
+        });
+        return new Response('Demo unavailable', {
+            status: 502,
+            headers: {
+                'Cache-Control': 'no-store',
+                'Server-Timing': `vizzy_setup;dur=${Math.round(setupMs)}, vizzy_upstream;dur=${Math.round(upstreamMs)}`,
+                ...(traceId ? { 'X-Vizzy-Serve-Trace': traceId } : {}),
+                'X-Vizzy-Serve-Error': timedOut ? 'upstream-timeout' : 'upstream-fetch-failed'
+            }
+        });
+    } finally {
+        pendingServeUpstreamFetches -= 1;
+    }
+
+    const upstreamMs = performance.now() - upstreamStartedAt;
+    recordServeTiming(
+        'proxy-upstream',
+        upstreamMs,
+        {
+            traceId,
+            projectId,
+            requestKind,
+            status: upstream.status,
+            freshConnection,
+            transport,
+            serveFetchesAtStart,
+            serveFetchesAtHeaders
+        },
+        logSample || upstream.status >= 500
+    );
+    const headers = buildRelayedHeaders(upstream, request);
+    headers.set(
+        'Server-Timing',
+        `vizzy_setup;dur=${Math.round(setupMs)}, vizzy_upstream;dur=${Math.round(upstreamMs)}`
+    );
+    if (traceId) headers.set('X-Vizzy-Serve-Trace', traceId);
+    headers.set('Cache-Control', 'private, no-store');
+    if (upstream.status === 502) headers.set('X-Vizzy-Serve-Error', 'upstream-returned-502');
+    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('X-Content-Type-Options', 'nosniff');
+    // Any upstream content that a browser treats as a document (HTML, SVG,
+    // XML, PDF) must be sandboxed, including direct admin preview tabs.
+    // A nested HTML iframe has an opaque-origin demo document as an ancestor.
+    // `frame-ancestors 'self'` blocks that iframe, even though it is served
+    // from this host. Only relax framing for an authorized HTML iframe;
+    // keep the sandbox and the top-level entry documents unchanged.
+    const isNestedHtmlIframe =
+        request.method === 'GET' &&
+        request.headers.get('sec-fetch-dest') === 'iframe' &&
+        parsed.rest.toLowerCase().endsWith('.html') &&
+        (publicRequest ||
+            new URL(request.url).searchParams.get(SERVE_SESSION_QUERY_PARAM) === grant?.routeId);
+    headers.set(
+        'Content-Security-Policy',
+        isNestedHtmlIframe
+            ? `${SERVE_SANDBOX_CSP}; ${SERVE_CONTENT_RESTRICTIONS}`
+            : `${SERVE_SANDBOX_CSP}; frame-ancestors 'self'; ${SERVE_CONTENT_RESTRICTIONS}`
+    );
+    addServeCorsHeaders(request, headers);
+
+    const location = upstream.headers.get('location');
+    if (location) {
+        const rewritten = rewriteServeLocation(
+            location,
+            upstreamUrl,
+            serveBasePath(projectId),
+            publicBase,
+            serveOrigin.origin
+        );
+        if (rewritten === null) {
+            await logAuditFailure({
+                action: 'SERVE_PROXY_FAILED',
+                reasonCode: 'INVALID_UPSTREAM_LOCATION',
+                resourceType: 'project',
+                resourceId: projectId,
+                executionContext: {
+                    surface: 'http',
+                    operation: `${request.method} /serve/$projectId/$`,
+                    request
+                }
+            });
+            return new Response('Demo sent an invalid redirect', {
+                status: 502,
+                headers: {
+                    'Cache-Control': 'no-store',
+                    'Server-Timing': headers.get('Server-Timing') ?? '',
+                    ...(traceId ? { 'X-Vizzy-Serve-Trace': traceId } : {}),
+                    'X-Vizzy-Serve-Error': 'invalid-upstream-location'
+                }
+            });
+        }
+        const destination = new URL(rewritten, serveOrigin);
+        if (grant) destination.searchParams.set(SERVE_SESSION_QUERY_PARAM, grant.routeId);
+        else destination.searchParams.delete(SERVE_SESSION_QUERY_PARAM);
+        headers.set('location', `${destination.pathname}${destination.search}${destination.hash}`);
+    }
+
+    if (grant && shouldRefreshServeCookie(grant.actor)) {
+        headers.append('set-cookie', createServeCookie({ request, projectId, ...grant }));
+    }
+
+    return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+const handler = ({ request }: { request: Request }) => handleServeRequest(request);
+
+export const Route = createFileRoute('/serve/$projectId/$')({
+    server: {
+        handlers: {
+            GET: handler,
+            HEAD: handler,
+            POST: handler,
+            PUT: handler,
+            PATCH: handler,
+            DELETE: handler,
+            OPTIONS: handler
+        }
+    }
+});

@@ -14,11 +14,12 @@ import { getOrCreateDeviceIdentity } from '~/lib/deviceIdentity';
 import { resolveIframeSandbox } from '~/lib/iframeSandbox';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { imagePreviewUrl } from '~/lib/mediaUtils';
-import { signedFetch } from '~/lib/signedFetch';
+import { createSignedServerFnFetch, signedFetch } from '~/lib/signedFetch';
 import { getCullingPadding, getLineBounds } from '~/lib/stageGeometry';
 import { TEXT_BASE_STYLE } from '~/lib/textRenderConfig';
 import { getLinePaths, type LayerWithWallComponentState } from '~/lib/types';
 import { WallEngine, type Viewport } from '~/lib/wallEngine';
+import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
 const HYDRATE_FADE_MS = 1000;
 const HYDRATE_IFRAME_TIMEOUT_MS = 2000;
@@ -33,7 +34,7 @@ type HydrateStagePayload = {
     layers: LayerWithWallComponentState[];
     customRenderUrl?: string;
     customRenderCompat: boolean;
-    customRenderProxy: boolean;
+    bindingId?: string;
     layout: StageLayout;
 } & HydrateScopeContext;
 
@@ -49,7 +50,21 @@ function WallApp() {
     const [projectId, setProjectId] = useState<string>();
     const [customRenderUrl, setCustomRenderUrl] = useState<string | undefined>();
     const [customRenderCompat, setCustomRenderCompat] = useState(false);
-    const [customRenderProxy, setCustomRenderProxy] = useState(false);
+    const [customRenderProjectId, setCustomRenderProjectId] = useState<string | undefined>();
+    // A rebind of the same project rotates its Serve grant without changing the project ID.
+    const [customRenderBindingId, setCustomRenderBindingId] = useState<string | undefined>();
+    const [serveLaunch, setServeLaunch] = useState<{
+        projectId: string;
+        bindingId?: string;
+        url: string;
+        keepaliveUrl: string;
+        traceId: string;
+    } | null>(null);
+    const [serveLaunchStatus, setServeLaunchStatus] = useState<
+        'binding' | 'authorizing' | 'loading' | 'ready' | 'failed' | null
+    >(null);
+    const [serveLaunchErrorCode, setServeLaunchErrorCode] = useState<string | null>(null);
+    const [serveGrantRetryCycle, setServeGrantRetryCycle] = useState(0);
     const [stageLayout, setStageLayout] = useState<StageLayout>({ ...DEFAULT_STAGE_LAYOUT });
     const { columns, rows, screenWidth, screenHeight } = stageLayout;
     const [physicalViewport, setPhysicalViewport] = useState({
@@ -63,6 +78,8 @@ function WallApp() {
     );
     const [blackOverlayOpacity, setBlackOverlayOpacity] = useState(1);
     const [iframeGateCycle, setIframeGateCycle] = useState(0);
+    const serveHydrateRef = useRef<{ bindingId: string; startedAt: number } | null>(null);
+    const lastReportedServeFrameRef = useRef<string | null>(null);
     const [boundProjectId, setBoundProjectId] = useState<string | null>(null);
 
     const transitionPhaseRef = useRef<'visible' | 'fadingOut' | 'waitingIframes' | 'fadingIn'>(
@@ -182,9 +199,12 @@ function WallApp() {
         setLayers(next.layers);
         setProjectId(next.projectId);
         setBoundProjectId(next.projectId ?? null);
+        if (!next.customRenderUrl) setServeLaunchStatus(null);
+        else if (next.bindingId !== serveLaunch?.bindingId) setServeLaunchStatus('authorizing');
         setCustomRenderUrl(next.customRenderUrl);
         setCustomRenderCompat(next.customRenderCompat);
-        setCustomRenderProxy(next.customRenderProxy);
+        setCustomRenderProjectId(next.customRenderUrl ? next.projectId : undefined);
+        setCustomRenderBindingId(next.customRenderUrl ? next.bindingId : undefined);
         setStageLayout(next.layout);
         lastHydrateContextRef.current = {
             hasContent: hasHydrateContent(next),
@@ -310,6 +330,95 @@ function WallApp() {
     }, [engine, wallId]);
 
     useEffect(() => {
+        if (!wallId || !customRenderProjectId) return;
+        let cancelled = false;
+        let retryTimer: number | null = null;
+        let retryDelayMs = 1_000;
+        let activeController: AbortController | null = null;
+        const requestLaunch = () => {
+            const controller = new AbortController();
+            activeController = controller;
+            let timedOut = false;
+            const timeoutId = window.setTimeout(() => {
+                timedOut = true;
+                controller.abort();
+            }, 15_000);
+            const signedServerFnFetch = createSignedServerFnFetch({ deviceKind: 'wall', wallId });
+            const timedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+                signedServerFnFetch(input, {
+                    ...init,
+                    signal: init?.signal
+                        ? AbortSignal.any([init.signal, controller.signal])
+                        : controller.signal
+                })) as typeof fetch;
+            void $issueBoundServeLaunch({
+                data: { projectId: customRenderProjectId, wallId, entry: 'screen' },
+                fetch: timedFetch
+            })
+                .then(({ url, keepaliveUrl, traceId }) => {
+                    if (!cancelled) {
+                        setServeLaunch({
+                            projectId: customRenderProjectId,
+                            bindingId: customRenderBindingId,
+                            url,
+                            keepaliveUrl,
+                            traceId
+                        });
+                        setServeLaunchStatus('loading');
+                        setServeLaunchErrorCode(null);
+                    }
+                })
+                .catch((error) => {
+                    if (cancelled) return;
+                    console.warn('[Wall] Failed to obtain demo launch', error);
+                    setServeLaunchStatus('failed');
+                    setServeLaunchErrorCode(
+                        timedOut ? 'authorization-timeout' : 'authorization-failed'
+                    );
+                    retryTimer = window.setTimeout(
+                        requestLaunch,
+                        retryDelayMs + Math.floor(Math.random() * 500)
+                    );
+                    retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
+                })
+                .finally(() => {
+                    window.clearTimeout(timeoutId);
+                    if (activeController === controller) activeController = null;
+                });
+        };
+        requestLaunch();
+        return () => {
+            cancelled = true;
+            activeController?.abort();
+            if (retryTimer !== null) window.clearTimeout(retryTimer);
+        };
+    }, [wallId, customRenderProjectId, customRenderBindingId, serveGrantRetryCycle]);
+
+    useEffect(() => {
+        if (
+            !serveLaunch ||
+            serveLaunch.projectId !== customRenderProjectId ||
+            serveLaunch.bindingId !== customRenderBindingId
+        )
+            return;
+        let cancelled = false;
+        const keepalive = () => {
+            const image = new Image();
+            image.onerror = () => {
+                if (!cancelled) setServeGrantRetryCycle((cycle) => cycle + 1);
+            };
+            const url = new URL(serveLaunch.keepaliveUrl);
+            url.searchParams.set('t', String(Date.now()));
+            image.src = url.toString();
+        };
+        const timer = window.setInterval(keepalive, 60_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [serveLaunch, customRenderProjectId, customRenderBindingId]);
+
+    useEffect(() => {
         const unsubscribe = engine?.subscribeToLayoutUpdates((data) => {
             if (data.type === 'hydrate') {
                 // Eagerly warm the browser cache for image URLs before React mounts them
@@ -323,11 +432,23 @@ function WallApp() {
                         }
                     }
                 }
+                if (
+                    data.customRender?.url &&
+                    data.bindingId &&
+                    serveHydrateRef.current?.bindingId !== data.bindingId
+                ) {
+                    serveHydrateRef.current = {
+                        bindingId: data.bindingId,
+                        startedAt: performance.now()
+                    };
+                    setServeLaunchStatus('binding');
+                    setServeLaunchErrorCode(null);
+                }
                 stageHydrateRef.current?.({
                     layers: data.layers,
                     customRenderUrl: data.customRender?.url,
                     customRenderCompat: Boolean(data.customRender?.compat),
-                    customRenderProxy: Boolean(data.customRender?.proxy),
+                    bindingId: data.bindingId,
                     layout: data.layout ?? { ...DEFAULT_STAGE_LAYOUT },
                     projectId: data.projectId,
                     commitId: data.commitId,
@@ -849,41 +970,101 @@ function WallApp() {
 
     const stageContent = (() => {
         if (!customRenderUrl) return stage;
-        const iframeSrc = new URL(customRenderUrl);
-        if (!customRenderCompat) {
-            iframeSrc.searchParams.set('c', String(col));
-            iframeSrc.searchParams.set('r', String(row));
-        }
-        const finalSrc =
-            customRenderProxy && /^https?:\/\//i.test(iframeSrc.toString())
-                ? `/api/proxy?url=${encodeURIComponent(iframeSrc.toString())}`
-                : iframeSrc.toString();
+        const serveLaunchReady =
+            !!customRenderProjectId &&
+            serveLaunch?.projectId === customRenderProjectId &&
+            serveLaunch.bindingId === customRenderBindingId;
+        const finalSrc = serveLaunchReady
+            ? (() => {
+                  const launchUrl = new URL(serveLaunch.url);
+                  if (!customRenderCompat) {
+                      launchUrl.searchParams.set('c', String(col));
+                      launchUrl.searchParams.set('r', String(row));
+                  }
+                  return launchUrl.toString();
+              })()
+            : 'about:blank';
         const worldWidth = screenWidth * columns;
         const worldHeight = screenHeight * rows;
+        const statusText =
+            serveLaunchStatus === 'binding'
+                ? 'Binding wall…'
+                : serveLaunchStatus === 'authorizing'
+                  ? 'Authorizing demo…'
+                  : serveLaunchStatus === 'loading'
+                    ? 'Loading demo…'
+                    : serveLaunchStatus === 'failed'
+                      ? `Demo launch failed (${serveLaunchErrorCode ?? 'unknown'}); retrying…`
+                      : null;
         return (
-            <iframe
-                key={`custom-render:${iframeGateCycle}`}
-                title="Custom Render Wall"
-                src={finalSrc}
-                sandbox={resolveIframeSandbox(finalSrc)}
-                style={{
-                    position: 'absolute',
-                    top: customRenderCompat ? `${-myViewport.y}px` : 0,
-                    left: customRenderCompat ? `${-myViewport.x}px` : 0,
-                    width: customRenderCompat ? `${worldWidth}px` : `${screenWidth}px`,
-                    height: customRenderCompat ? `${worldHeight}px` : `${screenHeight}px`,
-                    cursor: 'none',
-                    pointerEvents: 'none',
-                    border: 'none'
-                }}
-                allow="autoplay; fullscreen"
-                onLoad={() => {
-                    markIframeReady('custom-render', iframeGateCycle);
-                }}
-                onError={() => {
-                    markIframeReady('custom-render', iframeGateCycle);
-                }}
-            />
+            <>
+                <iframe
+                    key={`custom-render:${customRenderBindingId ?? 'none'}:${serveGrantRetryCycle}:${serveLaunchReady ? 'launch' : 'pending'}`}
+                    title="Custom Render Wall"
+                    src={finalSrc}
+                    sandbox={resolveIframeSandbox(finalSrc)}
+                    style={{
+                        position: 'absolute',
+                        top: customRenderCompat ? `${-myViewport.y}px` : 0,
+                        left: customRenderCompat ? `${-myViewport.x}px` : 0,
+                        width: customRenderCompat ? `${worldWidth}px` : `${screenWidth}px`,
+                        height: customRenderCompat ? `${worldHeight}px` : `${screenHeight}px`,
+                        cursor: 'none',
+                        pointerEvents: 'none',
+                        border: 'none'
+                    }}
+                    allow="autoplay; fullscreen"
+                    onLoad={() => {
+                        if (serveLaunchReady) {
+                            markIframeReady('custom-render', iframeGateCycle);
+                            const bindingId = customRenderBindingId;
+                            if (!bindingId) {
+                                setServeLaunchStatus('ready');
+                                return;
+                            }
+                            const reportKey = `${bindingId}:${serveGrantRetryCycle}`;
+                            if (lastReportedServeFrameRef.current === reportKey) return;
+                            lastReportedServeFrameRef.current = reportKey;
+                            window.requestAnimationFrame(() =>
+                                window.requestAnimationFrame(() => {
+                                    if (serveHydrateRef.current?.bindingId !== bindingId) return;
+                                    const elapsedMs =
+                                        performance.now() - serveHydrateRef.current.startedAt;
+                                    setServeLaunchStatus('ready');
+                                    engine?.sendJSON({
+                                        type: 'wall_serve_loaded',
+                                        bindingId,
+                                        elapsedMs
+                                    });
+                                    console.info(
+                                        '[ServeTiming]',
+                                        JSON.stringify({
+                                            stage: 'iframe-load',
+                                            traceId: serveLaunch.traceId,
+                                            durationMs: Math.round(elapsedMs)
+                                        })
+                                    );
+                                })
+                            );
+                        }
+                    }}
+                    onError={() => {
+                        if (serveLaunchReady) {
+                            setServeLaunchStatus('failed');
+                            setServeLaunchErrorCode('iframe-load-failed');
+                            markIframeReady('custom-render', iframeGateCycle);
+                        }
+                    }}
+                />
+                {statusText && (
+                    <div
+                        className="absolute inset-0 flex items-center justify-center bg-neutral-900 text-lg text-neutral-300"
+                        style={{ pointerEvents: 'none' }}
+                    >
+                        {statusText}
+                    </div>
+                )}
+            </>
         );
     })();
 

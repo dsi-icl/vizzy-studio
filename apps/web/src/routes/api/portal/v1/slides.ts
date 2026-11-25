@@ -32,7 +32,7 @@ export const Route = createFileRoute('/api/portal/v1/slides')({
                     return json(request, 401, { error: 'Missing bearer token' });
                 }
 
-                const validated = validatePortalToken(token);
+                const validated = validatePortalToken(token, 'control');
                 if (!validated) {
                     await logAuditDenied({
                         action: 'PORTAL_SLIDES_DENIED',

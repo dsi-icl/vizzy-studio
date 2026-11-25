@@ -11,7 +11,7 @@ export const dbCol = createCollections(db);
 
 // ── Raw MongoDB collections ───────────────────────────────────────────────────
 // Better Auth owns users/sessions write path — kept raw permanently.
-// jobs uses Date timestamps and is an infrastructure concern — kept raw.
+// Jobs use Date timestamps and remain a raw infrastructure collection.
 
 export const collections = {
     users: db.collection<UserDocument>('user'),

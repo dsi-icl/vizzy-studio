@@ -15,8 +15,11 @@ import {
     hydrateWallNodes,
     notifyControllers,
     peerCounts,
+    peers,
     unbindWall,
-    wallsByWallId
+    wallsByWallId,
+    type PeerEntry,
+    type PeerMeta
 } from '~/lib/busState';
 import type { AuditExecutionContextInput } from '~/server/audit';
 import { logAuditSuccess } from '~/server/audit';
@@ -351,10 +354,25 @@ export async function adminGetWall(wallId: string) {
     if (!targetWallId) throw new Error('Wall ID is required');
     const wall = await findWallById(targetWallId);
     if (!wall) throw new Error('Wall not found');
-    const connectedPeers = Array.from(wallsByWallId.get(String(wall.wallId)) ?? []).flatMap(
-        (entry) =>
-            entry.meta.specimen === 'wall' ? [{ col: entry.meta.col, row: entry.meta.row }] : []
+    const wallPeers = Array.from(wallsByWallId.get(String(wall.wallId)) ?? []).filter(
+        (entry): entry is PeerEntry & { meta: Extract<PeerMeta, { specimen: 'wall' }> } =>
+            entry.meta.specimen === 'wall'
     );
+    const connectedPeers = wallPeers.map((entry) => ({
+        col: entry.meta.col,
+        row: entry.meta.row
+    }));
+    const activeTransportPeers = wallPeers.filter((entry) =>
+        entry.peer.peers.has(entry.peer)
+    ).length;
+    const indexedPeers = wallPeers.filter((entry) => peers.get(entry.peer.id) === entry).length;
+    const uniquePeerIds = new Set(wallPeers.map((entry) => entry.peer.id)).size;
+    const uniqueCoordinates = new Set(connectedPeers.map((entry) => `${entry.col}:${entry.row}`))
+        .size;
+    const deviceIds = wallPeers.flatMap((entry) => {
+        const id = entry.meta.authContext?.device?.id;
+        return typeof id === 'string' && id.length > 0 ? [id] : [];
+    });
     const observedColumns =
         connectedPeers.length > 0
             ? Math.max(...connectedPeers.map((entry) => entry.col)) + 1
@@ -370,6 +388,15 @@ export async function adminGetWall(wallId: string) {
         notes: wall.notes ?? null,
         layoutTemplate: wall.layoutTemplate ?? null,
         allowLivePreview: wall.allowLivePreview === true,
+        connectionDiagnostics: {
+            registeredPeers: wallPeers.length,
+            activeTransportPeers,
+            indexedPeers,
+            uniquePeerIds,
+            uniqueCoordinates,
+            withDeviceId: deviceIds.length,
+            uniqueDeviceIds: new Set(deviceIds).size
+        },
         observedLayout:
             observedColumns && observedRows
                 ? {

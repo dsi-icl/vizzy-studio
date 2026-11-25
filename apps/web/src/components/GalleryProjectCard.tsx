@@ -4,10 +4,12 @@ import { ProjectCard } from '@repo/ui/components/project-card';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { bindGalleryWallAndWait } from '~/lib/galleryBindAck';
 import { GalleryEngine } from '~/lib/galleryEngine';
 import { useGalleryStore } from '~/lib/galleryStore';
 import { createSignedServerFnFetch } from '~/lib/signedFetch';
 import { $issueControllerPortalToken } from '~/server/portal.fns';
+import { $issueBoundServeLaunch } from '~/server/serve.fns';
 
 const BIND_ACK_TIMEOUT_MS = 5000;
 
@@ -45,39 +47,30 @@ export function GalleryProjectCard({
     const canAdminBindWall = user?.role === 'admin';
     const canBindWall = allowWallActions && (canAdminBindWall || isEnrolledDevice);
 
+    const isCustom = Boolean(project.controlPath);
+
     const handleLoadProject = useCallback(
         async (wallId: string) => {
-            if (!project.publishedCommitId) {
+            const commitId = project.publishedCommitId;
+            if (!commitId) {
                 toast.error('This project has no published commit');
                 return false;
             }
 
             try {
                 const engine = GalleryEngine.getInstance();
-                const bound = new Promise<boolean>((resolve) => {
-                    let timer: ReturnType<typeof setTimeout> | undefined;
-                    const unsubscribe = engine.onWallBindingChanged((event) => {
-                        if (event.wallId !== wallId) return;
-                        if (!event.bound || event.projectId !== project.id) return;
-                        if (timer) clearTimeout(timer);
-                        unsubscribe();
-                        resolve(true);
-                    });
-                    timer = setTimeout(() => {
-                        unsubscribe();
-                        resolve(false);
-                    }, BIND_ACK_TIMEOUT_MS);
-                });
-                engine.sendJSON({
-                    type: 'bind_wall',
-                    wallId,
-                    projectId: project.id,
-                    commitId: project.publishedCommitId,
-                    slideId: 'default'
-                });
-                if (!(await bound)) {
-                    toast.error('Could not load project on wall');
-                    return false;
+                if (!(await engine.waitUntilReady())) {
+                    throw new Error('Gallery connection is not ready');
+                }
+                const binding = { wallId, projectId: project.id, commitId };
+                if (isCustom) {
+                    // A serve grant is tied to the current wall binding. Wait
+                    // for this bind to finish before opening the controller;
+                    // otherwise a prior binding can issue a grant that the new
+                    // bind immediately invalidates.
+                    await bindGalleryWallAndWait(engine, binding);
+                } else {
+                    await bindGalleryWallAndWait(engine, binding, BIND_ACK_TIMEOUT_MS);
                 }
                 toast.success('Project loaded on wall');
                 return true;
@@ -86,7 +79,7 @@ export function GalleryProjectCard({
                 return false;
             }
         },
-        [project.id, project.publishedCommitId]
+        [isCustom, project.id, project.publishedCommitId]
     );
 
     const handleWallRebootRequest = useCallback(async (_wallId: string) => {
@@ -150,16 +143,54 @@ export function GalleryProjectCard({
         return null;
     }, []);
 
-    const hasCustomRenderUrl =
-        typeof project.customRenderUrl === 'string' && project.customRenderUrl.trim().length > 0;
+    const handleControllerLaunchRequest = useCallback(
+        async (wallId: string) => {
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => controller.abort(), 15_000);
+                try {
+                    const signedServerFnFetch = createSignedServerFnFetch({
+                        deviceKind: 'gallery',
+                        wallId
+                    });
+                    const timedFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+                        signedServerFnFetch(input, {
+                            ...init,
+                            signal: init?.signal
+                                ? AbortSignal.any([init.signal, controller.signal])
+                                : controller.signal
+                        })) as typeof fetch;
+                    const launch = await $issueBoundServeLaunch({
+                        data: { wallId, projectId: project.id, entry: 'control' },
+                        fetch: timedFetch
+                    });
+                    return launch;
+                } catch (error) {
+                    if (controller.signal.aborted) {
+                        return { errorCode: 'authorization-timeout' };
+                    }
+                    if (attempt < 7 && String(error).includes('Wall is not bound')) {
+                        await new Promise((resolve) => setTimeout(resolve, 200));
+                        continue;
+                    }
+                    console.warn('[Gallery] Could not obtain demo controller launch', error);
+                    return { errorCode: 'authorization-failed' };
+                } finally {
+                    window.clearTimeout(timeoutId);
+                }
+            }
+            return { errorCode: 'authorization-failed' };
+        },
+        [project.id]
+    );
+
+    // The gallery route only sets `controlPath` for custom projects.
     const previewHref =
-        user && project.publishedCommitId && !hasCustomRenderUrl
+        user && project.publishedCommitId && !isCustom
             ? `/quarry/view/${encodeURIComponent(project.id)}/${encodeURIComponent(project.publishedCommitId)}`
             : undefined;
     const previewDisabledReason =
-        user && hasCustomRenderUrl
-            ? 'Preview is unavailable because this project uses a custom render URL.'
-            : undefined;
+        user && isCustom ? 'Preview is unavailable because this is a custom project.' : undefined;
 
     return (
         <ProjectCard
@@ -177,7 +208,12 @@ export function GalleryProjectCard({
             onLoadProject={canBindWall ? handleLoadProject : undefined}
             onWallRebootRequest={canBindWall ? handleWallRebootRequest : undefined}
             onWallUnbindRequest={canBindWall ? handleWallUnbindRequest : undefined}
-            onControllerTokenRequest={canBindWall ? handleControllerTokenRequest : undefined}
+            onControllerTokenRequest={
+                canBindWall && !isCustom ? handleControllerTokenRequest : undefined
+            }
+            onControllerLaunchRequest={
+                canBindWall && isCustom ? handleControllerLaunchRequest : undefined
+            }
             presetWallId={wallId}
             hideWallPicker={!canAdminBindWall && isEnrolledDevice}
         />

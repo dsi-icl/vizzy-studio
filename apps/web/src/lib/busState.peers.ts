@@ -23,6 +23,8 @@ import {
 } from './busState.state';
 
 export function registerPeer(peer: Peer, meta: PeerMeta): PeerEntry {
+    // A retried handshake must not leave the old entry in the wall indexes.
+    if (peers.has(peer.id)) unregisterPeer(peer.id);
     const entry: PeerEntry = { peer, meta };
     peers.set(peer.id, entry);
 

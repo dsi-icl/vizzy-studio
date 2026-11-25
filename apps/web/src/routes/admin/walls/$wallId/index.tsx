@@ -136,11 +136,22 @@ function WallInfoTab() {
                         Prefills stage creation; it does not link this wall to a stage.
                     </p>
                     {wall.observedLayout && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            Currently observed: {wall.observedLayout.columns}×
-                            {wall.observedLayout.rows} from {wall.observedLayout.connectedNodes}{' '}
-                            connected nodes.
-                        </p>
+                        <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                            <p>
+                                Currently observed: {wall.observedLayout.columns}×
+                                {wall.observedLayout.rows} from {wall.observedLayout.connectedNodes}{' '}
+                                connected nodes.
+                            </p>
+                            <p>
+                                Connections: {wall.connectionDiagnostics.activeTransportPeers}{' '}
+                                active sockets, {wall.connectionDiagnostics.indexedPeers} indexed
+                                peers, {wall.connectionDiagnostics.registeredPeers} registered
+                                peers, {wall.connectionDiagnostics.uniquePeerIds} unique peer IDs,{' '}
+                                {wall.connectionDiagnostics.uniqueCoordinates} coordinates,{' '}
+                                {wall.connectionDiagnostics.withDeviceId} with device ID,{' '}
+                                {wall.connectionDiagnostics.uniqueDeviceIds} unique device IDs.
+                            </p>
+                        </div>
                     )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-4">

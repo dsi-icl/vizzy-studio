@@ -215,6 +215,12 @@ else
   log "FFmpeg already present at $FFMPEG_BIN"
 fi
 
+# The wall can burst 64 screen documents plus their assets while old demo
+# long-poll requests are still open. Bun's default 256 outgoing fetch slots can
+# queue the new screen documents behind those polls. Keep this overridable so
+# staging can compare 256 and 512 without rebuilding the image.
+export BUN_CONFIG_MAX_HTTP_REQUESTS="${BUN_CONFIG_MAX_HTTP_REQUESTS:-512}"
+log "Bun outgoing fetch limit: ${BUN_CONFIG_MAX_HTTP_REQUESTS}"
 log "Starting app server"
 start_as_app_background bun --dns-result-order="${DNS_RESULT_ORDER:-ipv4first}" .output/server/index.mjs
 APP_PID="$!"

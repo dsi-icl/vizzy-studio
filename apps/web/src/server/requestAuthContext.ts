@@ -276,7 +276,7 @@ export async function resolveRequestAuthContext(request: Request) {
     if (pathname.startsWith('/api/portal/')) {
         const token = readBearerToken(request);
         if (token) {
-            const validated = validatePortalToken(token);
+            const validated = validatePortalToken(token, 'control');
             if (validated) {
                 authContext.portal = { wallId: validated.wallId };
             }
