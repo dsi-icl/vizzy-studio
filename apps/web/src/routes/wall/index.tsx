@@ -354,6 +354,19 @@ function WallApp() {
                             : data.layer;
                     return [...prev.filter((l) => l.numericId !== data.layer.numericId), nextLayer];
                 });
+            } else if (data.type === 'network_influence') {
+                setLayers((prev) =>
+                    prev.map((layer) =>
+                        layer.numericId === data.numericId &&
+                        layer.type === 'graph' &&
+                        layer.network
+                            ? {
+                                  ...layer,
+                                  network: { ...layer.network, influence: data.influence }
+                              }
+                            : layer
+                    )
+                );
             } else if (data.type === 'delete_layer') {
                 setLayers((prev) => prev.filter((l) => l.numericId !== data.numericId));
             } else if (data.type === 'device_enrollment') {

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
 
+import { useTextFontRevision } from '~/hooks/useFonts';
 import { toCssFilterString } from '~/lib/layerFilters';
 import { networkDocumentKey } from '~/lib/network/document';
 import { drawNetwork, networkViewport } from '~/lib/network/render';
@@ -22,6 +23,8 @@ export function WallNetworkLayer({
     renderers: Map<number, NetworkWallRenderer>;
 }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const registeredLayer = useRef<{ engine: WallEngine | null; layer: typeof layer } | null>(null);
+    const fontRevision = useTextFontRevision();
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
@@ -32,8 +35,10 @@ export function WallNetworkLayer({
             8192 / Math.max(viewport.w, viewport.h),
             Math.sqrt(16_000_000 / (viewport.w * viewport.h))
         );
-        canvas.width = Math.ceil(viewport.w * ratio);
-        canvas.height = Math.ceil(viewport.h * ratio);
+        const bitmapWidth = Math.ceil(viewport.w * ratio);
+        const bitmapHeight = Math.ceil(viewport.h * ratio);
+        if (canvas.width !== bitmapWidth) canvas.width = bitmapWidth;
+        if (canvas.height !== bitmapHeight) canvas.height = bitmapHeight;
         let last = '';
         const documentKey = layer.network ? networkDocumentKey(layer.network) : '';
         const draw: NetworkWallRenderer = (pos, visible) => {
@@ -58,13 +63,31 @@ export function WallNetworkLayer({
                 live?.view
             );
         };
-        engine?.registerLayer(layer, canvas);
+        const previous = registeredLayer.current;
+        const oldNetwork = previous?.layer.network;
+        const nextNetwork = layer.network;
+        const influenceOnly =
+            previous?.engine === engine &&
+            previous.layer.numericId === layer.numericId &&
+            previous.layer.config === layer.config &&
+            oldNetwork &&
+            nextNetwork &&
+            oldNetwork.data === nextNetwork.data &&
+            oldNetwork.settings === nextNetwork.settings &&
+            oldNetwork.positions === nextNetwork.positions &&
+            oldNetwork.nodeMove === nextNetwork.nodeMove &&
+            oldNetwork.reheat === nextNetwork.reheat &&
+            oldNetwork.name === nextNetwork.name &&
+            oldNetwork.source === nextNetwork.source &&
+            oldNetwork.influence !== nextNetwork.influence;
+        engine?.registerLayer(layer, canvas, Boolean(influenceOnly));
+        registeredLayer.current = { engine, layer };
         renderers.set(layer.numericId, draw);
         draw(layer.config, layer.config.visible);
         return () => {
             renderers.delete(layer.numericId);
         };
-    }, [layer, engine, viewport, pixelRatio, renderers]);
+    }, [layer, engine, viewport, pixelRatio, renderers, fontRevision]);
     return (
         <canvas
             ref={canvasRef}

@@ -135,7 +135,11 @@ export class WallEngine {
         return this.bus.onReady(callback);
     }
 
-    public registerLayer(layer: LayerWithWallComponentState, el: HTMLElement) {
+    public registerLayer(
+        layer: LayerWithWallComponentState,
+        el: HTMLElement,
+        preservePosition = false
+    ) {
         let layerPtr = this.layers.get(layer.numericId);
         if (!layerPtr) {
             layerPtr = {
@@ -154,12 +158,13 @@ export class WallEngine {
                 layerPtr.type === 'video' && layer.type === 'video'
                     ? (layerPtr.playback ?? layer.playback)
                     : null;
-
             Object.assign(layerPtr, layer);
-            layerPtr.startPos = { ...layer.config };
-            layerPtr.targetPos = { ...layer.config };
-            layerPtr.animStartTime = 0;
-            layerPtr.animDuration = LAYER_ANIMATION_DURATION;
+            if (!preservePosition) {
+                layerPtr.startPos = { ...layer.config };
+                layerPtr.targetPos = { ...layer.config };
+                layerPtr.animStartTime = 0;
+                layerPtr.animDuration = LAYER_ANIMATION_DURATION;
+            }
 
             if (layer.type === 'video' && preservedVideoPlayback && layerPtr.type === 'video') {
                 layerPtr.playback = preservedVideoPlayback;
@@ -300,6 +305,7 @@ export class WallEngine {
             if (
                 data.type === 'hydrate' ||
                 data.type === 'upsert_layer' ||
+                data.type === 'network_influence' ||
                 data.type === 'delete_layer' ||
                 data.type === 'reboot' ||
                 data.type === 'device_enrollment'
