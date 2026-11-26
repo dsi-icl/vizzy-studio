@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { fontFaceCssForHtml, resetTextFontSources } from '~/lib/textFontFaces';
+import { fontFaceCssForHtml, getTextFontRevision, resetTextFontSources } from '~/lib/textFontFaces';
 
 import { prepareFonts } from './fontRegistration';
 
@@ -68,9 +68,11 @@ describe('prepareFonts', () => {
         expect(loadedSources[0]).toContain('data:font/woff2;base64,');
         expect(ready).toBe(false);
 
+        const beforeFaceReady = getTextFontRevision();
         finishFace();
         await loading;
         expect(added).toHaveLength(1);
+        expect(getTextFontRevision()).toBeGreaterThan(beforeFaceReady);
         expect(ready).toBe(true);
         expect(await fontFaceCssForHtml('<p style="font-family: Slow">Hi</p>')).toContain(
             'data:font/woff2;base64,'

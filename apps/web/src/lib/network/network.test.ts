@@ -9,7 +9,7 @@ import {
     type NetworkTopology
 } from './frames';
 import { networkFromCsv, parseNetworkCsv, parseNetworkJson } from './import';
-import { networkViewport, segmentIntersectsRect } from './render';
+import { networkEdgeWidth, networkViewport, segmentIntersectsRect } from './render';
 import {
     DEFAULT_NETWORK_SETTINGS,
     EXAMPLE_NETWORK,
@@ -119,6 +119,27 @@ describe('Network document and layout', () => {
         expect(
             GSMessageSchema.parse({ type: 'upsert_layer', origin: 'editor:test_network', layer })
         ).toMatchObject({ layer });
+        const influence = {
+            activeNodeId: 'Vizzy',
+            values: { Vizzy: 72 },
+            propagation: 1
+        };
+        const delta = GSMessageSchema.parse({
+            type: 'network_influence',
+            numericId: 10,
+            influence
+        });
+        expect(delta).toMatchObject({ numericId: 10, influence });
+        expect(JSON.stringify(delta).length).toBeLessThan(
+            JSON.stringify({ type: 'upsert_layer', origin: 'editor:test_network', layer }).length
+        );
+        expect(
+            GSMessageSchema.safeParse({
+                type: 'network_influence',
+                numericId: 10,
+                influence: { ...influence, values: { Vizzy: 101 } }
+            }).success
+        ).toBe(false);
         expect(
             GSMessageSchema.safeParse({
                 type: 'hydrate',
@@ -139,6 +160,12 @@ describe('Network document and layout', () => {
             NetworkSchema.safeParse({
                 ...network,
                 settings: { ...network.settings, charge: -Infinity }
+            }).success
+        ).toBe(false);
+        expect(
+            NetworkSchema.safeParse({
+                ...network,
+                nodeMove: { nodeId: 'missing', x: 200, y: 100, revision: 1 }
             }).success
         ).toBe(false);
     });
@@ -206,6 +233,26 @@ describe('Network document and layout', () => {
         sim.stop();
     });
 
+    it('moves one node without restarting the layout, then resumes the force simulation', () => {
+        const running = { ...network, settings: { ...network.settings, motionStrength: 0 } };
+        const sim = createNetworkSimulation(running);
+        sim.advance(1000);
+        const before = sim.view.positions;
+        const version = sim.topologyVersion;
+        const moved = {
+            ...running,
+            nodeMove: { nodeId: 'Vizzy', x: 800, y: 500, revision: 1 }
+        };
+        expect(networkDocumentKey(moved)).not.toBe(networkDocumentKey(running));
+        sim.configure(moved);
+        expect(sim.view.positions[0]).toEqual({ x: 800, y: 500 });
+        expect(sim.view.positions.slice(1)).toEqual(before.slice(1));
+        expect(sim.topologyVersion).toBe(version);
+        sim.advance(1050);
+        expect(sim.view.positions[0]).not.toEqual({ x: 800, y: 500 });
+        sim.stop();
+    });
+
     it('can turn continuous motion off, nudge settled nodes, and keep strong motion bounded', () => {
         const quiet = { ...network, settings: { ...network.settings, motionStrength: 0 } };
         const sim = createNetworkSimulation(quiet);
@@ -248,6 +295,15 @@ describe('Network document and layout', () => {
         const resting = sim.view.positions;
         const visual = {
             ...quiet,
+            source: 'custom' as const,
+            data: {
+                nodes: quiet.data.nodes.map((node, index) =>
+                    index === 0 ? { ...node, label: 'Renamed', group: 'New type' } : node
+                ),
+                edges: quiet.data.edges.map((edge, index) =>
+                    index === 0 ? { ...edge, influence: 4 } : edge
+                )
+            },
             settings: {
                 ...quiet.settings,
                 colorByGroup: true,
@@ -290,6 +346,18 @@ describe('Network document and layout', () => {
 });
 
 describe('Network screen boundaries', () => {
+    it('uses matrix magnitude for line thickness while keeping explicit zero visible', () => {
+        const edge = { source: 'a', target: 'b' };
+        const width = (influence: number) =>
+            networkEdgeWidth({ ...edge, influence }, DEFAULT_NETWORK_SETTINGS);
+        expect(width(0)).toBeGreaterThan(0);
+        expect(width(0)).toBeLessThan(width(1));
+        expect(width(1)).toBeLessThan(width(5));
+        expect(width(-5)).toBe(width(5));
+        expect(networkEdgeWidth(edge, DEFAULT_NETWORK_SETTINGS)).toBe(
+            DEFAULT_NETWORK_SETTINGS.edgeWidth
+        );
+    });
     const viewport = { x: 100, y: 100, w: 100, h: 100 };
     it('retains a crossing link with both endpoints outside the screen', () => {
         expect(segmentIntersectsRect({ x: 0, y: 150 }, { x: 300, y: 150 }, viewport)).toBe(true);

@@ -315,7 +315,12 @@ test('network example, import, edit, save and reload use native layers', async (
         await expect.poll(async () => (await colours()).coloured).toBeGreaterThan(100);
         await page.getByLabel('Colour nodes by group', { exact: true }).uncheck();
         await expect.poll(async () => (await colours()).coloured).toBe(0);
-        await expect(page.getByLabel('Show labels', { exact: true })).not.toBeChecked();
+        await expect(page.getByLabel('Show labels', { exact: true })).toHaveText('None');
+        await page.getByLabel('Show labels', { exact: true }).click();
+        await page.getByRole('option', { name: 'All nodes' }).click();
+        await expect(page.getByLabel('Label font')).toBeVisible();
+        await page.getByLabel('Show labels', { exact: true }).click();
+        await page.getByRole('option', { name: 'None' }).click();
         await expect(page.getByRole('slider', { name: 'Node size' })).toHaveCount(0);
         await expect(page.getByRole('slider', { name: 'Line width' })).toHaveCount(0);
         await page.getByRole('tab', { name: 'Motion', exact: true }).click();
@@ -545,8 +550,10 @@ test('custom topology edits the example and imported data, persists and keeps an
         await page.getByLabel('Node name node-1', { exact: true }).fill('My new node');
         await page.getByRole('button', { name: /^Links \d+$/ }).click();
         await page.getByRole('button', { name: 'Add link', exact: true }).click();
-        await page.getByLabel('From node', { exact: true }).selectOption('Vizzy');
-        await page.getByLabel('To node', { exact: true }).selectOption('node-1');
+        await page.getByLabel('From node', { exact: true }).click();
+        await page.getByRole('button', { name: 'My hub', exact: true }).click();
+        await page.getByLabel('To node', { exact: true }).click();
+        await page.getByRole('button', { name: 'My new node', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Nodes 13', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Links 18', exact: true })).toBeVisible();
         await page.screenshot({ path: test.info().outputPath('custom-network-links.png') });
@@ -700,12 +707,22 @@ test('canvas selection locates nodes and links in the panel and keeps draft shor
             'aria-pressed',
             'true'
         );
-        await expect(page.getByLabel('From node', { exact: true })).toHaveValue('n0');
-        await expect(page.getByLabel('To node', { exact: true })).toHaveValue('n7');
-        await page.getByLabel('To node', { exact: true }).selectOption('n6');
+        await expect(page.getByLabel('From node', { exact: true })).toHaveAttribute(
+            'data-value',
+            'n0'
+        );
+        await expect(page.getByLabel('To node', { exact: true })).toHaveAttribute(
+            'data-value',
+            'n7'
+        );
+        await page.getByLabel('To node', { exact: true }).click();
+        await page.getByRole('button', { name: 'n6', exact: true }).click();
         // The revised link is immediately selectable at its new position.
         await clickPreview(page, [0, 6]);
-        await expect(page.getByLabel('To node', { exact: true })).toHaveValue('n6');
+        await expect(page.getByLabel('To node', { exact: true })).toHaveAttribute(
+            'data-value',
+            'n6'
+        );
         await preview.press('Escape');
         await expect(page.getByLabel('To node', { exact: true })).toBeHidden();
         await expect(preview).toBeVisible();
@@ -733,8 +750,14 @@ test('canvas selection locates nodes and links in the panel and keeps draft shor
             'aria-pressed',
             'true'
         );
-        await expect(page.getByLabel('From node', { exact: true })).toHaveValue('n1');
-        await expect(page.getByLabel('To node', { exact: true })).toHaveValue('n2');
+        await expect(page.getByLabel('From node', { exact: true })).toHaveAttribute(
+            'data-value',
+            'n1'
+        );
+        await expect(page.getByLabel('To node', { exact: true })).toHaveAttribute(
+            'data-value',
+            'n2'
+        );
         await page.getByRole('button', { name: 'Resume', exact: true }).click();
         await page.getByRole('button', { name: 'Add', exact: true }).click();
         const created = await page.evaluate(() => {
