@@ -152,6 +152,7 @@
         "lint:fix": "oxlint --type-aware --type-check --fix",
         "prepare": "husky",
         "test": "bun run test:unit",
+        "test:video-sync": "bun run apps/web/tests/video-sync/run.ts",
         "test:unit": "bun test --conditions=production apps/web/src apps/web/tests/unit packages/db/src",
         "test:e2e": "bunx playwright test --config apps/web/tests/playwright.config.ts",
         "test:e2e:smoke": "bunx playwright test --config apps/web/tests/playwright.config.ts --grep-invert @visual",

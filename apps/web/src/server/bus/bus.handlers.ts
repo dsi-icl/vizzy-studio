@@ -32,7 +32,6 @@ import {
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
-    resolveScopeId,
     saveScope,
     scopedState,
     sendJSON,
@@ -47,6 +46,7 @@ import {
     wallBindingSources,
     type PeerEntry
 } from '~/lib/busState';
+import { markWallPresentationReady } from '~/lib/busState.presentation';
 import {
     broadcastProjectContext,
     getOrLoadProjectContext,
@@ -145,6 +145,11 @@ function clearPlaybackCommand(scopeId: number, numericId: number) {
 }
 
 // ── Handler registrations ───────────────────────────────────────────────────
+
+handlers.set('wall_slide_ready', ({ entry, data }) => {
+    if (entry.meta.specimen !== 'wall' || typeof data.presentationId !== 'string') return;
+    markWallPresentationReady(entry.meta.wallId, entry.peer.id, data.presentationId);
+});
 
 handlers.set('rehydrate_please', ({ entry }) => {
     const { meta } = entry;
