@@ -6,6 +6,13 @@ import {
     type NetworkPositions
 } from './schema';
 
+export function networkTopologyKey(data: NetworkData): string {
+    return JSON.stringify([
+        data.nodes.map(({ id }) => id),
+        data.edges.map(({ source, target }) => [source, target])
+    ]);
+}
+
 /** Identity of the simulated layout. Paint-only settings leave the frame stream intact. */
 export function networkDocumentKey(network: Network): string {
     const {
@@ -18,11 +25,10 @@ export function networkDocumentKey(network: Network): string {
         paused
     } = network.settings;
     const text = JSON.stringify([
-        network.source,
-        network.data.nodes.map(({ id, label, group }) => [id, label, group]),
-        network.data.edges.map(({ source, target, weight }) => [source, target, weight]),
+        networkTopologyKey(network.data),
         [charge, linkDistance, linkStrength, collisionRadius, nodeRadius, motionStrength, paused],
         network.reheat,
+        network.nodeMove,
         network.positions?.map(({ x, y }) => [x, y])
     ]);
     let a = 2166136261,

@@ -6,7 +6,7 @@ import {
 } from '@repo/db/schema';
 
 import { NetworkTopologySchema } from '~/lib/network/frames';
-import { NetworkSchema } from '~/lib/network/schema';
+import { NetworkInfluenceSchema, NetworkSchema } from '~/lib/network/schema';
 import { z } from '~/lib/zod';
 
 /**
@@ -347,6 +347,11 @@ export const GSMessageSchema = z.discriminatedUnion('type', [
         layer: LayerSchema,
         /** Set when creating a layer, to correlate the persistence acknowledgement. */
         createRequestId: z.string().optional()
+    }),
+    z.object({
+        type: z.literal('network_influence'),
+        numericId: z.number().int().nonnegative(),
+        influence: NetworkInfluenceSchema
     }),
     z.object({
         /**

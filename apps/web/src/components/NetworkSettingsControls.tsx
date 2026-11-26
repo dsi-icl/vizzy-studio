@@ -1,8 +1,21 @@
 import { PauseIcon, PlayIcon, QuestionIcon } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from '@repo/ui/components/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@repo/ui/components/tooltip';
 import { useId, useState } from 'react';
 
+import type { FontAsset } from '~/hooks/useFonts';
+import {
+    DEFAULT_FONT_OPTION_ID,
+    getFontFamilyCss,
+    SYSTEM_FONT_OPTIONS
+} from '~/lib/fontFamilyOptions';
 import { DEFAULT_NETWORK_SETTINGS, type NetworkSettings } from '~/lib/network/schema';
 
 type SettingsProps = {
@@ -112,6 +125,7 @@ export function NetworkMotionSettings({ settings, onChange }: SettingsProps) {
             />
             <NetworkRange
                 label="Line width"
+                help="Sets the base width. Matrix links become thicker as their strength rises from 0 to 5; positive and negative strengths use the same width."
                 min={0.5}
                 max={5}
                 step={0.5}
@@ -219,7 +233,28 @@ function NetworkColour({
     );
 }
 
-export function NetworkStyleSettings({ settings, onChange }: SettingsProps) {
+export function NetworkStyleSettings({
+    settings,
+    onChange,
+    groups,
+    projectFonts,
+    hasRelationshipLinks,
+    hasOtherLinks
+}: SettingsProps & {
+    groups: string[];
+    projectFonts: FontAsset[];
+    hasRelationshipLinks: boolean;
+    hasOtherLinks: boolean;
+}) {
+    const labelMode = !settings.showLabels
+        ? 'none'
+        : settings.labelGroup === undefined
+          ? 'all'
+          : `group:${settings.labelGroup}`;
+    const fontOptions = [
+        ...projectFonts.map((font) => ({ id: `project:${font.family}`, label: font.family })),
+        ...SYSTEM_FONT_OPTIONS
+    ];
     return (
         <div className="space-y-5">
             <div className="space-y-3">
@@ -239,32 +274,140 @@ export function NetworkStyleSettings({ settings, onChange }: SettingsProps) {
                         onChange={(nodeColor) => onChange({ nodeColor })}
                     />
                 )}
-                <NetworkColour
-                    label="Link colour"
-                    value={settings.edgeColor}
-                    onChange={(edgeColor) => onChange({ edgeColor })}
-                />
-            </div>
-            <div className="space-y-3 border-t pt-5">
-                <label className="flex items-center justify-between text-xs font-medium">
-                    Show labels
-                    <input
-                        type="checkbox"
-                        className="size-3.5 accent-foreground"
-                        checked={settings.showLabels}
-                        onChange={(event) => onChange({ showLabels: event.target.checked })}
-                    />
-                </label>
-                {settings.showLabels && (
+                {hasRelationshipLinks ? (
+                    <div className="space-y-3 border-t pt-4">
+                        <p className="text-xs font-medium">Link colours by relationship</p>
+                        <NetworkColour
+                            label="Positive links"
+                            value={settings.relationshipColors.positive}
+                            onChange={(positive) =>
+                                onChange({
+                                    relationshipColors: { ...settings.relationshipColors, positive }
+                                })
+                            }
+                        />
+                        <NetworkColour
+                            label="Negative links"
+                            value={settings.relationshipColors.negative}
+                            onChange={(negative) =>
+                                onChange({
+                                    relationshipColors: { ...settings.relationshipColors, negative }
+                                })
+                            }
+                        />
+                        <NetworkColour
+                            label="Neutral links (0)"
+                            value={settings.relationshipColors.neutral}
+                            onChange={(neutral) =>
+                                onChange({
+                                    relationshipColors: { ...settings.relationshipColors, neutral }
+                                })
+                            }
+                        />
+                        {hasOtherLinks && (
+                            <NetworkColour
+                                label="Other links"
+                                value={settings.edgeColor}
+                                onChange={(edgeColor) => onChange({ edgeColor })}
+                            />
+                        )}
+                    </div>
+                ) : (
                     <NetworkColour
-                        label="Label colour"
-                        value={settings.labelColor}
-                        onChange={(labelColor) => onChange({ labelColor })}
+                        label="Link colour"
+                        value={settings.edgeColor}
+                        onChange={(edgeColor) => onChange({ edgeColor })}
                     />
                 )}
             </div>
+            <div className="space-y-3 border-t pt-5">
+                <div className="grid gap-1.5 text-xs font-medium">
+                    <span>Show labels</span>
+                    <Select
+                        value={labelMode}
+                        onValueChange={(value) => {
+                            if (!value) return;
+                            onChange(
+                                value === 'none'
+                                    ? { showLabels: false }
+                                    : value === 'all'
+                                      ? { showLabels: true, labelGroup: undefined }
+                                      : {
+                                            showLabels: true,
+                                            labelGroup: value.slice('group:'.length)
+                                        }
+                            );
+                        }}
+                    >
+                        <SelectTrigger
+                            aria-label="Show labels"
+                            className="h-9 w-full bg-background"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="start" className="max-h-60">
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="all">All nodes</SelectItem>
+                            {groups.map((group) => (
+                                <SelectItem key={group} value={`group:${group}`}>
+                                    {group || 'Ungrouped'}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                {settings.showLabels && (
+                    <>
+                        <NetworkColour
+                            label="Label colour"
+                            value={settings.labelColor}
+                            onChange={(labelColor) => onChange({ labelColor })}
+                        />
+                        <div className="grid gap-1.5 text-xs font-medium">
+                            <span>Label font</span>
+                            <Select
+                                value={settings.labelFontFamily ?? DEFAULT_FONT_OPTION_ID}
+                                onValueChange={(value) => {
+                                    if (value) onChange({ labelFontFamily: value });
+                                }}
+                            >
+                                <SelectTrigger
+                                    aria-label="Label font"
+                                    className="h-9 w-full bg-background"
+                                    style={{
+                                        fontFamily: getFontFamilyCss(
+                                            settings.labelFontFamily ?? DEFAULT_FONT_OPTION_ID
+                                        )
+                                    }}
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent align="start" className="max-h-60">
+                                    {fontOptions.map((option) => (
+                                        <SelectItem
+                                            key={option.id}
+                                            value={option.id}
+                                            style={{ fontFamily: getFontFamilyCss(option.id) }}
+                                        >
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <NetworkRange
+                            label="Label size"
+                            min={8}
+                            max={48}
+                            step={1}
+                            value={settings.labelFontSize ?? 14}
+                            onChange={(labelFontSize) => onChange({ labelFontSize })}
+                        />
+                    </>
+                )}
+            </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-                Only nodes, links and optional labels are drawn. The layer has no background.
+                Set a node type in Custom to filter labels here.
             </p>
         </div>
     );

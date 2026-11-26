@@ -1,3 +1,5 @@
+import { Throttler } from '@tanstack/pacer';
+
 import { createPastedLayers, snapshotCopyableLayers } from './editorClipboard';
 import { EditorEngine } from './editorEngine';
 import {
@@ -8,7 +10,13 @@ import {
 import type { EditorState, SliceHelpers } from './editorStore.types';
 import { fitSizeToViewport, MIN_LAYER_DIMENSION } from './fitSizeToViewport';
 import { preserveImageDeepZoom } from './mediaUtils';
-import { NetworkSchema, NETWORK_WIDTH, NETWORK_HEIGHT, type Network } from './network/schema';
+import {
+    NetworkInfluenceSchema,
+    NetworkSchema,
+    NETWORK_WIDTH,
+    NETWORK_HEIGHT,
+    type Network
+} from './network/schema';
 import { getLineBounds } from './stageGeometry';
 import {
     TEXT_DEFAULT_FONT_SIZE_PX,
@@ -31,6 +39,59 @@ const toNumericIds = (selectedLayerIds: string[]) =>
     selectedLayerIds.map((id) => Number.parseInt(id, 10)).filter((id) => Number.isFinite(id));
 
 export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHelpers) {
+    const influenceSenders = new Map<
+        number,
+        {
+            scope: string;
+            sender: Throttler<(influence: NonNullable<Network['influence']>) => void>;
+        }
+    >();
+    const scopeKey = () => {
+        const { projectId, commitId, activeSlideId } = get();
+        return `${projectId}/${commitId}/${activeSlideId}`;
+    };
+    const cancelInfluenceSend = (numericId: number) => {
+        influenceSenders.get(numericId)?.sender.cancel();
+        influenceSenders.delete(numericId);
+    };
+    const cancelAllInfluenceSends = () => {
+        for (const { sender } of influenceSenders.values()) sender.cancel();
+        influenceSenders.clear();
+    };
+    const queueInfluenceSend = (
+        numericId: number,
+        influence: NonNullable<Network['influence']>
+    ) => {
+        const scope = scopeKey();
+        let entry = influenceSenders.get(numericId);
+        if (entry?.scope !== scope) {
+            cancelInfluenceSend(numericId);
+            entry = {
+                scope,
+                sender: new Throttler(
+                    (latest) => {
+                        const layer = get().layers.get(numericId);
+                        if (
+                            scopeKey() !== scope ||
+                            layer?.type !== 'graph' ||
+                            layer.config.locked ||
+                            !layer.network ||
+                            JSON.stringify(layer.network.influence) !== JSON.stringify(latest)
+                        )
+                            return;
+                        EditorEngine.getInstance().sendJSON({
+                            type: 'network_influence',
+                            numericId,
+                            influence: latest
+                        });
+                    },
+                    { wait: 100, leading: true, trailing: true }
+                )
+            };
+            influenceSenders.set(numericId, entry);
+        }
+        entry.sender.maybeExecute(influence);
+    };
     /**
      * Commit a batch of re-stacked layers. Broadcasts directly rather than through
      * helpers.sendLayerUpdate, which is throttled and would collapse a batch into a
@@ -60,6 +121,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
 
     return {
         hydrate: (layers: LayerWithEditorState[]) => {
+            cancelAllInfluenceSends();
             const engine = EditorEngine.getInstance();
             set((s) => {
                 const mergedLayers = migrateLegacyLayers(layers).map((layer) => {
@@ -121,6 +183,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             }),
 
         removeLayer: (numericId: number) => {
+            cancelInfluenceSend(numericId);
             const wasUploading = get().layers.get(numericId)?.isUploading;
             set((s) => {
                 const newLayers = new Map(s.layers);
@@ -378,6 +441,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
             if (!selectedLayerIds.length) return;
             const numericId = parseInt(selectedLayerIds[0]);
             if (layers.get(numericId)?.config.locked) return;
+            cancelInfluenceSend(numericId);
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'delete_layer', numericId });
             set((s) => {
@@ -578,6 +642,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         updateNetworkLayer: (numericId: number, input: Network) => {
             const current = get().layers.get(numericId);
             if (current?.type !== 'graph' || current.config.locked) return;
+            cancelInfluenceSend(numericId);
             const layer = { ...current, network: NetworkSchema.parse(input) };
             set((s) => ({ layers: new Map(s.layers).set(numericId, layer) }));
             EditorEngine.getInstance().sendJSON({
@@ -586,6 +651,19 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
                 layer
             });
             get().markDirty();
+        },
+
+        updateNetworkInfluence: (numericId: number, input: NonNullable<Network['influence']>) => {
+            const current = get().layers.get(numericId);
+            if (current?.type !== 'graph' || current.config.locked || !current.network) return;
+            const influence = NetworkInfluenceSchema.parse(input);
+            if (JSON.stringify(current.network.influence) === JSON.stringify(influence)) return;
+            const layer = { ...current, network: { ...current.network, influence } };
+            set((s) => ({
+                layers: new Map(s.layers).set(numericId, layer),
+                saveStatus: s.saveStatus === 'saving' ? 'saving' : 'dirty'
+            }));
+            queueInfluenceSend(numericId, influence);
         },
 
         addMapLayer: () => {
@@ -861,6 +939,7 @@ export function createLayerSlice(set: SliceSet, get: SliceGet, helpers: SliceHel
         },
 
         clearStage: () => {
+            cancelAllInfluenceSends();
             const engine = EditorEngine.getInstance();
             engine.sendJSON({ type: 'clear_stage' });
             set((state) => ({

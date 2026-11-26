@@ -23,6 +23,17 @@ export function wireEngineSubscriptions(store: StoreApi<EditorState>): () => voi
             store.setState({ recentColours: data.recentColours });
         } else if (data.type === 'upsert_layer') {
             s.upsertLayer(data.layer);
+        } else if (data.type === 'network_influence') {
+            store.setState((state) => {
+                const layer = state.layers.get(data.numericId);
+                if (layer?.type !== 'graph' || !layer.network) return {};
+                return {
+                    layers: new Map(state.layers).set(data.numericId, {
+                        ...layer,
+                        network: { ...layer.network, influence: data.influence }
+                    })
+                };
+            });
         } else if (data.type === 'delete_layer') {
             store.setState((st) => {
                 const newLayers = new Map(st.layers);

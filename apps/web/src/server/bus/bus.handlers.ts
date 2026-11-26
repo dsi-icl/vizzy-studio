@@ -32,7 +32,6 @@ import {
     persistSlideMetadata,
     registerPeer,
     registerActiveVideo,
-    resolveScopeId,
     saveScope,
     scopedState,
     sendJSON,
@@ -54,6 +53,7 @@ import {
     recordProjectColour
 } from '~/lib/busState.projectContext';
 import { preserveImageDeepZoom } from '~/lib/mediaUtils';
+import { NetworkInfluenceSchema } from '~/lib/network/schema';
 import { validatePortalToken } from '~/lib/portalTokens';
 import { markScopeDirty } from '~/lib/scopePersistence';
 import { canBindWall } from '~/lib/signageAccess';
@@ -300,6 +300,42 @@ handlers.set('upsert_layer', ({ entry, data, scopeId, rawText }) => {
         }
         broadcastToScopeRaw(scopeId, relayPayload, entry);
     }
+});
+
+handlers.set('network_influence', ({ entry, data, scopeId }) => {
+    if (scopeId === null) return;
+    const scope = scopedState.get(scopeId);
+    if (!scope) return;
+    const layer = scope.layers.get(data.numericId);
+    if (layer?.type !== 'graph' || !layer.network || layer.config.locked) return;
+    const parsed = NetworkInfluenceSchema.safeParse(data.influence);
+    if (!parsed.success) return;
+    const influence = parsed.data;
+    const ids = new Set(layer.network.data.nodes.map((node) => node.id));
+    if (!ids.has(influence.activeNodeId)) return;
+    if (Object.keys(influence.values).some((id) => !ids.has(id))) return;
+    if (
+        influence.visibleNodeIds &&
+        (new Set(influence.visibleNodeIds).size !== influence.visibleNodeIds.length ||
+            influence.visibleNodeIds.some((id) => !ids.has(id)))
+    )
+        return;
+    if (JSON.stringify(layer.network.influence) === JSON.stringify(influence)) return;
+    scope.layers.set(data.numericId, {
+        ...layer,
+        network: { ...layer.network, influence }
+    });
+    markScopeDirty(scope);
+    invalidateHydrateCache(scopeId);
+    broadcastToScopeRaw(
+        scopeId,
+        JSON.stringify({
+            type: 'network_influence',
+            numericId: data.numericId,
+            influence
+        }),
+        entry
+    );
 });
 
 handlers.set('delete_layer', ({ entry, data, scopeId, rawText }) => {

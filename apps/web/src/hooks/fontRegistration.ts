@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { isFontAsset, stripFileExtension } from '~/lib/mediaUtils';
 import {
+    announceTextFontReady,
     getTextFontRevision,
     preloadTextFontSources,
     registerTextFontSources,
@@ -35,6 +36,7 @@ function loadDocumentFont(font: FontAsset, dataUri: string): Promise<void> {
         .then(() => new FontFace(font.family, `url(${dataUri}) format('woff2')`).load())
         .then((face) => {
             document.fonts.add(face);
+            announceTextFontReady();
         })
         .catch((error) => {
             console.warn(`Failed to load font ${font.family}:`, error);

@@ -23,6 +23,7 @@ export const WS_RATE_LIMIT_STRIKE_LIMIT = Math.max(
 export const WS_MUTATION_MESSAGE_TYPES = new Set([
     'clear_stage',
     'upsert_layer',
+    'network_influence',
     'delete_layer',
     'seed_scope',
     'update_slides',
@@ -50,6 +51,7 @@ export const VIEW_PROJECT_MESSAGE_TYPES = new Set([
 export const EDIT_PROJECT_MESSAGE_TYPES = new Set([
     'clear_stage',
     'upsert_layer',
+    'network_influence',
     'delete_layer',
     'seed_scope',
     'update_slides',

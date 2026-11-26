@@ -59,6 +59,7 @@
         "d3-force": "catalog:",
         "date-fns": "catalog:",
         "happy-dom": "catalog:",
+        "jszip": "3.10.2",
         "lexical": "catalog:",
         "maplibre-gl": "catalog:",
         "motion": "catalog:",

@@ -44,6 +44,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFonts } from '~/hooks/useFonts';
 import { useEditorStore } from '~/lib/editorStore';
 import { isExplicitCommitKey, parseBoundedNumber } from '~/lib/explicitInputCommit';
+import {
+    DEFAULT_FONT_OPTION_ID,
+    getFontFamilyCss,
+    SYSTEM_FONT_OPTIONS
+} from '~/lib/fontFamilyOptions';
 import { emToVirtualPx, TEXT_BASE_FONT_SIZE_PX, virtualPxToEm } from '~/lib/textRenderConfig';
 import { inheritTrailingTextStyle } from '~/lib/textSelectionStyle';
 
@@ -53,14 +58,7 @@ const DEFAULT_FONT_COLOR = '#FFFFFFFF';
 const DEFAULT_BG_COLOR = '#333333FF';
 const FONT_SIZE_MIN = 10;
 const FONT_SIZE_MAX = 1000;
-const DEFAULT_FONT_OPTION_ID = 'system-sans';
 const TOOLBAR_SELECTION_HIGHLIGHT = 'lexical-toolbar-selection';
-
-const SYSTEM_FONT_OPTIONS = [
-    { id: 'system-sans', label: 'System Sans', css: 'system-ui, sans-serif' },
-    { id: 'system-serif', label: 'System Serif', css: 'ui-serif, serif' },
-    { id: 'system-mono', label: 'System Mono', css: 'ui-monospace, monospace' }
-];
 
 function clampFontSize(px: number): number {
     return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, px));
@@ -342,22 +340,11 @@ export default function TextEditorToolbar() {
             return;
         }
         if (optionId.startsWith('project:')) {
-            const family = optionId.slice('project:'.length);
-            const css = `"${family}", system-ui, sans-serif`;
+            const css = getFontFamilyCss(optionId);
             applyStyle('font-family', css);
             setFontFamilyOptionId(optionId);
             setFontFamilyMixed(false);
         }
-    };
-
-    const getFontFamilyCss = (optionId: string): string => {
-        const system = SYSTEM_FONT_OPTIONS.find((opt) => opt.id === optionId);
-        if (system) return system.css;
-        if (optionId.startsWith('project:')) {
-            const family = optionId.slice('project:'.length);
-            return `"${family}", system-ui, sans-serif`;
-        }
-        return 'system-ui, sans-serif';
     };
 
     const selectedFontItem = fontFamilyItems.find((item) => item.value === fontFamilyOptionId);

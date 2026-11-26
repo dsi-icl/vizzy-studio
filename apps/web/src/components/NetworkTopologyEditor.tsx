@@ -7,11 +7,13 @@ import {
 } from '@phosphor-icons/react';
 import { Button } from '@repo/ui/components/button';
 import { Input } from '@repo/ui/components/input';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import type { NetworkSelection } from '~/lib/network/render';
 import { MAX_NETWORK_EDGES, MAX_NETWORK_NODES, type NetworkData } from '~/lib/network/schema';
 import { appendNetworkLink, appendNetworkNode, removeNetworkNode } from '~/lib/network/topology';
+
+import { NetworkNodeSelect } from './NetworkNodeSelect';
 
 export const NETWORK_TOPOLOGY_PAGE_SIZE = 6;
 export type NetworkTopologyNavigation = { section: 'nodes' | 'links'; page: number };
@@ -33,6 +35,7 @@ export function NetworkTopologyEditor({
 }) {
     const { section, page } = navigation;
     const [focusId, setFocusId] = useState<string | null>(null);
+    const nodeTypeId = useId();
     const newNodeInput = useRef<HTMLInputElement>(null);
     useEffect(() => {
         // Focus only after the user's Add node action, never when the dialog opens.
@@ -52,6 +55,7 @@ export function NetworkTopologyEditor({
     const currentPage = Math.min(page, pages - 1);
     const offset = currentPage * NETWORK_TOPOLOGY_PAGE_SIZE;
     const edge = edgeIndex === null ? undefined : data.edges[edgeIndex];
+    const selectedNode = data.nodes.find((node) => node.id === selectedNodeId);
     const nodeName = (id: string) => data.nodes.find((node) => node.id === id)?.label?.trim() || id;
     const switchSection = (next: 'nodes' | 'links') => {
         onNavigate({ section: next, page: 0 });
@@ -140,23 +144,44 @@ export function NetworkTopologyEditor({
                         Link {edgeIndex! + 1}
                     </p>
                     {(['source', 'target'] as const).map((field) => (
-                        <label key={field} className="grid min-w-0 gap-1.5 text-xs">
-                            {field === 'source' ? 'From node' : 'To node'}
-                            <select
-                                aria-label={field === 'source' ? 'From node' : 'To node'}
+                        <div key={field} className="grid min-w-0 gap-1.5 text-xs">
+                            <span>{field === 'source' ? 'From node' : 'To node'}</span>
+                            <NetworkNodeSelect
+                                label={field === 'source' ? 'From node' : 'To node'}
+                                nodes={data.nodes}
                                 value={edge[field]}
-                                onChange={(event) => changeEndpoint(field, event.target.value)}
-                                className="h-9 w-full min-w-0 rounded-lg border bg-background px-2 text-xs"
-                            >
-                                {data.nodes.map((node) => (
-                                    <option key={node.id} value={node.id}>
-                                        {nodeName(node.id)}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
+                                onValueChange={(value) => changeEndpoint(field, value)}
+                                className="rounded-lg text-xs"
+                            />
+                        </div>
                     ))}
                 </div>
+            )}
+            {section === 'nodes' && selectedNode && (
+                <label
+                    htmlFor={nodeTypeId}
+                    className="grid gap-1.5 rounded-xl border bg-muted/20 p-3 text-xs"
+                >
+                    Node type
+                    <Input
+                        id={nodeTypeId}
+                        aria-label={`Node type ${selectedNode.id}`}
+                        maxLength={80}
+                        placeholder="e.g. Health or Environment"
+                        value={selectedNode.group ?? ''}
+                        onChange={(event) =>
+                            onChange({
+                                ...data,
+                                nodes: data.nodes.map((node) =>
+                                    node.id === selectedNode.id
+                                        ? { ...node, group: event.target.value || undefined }
+                                        : node
+                                )
+                            })
+                        }
+                        className="h-8 text-xs"
+                    />
+                </label>
             )}
             <div
                 className="overflow-hidden rounded-xl border"

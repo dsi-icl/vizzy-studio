@@ -22,7 +22,7 @@ import {
 
 type Node = SimulationNodeDatum & { id: string };
 
-import { networkDocumentKey, initialNetworkPositions } from './document';
+import { networkDocumentKey, networkTopologyKey, initialNetworkPositions } from './document';
 
 /** One continuing simulation. Call advance at 20 Hz; each call steps three physics ticks. */
 export function createNetworkSimulation(initial: Network) {
@@ -89,12 +89,15 @@ export function createNetworkSimulation(initial: Network) {
         const key = networkDocumentKey(next);
         if (documentKey === key) return;
         const topologyChanged =
-            !documentKey ||
-            network.source !== next.source ||
-            JSON.stringify(network.data) !== JSON.stringify(next.data);
+            !documentKey || networkTopologyKey(network.data) !== networkTopologyKey(next.data);
         const pausedSnapshot = next.settings.paused && !!next.positions;
         const positionsChanged =
             pausedSnapshot && JSON.stringify(network.positions) !== JSON.stringify(next.positions);
+        const movedNode =
+            next.nodeMove &&
+            (!documentKey || JSON.stringify(network.nodeMove) !== JSON.stringify(next.nodeMove))
+                ? next.nodeMove
+                : undefined;
         const nudged = !!documentKey && next.reheat !== network.reheat;
         network = next;
         documentKey = key;
@@ -114,6 +117,16 @@ export function createNetworkSimulation(initial: Network) {
         const link = simulation.force('link') as ForceLink<Node, SimulationLinkDatum<Node>>;
         link.distance(s.linkDistance).strength(s.linkStrength);
         simulation.alphaTarget(s.motionStrength > 0 ? 0.12 : 0).alpha(0.8);
+        if (movedNode) {
+            const node = nodes.find((candidate) => candidate.id === movedNode.nodeId);
+            if (node) {
+                const margin = s.nodeRadius + 8;
+                node.x = Math.max(margin, Math.min(NETWORK_WIDTH - margin, movedNode.x));
+                node.y = Math.max(margin, Math.min(NETWORK_HEIGHT - margin, movedNode.y));
+                node.vx = 0;
+                node.vy = 0;
+            }
+        }
         if (nudged) {
             for (const node of nodes) {
                 const angle = random() * Math.PI * 2;

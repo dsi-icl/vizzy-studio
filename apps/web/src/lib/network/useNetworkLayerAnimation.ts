@@ -4,6 +4,8 @@ import { initialNetworkPositions, networkDocumentKey } from './document';
 import type { NetworkFrameBuffer } from './frames';
 import type { Network, NetworkView } from './schema';
 
+type KeyedNetworkView = NetworkView & { documentKey?: string };
+
 // The server also refreshes paused/settled graphs once per second.
 const SHARED_FRAME_MAX_AGE_MS = 2500;
 
@@ -16,17 +18,22 @@ export function useNetworkLayerAnimation(
     frames: NetworkFrameBuffer | undefined,
     onDraw: () => void
 ) {
-    const view = useRef<NetworkView | undefined>(undefined);
+    const view = useRef<KeyedNetworkView | undefined>(undefined);
     const documentKey = useMemo(() => (network ? networkDocumentKey(network) : ''), [network]);
     const inputs = useRef({ network, documentKey, onDraw });
     useEffect(() => {
         inputs.current = { network, documentKey, onDraw };
     }, [network, documentKey, onDraw]);
+    useEffect(() => {
+        // Values and other paint-only changes keep the same frame token.
+        // Redraw them even when the shared physics is paused or settled.
+        inputs.current.onDraw();
+    }, [network]);
 
     useEffect(() => {
         let raf = 0;
         let worker: Worker | undefined;
-        let local: NetworkView | undefined;
+        let local: KeyedNetworkView | undefined;
         let attempted = false;
         let lastToken: unknown;
         let activeKey = '';
@@ -69,7 +76,7 @@ export function useNetworkLayerAnimation(
                     event: MessageEvent<{ view?: NetworkView; documentKey?: string }>
                 ) => {
                     if (event.data.documentKey === workerKey && event.data.view)
-                        local = event.data.view;
+                        local = { ...event.data.view, documentKey: event.data.documentKey };
                 };
                 worker.postMessage(next);
             } catch (error) {
@@ -93,7 +100,7 @@ export function useNetworkLayerAnimation(
             let token: unknown;
             if (shared) {
                 if (attempted) stopLocal();
-                view.current = shared.view;
+                view.current = { ...shared.view, documentKey };
                 token = shared.token;
             } else {
                 if (!attempted || activeKey !== documentKey) configureLocal(authored);

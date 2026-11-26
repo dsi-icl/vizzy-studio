@@ -1,8 +1,10 @@
 import { initialNetworkPositions } from './document';
-import { networkFit, type NetworkSelection, type Rect } from './render';
+import { networkInfluenceValues, networkNodeRadius, networkVisibleNodeIds } from './influence';
+import { networkEdgeWidth, networkFit, type NetworkSelection, type Rect } from './render';
 import {
     NETWORK_HEIGHT,
     NETWORK_WIDTH,
+    type Network,
     type NetworkData,
     type NetworkSettings,
     type NetworkView
@@ -19,6 +21,14 @@ export function networkPointerPosition(clientX: number, clientY: number, bounds:
         : null;
 }
 
+export function clampNetworkNodePosition(point: { x: number; y: number }, nodeRadius: number) {
+    const margin = nodeRadius + 8;
+    return {
+        x: Math.max(margin, Math.min(NETWORK_WIDTH - margin, point.x)),
+        y: Math.max(margin, Math.min(NETWORK_HEIGHT - margin, point.y))
+    };
+}
+
 /** Use the current topology while a worker update is in flight. IDs keep the
  * positions aligned after a node is inserted, removed or renamed. */
 export function networkPreviewView(data: NetworkData, live?: NetworkView): NetworkView {
@@ -31,17 +41,27 @@ export function networkPreviewView(data: NetworkData, live?: NetworkView): Netwo
 export function hitTestNetwork(
     view: NetworkView,
     settings: NetworkSettings,
-    point: { x: number; y: number; scale: number }
+    point: { x: number; y: number; scale: number },
+    network?: Network
 ): NetworkSelection {
     const nodeRadius = Math.max(settings.nodeRadius, 9 / point.scale);
+    const values = network ? networkInfluenceValues(network) : null;
+    const visible = network ? networkVisibleNodeIds(network) : null;
     // Nodes are painted above links. Within a node's target area, select the node.
     let nodeIndex = -1;
     let nearestNode = Infinity;
     for (let i = view.data.nodes.length - 1; i >= 0; i--) {
+        if (visible && !visible.has(view.data.nodes[i]!.id)) continue;
         const p = view.positions[i];
         if (!p) continue;
         const distance = Math.hypot(point.x - p.x, point.y - p.y);
-        if (distance <= nodeRadius && distance < nearestNode) {
+        const radius = network
+            ? Math.max(
+                  networkNodeRadius(network, values?.get(view.data.nodes[i]!.id) ?? 50),
+                  9 / point.scale
+              )
+            : nodeRadius;
+        if (distance <= radius && distance < nearestNode) {
             nearestNode = distance;
             nodeIndex = i;
         }
@@ -52,6 +72,7 @@ export function hitTestNetwork(
     let nearestEdge = Infinity;
     for (let i = view.data.edges.length - 1; i >= 0; i--) {
         const edge = view.data.edges[i]!;
+        if (visible && (!visible.has(edge.source) || !visible.has(edge.target))) continue;
         const a = byId.get(edge.source),
             b = byId.get(edge.target);
         if (!a || !b) continue;
@@ -68,7 +89,7 @@ export function hitTestNetwork(
                 : 0;
             distance = Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
         }
-        const width = settings.edgeWidth * Math.min(4, Math.sqrt(edge.weight ?? 1));
+        const width = networkEdgeWidth(edge, settings);
         const tolerance = Math.max(5 / point.scale, width / 2 + 2 / point.scale);
         if (distance <= tolerance && distance < nearestEdge) {
             nearestEdge = distance;

@@ -1,3 +1,4 @@
+import { DEFAULT_FONT_OPTION_ID } from '~/lib/fontFamilyOptions';
 import { z } from '~/lib/zod';
 
 export const MAX_NETWORK_NODES = 1000;
@@ -24,7 +25,8 @@ export const NetworkDataSchema = z
                 z.object({
                     source: Id,
                     target: Id,
-                    weight: z.number().positive().max(10000).optional()
+                    weight: z.number().positive().max(10000).optional(),
+                    influence: z.number().min(-5).max(5).optional()
                 })
             )
             .max(MAX_NETWORK_EDGES)
@@ -54,10 +56,17 @@ export const DEFAULT_NETWORK_SETTINGS = {
     nodeRadius: 7,
     edgeWidth: 1.5,
     showLabels: false,
+    labelFontFamily: DEFAULT_FONT_OPTION_ID,
+    labelFontSize: 14,
     nodeColor: '#ffffff',
     colorByGroup: false,
     labelColor: '#ffffff',
     edgeColor: '#ffffff',
+    relationshipColors: {
+        positive: '#22c55e',
+        negative: '#ef4444',
+        neutral: '#94a3b8'
+    },
     motionStrength: 0.65,
     paused: false
 };
@@ -70,6 +79,9 @@ export const NetworkSettingsSchema = z.object({
     nodeRadius: z.number().min(2).max(20),
     edgeWidth: z.number().min(0.5).max(5),
     showLabels: z.boolean(),
+    labelGroup: z.string().max(80).optional(),
+    labelFontFamily: z.string().max(160).default(DEFAULT_FONT_OPTION_ID),
+    labelFontSize: z.number().min(8).max(48).default(14),
     nodeColor: z
         .string()
         .regex(/^#[0-9a-fA-F]{6}$/)
@@ -84,7 +96,21 @@ export const NetworkSettingsSchema = z.object({
         .string()
         .regex(/^#[0-9a-fA-F]{6}$/)
         .default('#ffffff'),
+    relationshipColors: z
+        .object({
+            positive: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+            negative: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+            neutral: z.string().regex(/^#[0-9a-fA-F]{6}$/)
+        })
+        .default(DEFAULT_NETWORK_SETTINGS.relationshipColors),
     paused: z.boolean().default(false)
+});
+
+export const NetworkInfluenceSchema = z.object({
+    activeNodeId: Id,
+    values: z.record(Id, z.number().min(0).max(100)),
+    propagation: z.number().min(0).max(1),
+    visibleNodeIds: z.array(Id).max(MAX_NETWORK_NODES).optional()
 });
 
 export const NetworkSchema = z
@@ -94,6 +120,15 @@ export const NetworkSchema = z
         settings: NetworkSettingsSchema,
         source: z.enum(['import', 'live-example', 'custom']).default('import'),
         reheat: z.number().int().nonnegative().default(0),
+        nodeMove: z
+            .object({
+                nodeId: Id,
+                x: z.number().min(0).max(NETWORK_WIDTH),
+                y: z.number().min(0).max(NETWORK_HEIGHT),
+                revision: z.number().int().nonnegative()
+            })
+            .optional(),
+        influence: NetworkInfluenceSchema.optional(),
         // A paused network stores the preview's frozen layout. Running networks
         // omit positions so ongoing simulation frames never dirty the document.
         positions: z
@@ -109,6 +144,27 @@ export const NetworkSchema = z
     .superRefine((network, ctx) => {
         if (network.positions && network.positions.length !== network.data.nodes.length) {
             ctx.addIssue({ code: 'custom', message: 'Each node needs a saved position.' });
+        }
+        if (
+            network.nodeMove &&
+            !network.data.nodes.some((node) => node.id === network.nodeMove!.nodeId)
+        )
+            ctx.addIssue({ code: 'custom', message: 'Moved node is missing.' });
+        if (network.influence) {
+            const ids = new Set(network.data.nodes.map((node) => node.id));
+            if (!ids.has(network.influence.activeNodeId))
+                ctx.addIssue({ code: 'custom', message: 'Selected influence node is missing.' });
+            for (const id of Object.keys(network.influence.values))
+                if (!ids.has(id))
+                    ctx.addIssue({ code: 'custom', message: `Unknown influence node: ${id}` });
+            const visible = network.influence.visibleNodeIds;
+            if (visible) {
+                if (new Set(visible).size !== visible.length)
+                    ctx.addIssue({ code: 'custom', message: 'Displayed nodes must be unique.' });
+                for (const id of visible)
+                    if (!ids.has(id))
+                        ctx.addIssue({ code: 'custom', message: `Unknown displayed node: ${id}` });
+            }
         }
     });
 

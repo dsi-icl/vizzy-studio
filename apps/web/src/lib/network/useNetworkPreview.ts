@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 
 import type { Network, NetworkView } from './schema';
 
+type PreviewFrame = NetworkView & { documentKey?: string };
+
 /** Runs a private worker for the draft/dialog preview. */
 export function useNetworkPreview(
     network: Network | undefined,
@@ -9,7 +11,7 @@ export function useNetworkPreview(
     onStatus?: (error: string | null) => void
 ) {
     const worker = useRef<Worker | null>(null);
-    const latest = useRef<NetworkView | undefined>(undefined);
+    const latest = useRef<PreviewFrame | undefined>(undefined);
     const status = useRef(onStatus);
     useEffect(() => {
         status.current = onStatus;
@@ -21,8 +23,11 @@ export function useNetworkPreview(
                 type: 'module'
             });
             worker.current = next;
-            next.onmessage = (event: MessageEvent<{ view?: NetworkView; error?: string }>) => {
-                if (event.data.view) latest.current = event.data.view;
+            next.onmessage = (
+                event: MessageEvent<{ view?: NetworkView; documentKey?: string; error?: string }>
+            ) => {
+                if (event.data.view)
+                    latest.current = { ...event.data.view, documentKey: event.data.documentKey };
                 status.current?.(event.data.error ?? null);
             };
             next.onerror = () =>

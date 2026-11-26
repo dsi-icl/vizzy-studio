@@ -95,6 +95,10 @@ export interface EditorState {
     addMapLayer: () => void;
     addNetworkLayer: (network: import('./network/schema').Network) => void;
     updateNetworkLayer: (numericId: number, network: import('./network/schema').Network) => void;
+    updateNetworkInfluence: (
+        numericId: number,
+        influence: NonNullable<import('./network/schema').Network['influence']>
+    ) => void;
     addShapeLayer: (shape: 'rectangle' | 'oval') => void;
     addWebLayer: () => void;
     addBackgroundLayer: () => void;
