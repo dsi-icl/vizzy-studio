@@ -34,6 +34,7 @@ function makeHarness() {
         playbackStartRafs: new Map(),
         playbackDriftRafs: new Map(),
         videoRecovery: new Map(),
+        pendingVideoPlayback: new Map(),
         monotonicNow: () => elapsed,
         getServerTime: () => serverAnchor + elapsed
     });
@@ -55,6 +56,9 @@ function makeHarness() {
                 currentTime = value;
             },
             readyState: 4,
+            duration: 10,
+            seeking: false,
+            buffered: { length: 1, start: () => 0, end: () => 10 },
             isConnected: true,
             playbackRate: 1,
             play: () => {
@@ -271,9 +275,10 @@ describe('wall video recovery', () => {
         harness.engine['driftController'](undefined, layer);
         expect(video.seeks.at(-1)).toBe(1);
 
-        video.video.currentTime = 1.4;
+        harness.setElapsed(2000);
+        video.video.currentTime = 2.4;
         harness.engine['driftController'](undefined, layer);
-        expect(video.seeks.at(-1)).toBe(1);
+        expect(video.seeks.at(-1)).toBe(2);
 
         harness.setElapsed(10_100);
         video.video.currentTime = 9.9;
@@ -299,4 +304,100 @@ describe('wall video recovery', () => {
         expect(video.seeks).toHaveLength(seekCount + 1);
         expect(video.seeks.at(-1)).toBe(1);
     });
+});
+
+test('corrects a three-frame lead or lag without interrupting playback', () => {
+    const harness = makeHarness();
+    const screen = harness.makeVideo(1);
+    const layer = harness.engine.layers.get(1)!;
+    harness.runAnimationFrames();
+    harness.setElapsed(1000);
+    for (const media of [0.95, 1.05]) {
+        const seeks = screen.seeks.length;
+        harness.engine['driftController'](
+            { mediaTime: media, expectedDisplayTime: 1000 } as VideoFrameCallbackMetadata,
+            layer as any
+        );
+        if (media < 1) expect(screen.video.playbackRate).toBeGreaterThan(1);
+        else expect(screen.video.playbackRate).toBeLessThan(1);
+        expect(screen.seeks).toHaveLength(seeks);
+    }
+});
+
+test('retains the play command received while a 50MB video is mounting', () => {
+    const harness = makeHarness();
+    const frame = new ArrayBuffer(22);
+    const view = new DataView(frame);
+    view.setUint8(0, 0x15);
+    view.setUint16(1, 1, true);
+    view.setUint16(3, 1, true);
+    view.setUint8(5, 1);
+    view.setFloat64(6, 4, true);
+    view.setFloat64(14, 100000, true);
+    harness.engine['handleMessage']({ data: frame } as MessageEvent);
+    const screen = harness.makeVideo(1);
+    harness.runAnimationFrames();
+    expect(screen.video.currentTime).toBe(4);
+});
+
+test('keeps downloading when the shared time lies outside the buffered range', () => {
+    const h = makeHarness();
+    const screen = h.makeVideo(1);
+    h.runAnimationFrames();
+    screen.video.buffered.end = () => 0.5;
+    h.setElapsed(2000);
+    screen.emitFrame();
+    expect(screen.seeks).toHaveLength(0);
+    expect(screen.playCount).toBeGreaterThan(0);
+    expect(screen.video.playbackRate).toBeGreaterThan(1);
+    // Once the target is available, seek once to the common timeline.
+    screen.video.buffered.end = () => 5;
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([2]);
+    screen.video.seeking = true;
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([2]);
+});
+
+test('a late join can request its initial range once, then waits for enough buffer', () => {
+    const h = makeHarness();
+    h.setElapsed(6000);
+    const screen = h.makeVideo(1);
+    screen.video.buffered.end = () => 0.5;
+    h.runAnimationFrames();
+    expect(screen.seeks).toEqual([6]);
+    h.setElapsed(8000);
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([6]);
+    screen.video.buffered.start = () => 6;
+    screen.video.buffered.end = () => 9;
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([6, 8]);
+});
+
+test('does not repeatedly seek while the decoder catches up after a seek', () => {
+    const h = makeHarness();
+    const screen = h.makeVideo(1);
+    h.runAnimationFrames();
+    h.setElapsed(2000);
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([2]);
+    h.setElapsed(2300);
+    screen.emitFrame();
+    expect(screen.seeks).toEqual([2]);
+    expect(screen.video.playbackRate).toBeGreaterThan(1);
+});
+
+test('recovers an initial media request that never produces loadeddata', () => {
+    const h = makeHarness();
+    const screen = h.makeVideo(1);
+    screen.video.readyState = 0;
+    screen.video.buffered.length = 0;
+    h.engine['handlePlaybackStateChange'](h.engine.layers.get(1) as any);
+    h.setElapsed(5000);
+    h.checkStalls();
+    expect(screen.loadCount).toBe(0);
+    h.setElapsed(7000);
+    h.checkStalls();
+    expect(screen.loadCount).toBe(1);
 });

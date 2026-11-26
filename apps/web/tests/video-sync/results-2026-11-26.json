@@ -1,0 +1,467 @@
+{
+    "label": "final-awake",
+    "engine": "working-tree",
+    "revision": "994ff69067c19a72c1d731dcb8a7b29064a779b1",
+    "anchor": 1795700608432,
+    "fixture": {
+        "path": "/private/tmp/vizzy-video-sync/wall-50mb-60fps.mp4",
+        "size": 50956913,
+        "fps": 60,
+        "duration": 40
+    },
+    "screens": 4,
+    "results": [
+        {
+            "name": "cold-load-different-latencies-and-clocks",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700616594,
+            "to": 1795700621650,
+            "samples": 304,
+            "missing": 0,
+            "p50Ms": 16.56690234374736,
+            "p95Ms": 21.765853515624656,
+            "maxMs": 21.8667070312506,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 43.5126582278481,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 30
+                },
+                {
+                    "callbacksPerSecond": 43.11708860759494,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 30
+                },
+                {
+                    "callbacksPerSecond": 58.54430379746835,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 33.39990234375,
+                    "droppedFrames": 0
+                },
+                {
+                    "callbacksPerSecond": 48.45727848101266,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 37
+                }
+            ]
+        },
+        {
+            "name": "recover-plus-minus-120ms-drift",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700626655,
+            "to": 1795700631748,
+            "samples": 306,
+            "missing": 0,
+            "p50Ms": 16.566146484379374,
+            "p95Ms": 21.766853515629236,
+            "maxMs": 21.866951171872984,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 43.785588062045946,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 49.89990234375,
+                    "droppedFrames": 29
+                },
+                {
+                    "callbacksPerSecond": 45.74906734733948,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 25
+                },
+                {
+                    "callbacksPerSecond": 56.3518554879246,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 0
+                },
+                {
+                    "callbacksPerSecond": 50.65776556057334,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 28
+                }
+            ]
+        },
+        {
+            "name": "loading-and-recovery-timing",
+            "firstMovingFrameAfterAnchorMs": [
+                45.699951171875, 40.699951171875, 50.2998046875, 1334.60009765625
+            ],
+            "stalledScreenFirstFrameAfterNetworkRestoredMs": 167.7001953125,
+            "stalledAt": 1795700636680,
+            "recoveryAt": 1795700637880
+        },
+        {
+            "name": "network-starvation-recovery",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700648149,
+            "to": 1795700653297,
+            "samples": 309,
+            "missing": 0,
+            "p50Ms": 12.032951171875084,
+            "p95Ms": 21.73290234374292,
+            "maxMs": 23.73314648438196,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 43.9005439005439,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 27
+                },
+                {
+                    "callbacksPerSecond": 43.70629370629371,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 50.099853515625,
+                    "droppedFrames": 18
+                },
+                {
+                    "callbacksPerSecond": 56.33255633255633,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 2
+                },
+                {
+                    "callbacksPerSecond": 50.31080031080031,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 20
+                }
+            ]
+        },
+        {
+            "name": "warm-http-cache-reload",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700658429,
+            "to": 1795700663476,
+            "samples": 303,
+            "missing": 0,
+            "p50Ms": 16.500000000000625,
+            "p95Ms": 21.599853515638756,
+            "maxMs": 21.732902343757132,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 50.32692688725976,
+                    "p95CallbackGapMs": 33.300048828125,
+                    "maxCallbackGapMs": 33.5,
+                    "droppedFrames": 39
+                },
+                {
+                    "callbacksPerSecond": 47.55300178323757,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 45
+                },
+                {
+                    "callbacksPerSecond": 59.2431147216168,
+                    "p95CallbackGapMs": 16.7001953125,
+                    "maxCallbackGapMs": 33.39990234375,
+                    "droppedFrames": 0
+                },
+                {
+                    "callbacksPerSecond": 42.79770160491381,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 43
+                }
+            ]
+        },
+        {
+            "name": "warm-cache-transfer",
+            "bytes": 0
+        },
+        {
+            "name": "continuous-playback-60s",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700663478,
+            "to": 1795700723683,
+            "samples": 3613,
+            "missing": 0,
+            "p50Ms": 11.899902343756708,
+            "p95Ms": 21.56690234375702,
+            "maxMs": 28.565902343743232,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 50.34465575948841,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 66.699951171875,
+                    "droppedFrames": 453
+                },
+                {
+                    "callbacksPerSecond": 51.59039946848269,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 264
+                },
+                {
+                    "callbacksPerSecond": 57.5865791877751,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 66.699951171875,
+                    "droppedFrames": 12
+                },
+                {
+                    "callbacksPerSecond": 46.6738642969853,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 241
+                }
+            ]
+        },
+        {
+            "name": "host-clock-continuity",
+            "clockDiscontinuityMsByScreen": [0.5, 0.7001953125, 0.699951171875, 0.699951171875]
+        },
+        {
+            "name": "continuous-buffering",
+            "maxWaitingMsByScreen": [18.699951171875, 19.800048828125, 21.5, 16.800048828125]
+        },
+        {
+            "name": "cache-miss-alignment-time",
+            "milliseconds": 12983
+        },
+        {
+            "name": "cache-miss-late-join",
+            "metric": "displayed-frame phase spread",
+            "from": 1795700736849,
+            "to": 1795700741928,
+            "samples": 305,
+            "missing": 0,
+            "p50Ms": 11.866951171882079,
+            "p95Ms": 21.332999999998492,
+            "maxMs": 21.467048828114343,
+            "frameDelivery": [
+                {
+                    "callbacksPerSecond": 50.99429021460917,
+                    "p95CallbackGapMs": 33.39990234375,
+                    "maxCallbackGapMs": 50,
+                    "droppedFrames": 31
+                },
+                {
+                    "callbacksPerSecond": 56.70407560543414,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 0
+                },
+                {
+                    "callbacksPerSecond": 44.103169915337666,
+                    "p95CallbackGapMs": 33.400146484375,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 24
+                },
+                {
+                    "callbacksPerSecond": 56.9009647568419,
+                    "p95CallbackGapMs": 16.800048828125,
+                    "maxCallbackGapMs": 33.400146484375,
+                    "droppedFrames": 0
+                }
+            ]
+        },
+        {
+            "name": "cache-miss-transfer",
+            "bytes": 81439172
+        }
+    ],
+    "failures": [],
+    "requests": [
+        {
+            "id": "2",
+            "start": 0,
+            "end": 50956912,
+            "sent": 50956913,
+            "at": 1795700607437,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "1",
+            "start": 0,
+            "end": 50956912,
+            "sent": 50956913,
+            "at": 1795700607437,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "3",
+            "start": 0,
+            "end": 50956912,
+            "sent": 50956913,
+            "at": 1795700607437,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 0,
+            "end": 50956912,
+            "sent": 50956913,
+            "at": 1795700607437,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "3",
+            "start": 0,
+            "end": 50956912,
+            "sent": 262144,
+            "at": 1795700723869,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "1",
+            "start": 0,
+            "end": 50956912,
+            "sent": 262144,
+            "at": 1795700723869,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 0,
+            "end": 50956912,
+            "sent": 262144,
+            "at": 1795700723869,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "2",
+            "start": 0,
+            "end": 50956912,
+            "sent": 262144,
+            "at": 1795700723869,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 48267264,
+            "end": 50956912,
+            "sent": 2689649,
+            "at": 1795700724064,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "1",
+            "start": 48332800,
+            "end": 50956912,
+            "sent": 2624113,
+            "at": 1795700724317,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "2",
+            "start": 48267264,
+            "end": 50956912,
+            "sent": 2689649,
+            "at": 1795700724801,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "3",
+            "start": 48300032,
+            "end": 50956912,
+            "sent": 2656881,
+            "at": 1795700725558,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "1",
+            "start": 262144,
+            "end": 48332799,
+            "sent": 8912896,
+            "at": 1795700728430,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 262144,
+            "end": 48267263,
+            "sent": 8912896,
+            "at": 1795700728435,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "2",
+            "start": 262144,
+            "end": 48267263,
+            "sent": 11534336,
+            "at": 1795700728438,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "3",
+            "start": 262144,
+            "end": 48300031,
+            "sent": 8912896,
+            "at": 1795700729212,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 9175040,
+            "end": 48267263,
+            "sent": 524288,
+            "at": 1795700734077,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "0",
+            "start": 36470784,
+            "end": 48267263,
+            "sent": 11796480,
+            "at": 1795700734270,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "1",
+            "start": 36601856,
+            "end": 48332799,
+            "sent": 11534336,
+            "at": 1795700734308,
+            "status": 206,
+            "ifNoneMatch": null
+        },
+        {
+            "id": "2",
+            "start": 38862848,
+            "end": 48267263,
+            "sent": 7602176,
+            "at": 1795700736305,
+            "status": 206,
+            "ifNoneMatch": null
+        }
+    ],
+    "environment": {
+        "os": "macOS arm64",
+        "browser": "Google Chrome 158.0.8127.88 headless",
+        "bun": "1.3.14",
+        "ffmpeg": "8.1.2",
+        "diskCacheBytesPerBrowser": 1073741824
+    },
+    "unitTests": {
+        "passed": 15,
+        "failed": 0,
+        "assertions": 57
+    },
+    "baseline": {
+        "engine": "994ff69",
+        "failures": ["Error: Timed out: all screens actually decoding"],
+        "frameCallbacks": [1094, 1322, 1093, 9],
+        "seekEvents": [0, 0, 0, 10]
+    }
+}

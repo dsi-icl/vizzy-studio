@@ -15,12 +15,16 @@ const VIDEO_FIRST_FRAME_GRACE_MS = 5_000;
 const VIDEO_SEEK_GRACE_MS = 2_000;
 const VIDEO_RELOAD_RETRY_MS = 5_000;
 const CLOCK_SAMPLE_WINDOW_MS = 10_000;
-const VIDEO_DRIFT_DEADBAND_SECONDS = 0.08;
+// Below one 60fps frame; the previous 80ms deadband allowed five-frame offsets.
+const VIDEO_DRIFT_DEADBAND_SECONDS = 0.004;
+const VIDEO_SEEK_BUFFER_SECONDS = 0.75;
+const VIDEO_SEEK_COOLDOWN_MS = 1000;
 const VIDEO_HARD_SEEK_SECONDS = 0.25;
 
 type VideoRecoveryState = {
     video: HTMLVideoElement;
     lastFrameAt: number;
+    lastSeekAt: number;
     frameIntervalMs: number | null;
     hasFrame: boolean;
     active: boolean;
@@ -50,6 +54,10 @@ export class WallEngine {
     private playbackStartRafs = new Map<number, number>();
     private playbackDriftRafs = new Map<number, number>();
     private videoRecovery = new Map<number, VideoRecoveryState>();
+    private pendingVideoPlayback = new Map<
+        number,
+        Extract<LayerWithWallEngineState, { type: 'video' }>['playback']
+    >();
     private videoWatchdogTimer: ReturnType<typeof setInterval> | null = null;
     private monotonicNow = () => performance.now();
 
@@ -126,6 +134,7 @@ export class WallEngine {
         if (this.reconnectClearTimer) clearTimeout(this.reconnectClearTimer);
         if (this.videoWatchdogTimer) clearInterval(this.videoWatchdogTimer);
         this.pendingSlideReady = null;
+        this.pendingVideoPlayback.clear();
         for (const rafId of this.playbackStartRafs.values()) cancelAnimationFrame(rafId);
         this.playbackStartRafs.clear();
         for (const rafId of this.playbackDriftRafs.values()) cancelAnimationFrame(rafId);
@@ -207,6 +216,8 @@ export class WallEngine {
             this.forgetVideoRecovery(layer.numericId);
             return;
         }
+        const latestPlayback = this.pendingVideoPlayback.get(layer.numericId);
+        if (latestPlayback) layerPtr.playback = latestPlayback;
         this.ensureVideoRecovery(layerPtr, el as HTMLVideoElement);
 
         // Re-rendered React refs should not restart an already running video.
@@ -287,6 +298,11 @@ export class WallEngine {
                     const anchorMediaTime = view.getFloat64(offset + 3, true);
                     const anchorServerTime = view.getFloat64(offset + 11, true);
 
+                    this.pendingVideoPlayback.set(numericId, {
+                        status,
+                        anchorMediaTime,
+                        anchorServerTime
+                    });
                     const layer = this.layers.get(numericId);
                     if (layer?.type === 'video') {
                         layer.playback = { status, anchorMediaTime, anchorServerTime };
@@ -334,7 +350,9 @@ export class WallEngine {
         if (typeof event.data === 'string') {
             const data = GSMessageSchema.parse(JSON.parse(event.data));
 
+            if (data.type === 'delete_layer') this.pendingVideoPlayback.delete(data.numericId);
             if (data.type === 'hydrate') {
+                this.pendingVideoPlayback.clear();
                 this.customRenderUrl = data.customRender?.url;
                 this.boundSource = data.boundSource;
             }
@@ -349,6 +367,7 @@ export class WallEngine {
             ) {
                 this.layoutCallbacks.forEach((cb) => cb(data));
             } else if (data.type === 'video_sync' || data.type === 'video_seek') {
+                if (data.playback) this.pendingVideoPlayback.set(data.numericId, data.playback);
                 const layer = this.layers.get(data.numericId);
                 if (layer?.type === 'video') {
                     layer.playback = data.playback ??
@@ -375,6 +394,7 @@ export class WallEngine {
         const state: VideoRecoveryState = {
             video,
             lastFrameAt: this.monotonicNow(),
+            lastSeekAt: -Infinity,
             frameIntervalMs: null,
             hasFrame: false,
             active: false,
@@ -449,6 +469,20 @@ export class WallEngine {
         return Math.max(0, expectedTime);
     }
 
+    /** Do not chase the clock with Range requests that cancel one another.
+     * A seek outside the buffered range can finish already behind the clock,
+     * causing an endless seek/load loop on slower screens. Keep downloading
+     * and playing until the target plus a short runway is buffered.
+     */
+    private canSeekVideo(video: HTMLVideoElement, target: number) {
+        if (video.seeking) return false;
+        const end = Math.min(target + VIDEO_SEEK_BUFFER_SECONDS, video.duration || Infinity);
+        for (let i = 0; i < video.buffered.length; i++) {
+            if (video.buffered.start(i) <= target && video.buffered.end(i) >= end) return true;
+        }
+        return false;
+    }
+
     private checkForStalledVideos() {
         const now = this.monotonicNow();
         for (const [layerId, state] of this.videoRecovery) {
@@ -472,8 +506,10 @@ export class WallEngine {
                 state.phase = 'seeking';
                 state.phaseStartedAt = now;
                 state.recoveryFrames = 0;
-                if (state.video.readyState >= 1) {
-                    state.video.currentTime = this.expectedMediaTime(layer);
+                const target = this.expectedMediaTime(layer);
+                if (this.canSeekVideo(state.video, target)) {
+                    state.video.currentTime = target;
+                    state.lastSeekAt = now;
                 }
                 state.video.play().catch((error) => console.error('Video recovery failed:', error));
             } else if (
@@ -509,6 +545,8 @@ export class WallEngine {
         this.playbackDriftRafs.delete(layer.numericId);
         state.lastFallbackFrameCount = null;
         state.lastFallbackMediaTime = 0;
+        state.hasFrame = false;
+        state.lastSeekAt = -Infinity;
         if (state.resumeOnLoad) {
             state.video.removeEventListener('loadeddata', state.resumeOnLoad);
             state.resumeOnLoad = null;
@@ -558,6 +596,19 @@ export class WallEngine {
             layer.rvfcActive = false;
         }
 
+        if (layer.playback.status === 'playing') {
+            if (!state.active) {
+                state.active = true;
+                state.lastFrameAt = this.monotonicNow();
+                state.hasFrame = false;
+                state.frameIntervalMs = null;
+                state.phase = 'watching';
+                state.recoveryFrames = 0;
+                state.lastFallbackFrameCount = null;
+                state.lastFallbackMediaTime = video.currentTime;
+            }
+        }
+
         // A single listener resumes playback after hydration or a local reload.
         if (video.readyState < 2) {
             if (!state.resumeOnLoad) {
@@ -576,16 +627,6 @@ export class WallEngine {
         }
 
         if (layer.playback.status === 'playing') {
-            if (!state.active) {
-                state.active = true;
-                state.lastFrameAt = this.monotonicNow();
-                state.hasFrame = false;
-                state.frameIntervalMs = null;
-                state.phase = 'watching';
-                state.recoveryFrames = 0;
-                state.lastFallbackFrameCount = null;
-                state.lastFallbackMediaTime = video.currentTime;
-            }
             const checkTime = () => {
                 const now = this.getServerTime();
 
@@ -593,8 +634,16 @@ export class WallEngine {
                     // If we joined late, calculate exactly where we should be NOW
                     const expectedTime = this.expectedMediaTime(layer);
 
-                    if (Math.abs(video.currentTime - expectedTime) > 0.5) {
+                    if (
+                        Math.abs(video.currentTime - expectedTime) > VIDEO_HARD_SEEK_SECONDS &&
+                        (this.canSeekVideo(video, expectedTime) ||
+                            // A late join/reload may need one Range request near the
+                            // shared playhead. After that, wait for buffered data;
+                            // repeatedly chasing an unbuffered target prevents loading.
+                            (!state.hasFrame && state.lastSeekAt === -Infinity && !video.seeking))
+                    ) {
                         video.currentTime = expectedTime;
+                        state.lastSeekAt = this.monotonicNow();
                     }
 
                     video.play().catch((e) => console.error('Autoplay blocked:', e));
@@ -661,6 +710,7 @@ export class WallEngine {
         }
 
         const video = layer.el as HTMLVideoElement;
+        if (video.seeking || video.readyState < 2) return;
         const expectedDisplayTime = metadata?.expectedDisplayTime;
         const atServerTime =
             typeof expectedDisplayTime === 'number' && Number.isFinite(expectedDisplayTime)
@@ -677,11 +727,20 @@ export class WallEngine {
             if (drift < -layer.duration / 2) drift += layer.duration;
         }
 
-        if (Math.abs(drift) >= VIDEO_HARD_SEEK_SECONDS) {
-            video.currentTime = this.expectedMediaTime(layer);
+        const seekTarget = this.expectedMediaTime(layer);
+        const state = this.videoRecovery.get(layer.numericId);
+        const seekSettled =
+            !state || this.monotonicNow() - state.lastSeekAt >= VIDEO_SEEK_COOLDOWN_MS;
+        if (
+            Math.abs(drift) >= VIDEO_HARD_SEEK_SECONDS &&
+            seekSettled &&
+            this.canSeekVideo(video, seekTarget)
+        ) {
+            video.currentTime = seekTarget;
+            if (state) state.lastSeekAt = this.monotonicNow();
             video.playbackRate = 1;
         } else if (Math.abs(drift) > VIDEO_DRIFT_DEADBAND_SECONDS) {
-            video.playbackRate = Math.max(0.9, Math.min(1.1, 1 + drift));
+            video.playbackRate = Math.max(0.9, Math.min(1.1, 1 + drift * 2));
         } else {
             video.playbackRate = 1;
         }
